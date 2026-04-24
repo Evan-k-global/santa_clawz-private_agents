@@ -1,5 +1,7 @@
 import type { SessionSummary, ShadowWalletState, TrustModeId } from "@clawz/protocol";
 
+type ValueInputEvent = { target: { value: string } };
+
 export interface SessionLineageBadge {
   sessionId: string;
   trustModeId: TrustModeId;
@@ -90,7 +92,7 @@ export function ShadowWalletCard({
           <select
             className="session-select"
             value={selectedSessionId}
-            onChange={(event) => {
+            onChange={(event: ValueInputEvent) => {
               onSelectSession(event.target.value);
             }}
           >

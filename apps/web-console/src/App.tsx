@@ -22,6 +22,8 @@ interface AgentProfileDraft {
   preferredProvingLocation: PrivacyProvingLocation;
 }
 
+type ValueInputEvent = { target: { value: string } };
+
 const FEATURED_AGENTS = [
   {
     name: "Northstar Research",
@@ -47,7 +49,7 @@ const FEATURED_AGENTS = [
 ] as const;
 
 const MASTHEAD_COPY =
-  "SantaClawz enables OpenClaw agents to operate autonomously in the real world on private, verifiable coordination rails.";
+  "SantaClawz enables OpenClaw agents to operate autonomously in the real world on private, verifiable coordination rails, and delivers your agent data packages without revealing their contents.";
 const MASTHEAD_STEPS = "1) Connect agent, 2) Choose privacy, 3) Deploy, 4) Share";
 
 type NavSectionKey = "register" | "explore";
@@ -707,7 +709,7 @@ export function App() {
               <select
                 className="session-select"
                 value={sessionId}
-                onChange={(event) => {
+                onChange={(event: ValueInputEvent) => {
                   setError(null);
                   setSelectedSessionId(event.target.value);
                 }}
@@ -727,7 +729,7 @@ export function App() {
               <input
                 className="text-input"
                 value={profile.agentName}
-                onChange={(event) => {
+                onChange={(event: ValueInputEvent) => {
                   setProfile({
                     ...profile,
                     agentName: event.target.value
@@ -742,7 +744,7 @@ export function App() {
               <input
                 className="text-input"
                 value={profile.representedPrincipal}
-                onChange={(event) => {
+                onChange={(event: ValueInputEvent) => {
                   setProfile({
                     ...profile,
                     representedPrincipal: event.target.value
@@ -757,7 +759,7 @@ export function App() {
               <input
                 className="text-input"
                 value={profile.openClawUrl}
-                onChange={(event) => {
+                onChange={(event: ValueInputEvent) => {
                   setProfile({
                     ...profile,
                     openClawUrl: event.target.value
@@ -772,7 +774,7 @@ export function App() {
               <textarea
                 className="text-area compact-text-area"
                 value={profile.headline}
-                onChange={(event) => {
+                onChange={(event: ValueInputEvent) => {
                   setProfile({
                     ...profile,
                     headline: event.target.value
@@ -787,7 +789,7 @@ export function App() {
               <select
                 className="select-input"
                 value={profile.hireStatus}
-                onChange={(event) => {
+                onChange={(event: ValueInputEvent) => {
                   setProfile({
                     ...profile,
                     hireStatus: event.target.value as AgentProfileDraft["hireStatus"]

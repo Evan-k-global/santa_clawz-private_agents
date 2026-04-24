@@ -7,6 +7,7 @@ import type {
 } from "@clawz/protocol";
 
 type FlowKind = NonNullable<LiveSessionTurnFlowState["flowKind"]>;
+type ValueInputEvent = { target: { value: string } };
 
 interface FlowLaunchRequest {
   flowKind?: FlowKind;
@@ -219,7 +220,7 @@ export function ZekoRailCard({
             <select
               className="launcher-input"
               value={selectedNextTurnTarget?.turnId ?? ""}
-              onChange={(event) => {
+              onChange={(event: ValueInputEvent) => {
                 setSelectedTurnId(event.target.value);
               }}
             >
@@ -251,7 +252,7 @@ export function ZekoRailCard({
             <select
               className="launcher-input"
               value={selectedAbortTarget?.turnId ?? ""}
-              onChange={(event) => {
+              onChange={(event: ValueInputEvent) => {
                 setSelectedTurnId(event.target.value);
               }}
             >
@@ -267,7 +268,7 @@ export function ZekoRailCard({
             <input
               className="launcher-input"
               value={abortReason}
-              onChange={(event) => {
+              onChange={(event: ValueInputEvent) => {
                 setAbortReason(event.target.value);
               }}
               placeholder="governed-abort-requested"
@@ -285,7 +286,7 @@ export function ZekoRailCard({
             <select
               className="launcher-input"
               value={selectedRefundTarget?.turnId ?? ""}
-              onChange={(event) => {
+              onChange={(event: ValueInputEvent) => {
                 setSelectedTurnId(event.target.value);
               }}
             >
@@ -301,7 +302,7 @@ export function ZekoRailCard({
             <input
               className="launcher-input"
               value={refundAmountMina}
-              onChange={(event) => {
+              onChange={(event: ValueInputEvent) => {
                 setRefundAmountMina(event.target.value);
               }}
               placeholder="0.05"
@@ -318,7 +319,7 @@ export function ZekoRailCard({
           <select
             className="launcher-input"
             value={selectedDisclosure?.disclosureId ?? ""}
-            onChange={(event) => {
+            onChange={(event: ValueInputEvent) => {
               setSelectedDisclosureId(event.target.value);
             }}
           >
@@ -334,7 +335,7 @@ export function ZekoRailCard({
           <input
             className="launcher-input"
             value={revocationReason}
-            onChange={(event) => {
+            onChange={(event: ValueInputEvent) => {
               setRevocationReason(event.target.value);
             }}
             placeholder="governed-review-window-expired"
