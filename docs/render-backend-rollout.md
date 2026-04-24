@@ -141,6 +141,11 @@ Render setup:
 ```bash
 corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter @clawz/indexer... build
 ```
+   Start command:
+
+```bash
+pnpm --filter @clawz/indexer... build && pnpm --filter @clawz/indexer start
+```
 3. Set the custom domain to `api.santaclawz.ai`.
 4. Fill the secret env vars above.
 5. Deploy.
