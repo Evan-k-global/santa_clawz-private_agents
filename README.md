@@ -1,6 +1,35 @@
 # SantaClawz / ClawZ
 
-SantaClawz is the privacy, verification, and settlement protocol implemented by ClawZ, a privacy-first, Zeko-native agent operating system.
+SantaClawz is the privacy, verification, and settlement protocol implemented by ClawZ, a privacy-first, Zeko-native operating system for autonomous OpenClaw agents.
+
+It answers the core agent-to-agent trust question directly:
+
+- who an agent represents
+- what it is allowed to do
+- how it gets paid
+- how it can prove useful work happened without exposing the private data it worked over
+
+The design keeps Zeko responsible for control-plane truth while keeping raw user content encrypted and offchain by default. For the public SantaClawz rollout, the recommended proving boundary is `client`, not `server`.
+
+## What you get
+
+- a direct OpenClaw add-on path via `@clawz/openclaw-adapter`
+- a public onboarding console for `santaclawz.ai`
+- a browser-safe indexer/API with public onboarding mode
+- a privacy gateway plus enterprise KMS bridge for external key custody
+- Zeko zkApp kernels for sessions, turns, approvals, disclosures, and registry state
+
+## Recommended deployment shape
+
+For the production setup this repo is designed around:
+
+- `santaclawz.ai` on Spaceship for the static frontend
+- `api.santaclawz.ai` on Render for the public onboarding indexer
+- `privacy.santaclawz.ai` on Render for sealed-object and privacy-gateway infrastructure
+- `kms.santaclawz.ai` on Render for the enterprise derivation bridge
+- proving location set to `client` for the public path
+
+## Repo map
 
 This starter repo is organized around nine core concerns:
 
@@ -14,12 +43,11 @@ This starter repo is organized around nine core concerns:
 - `apps/web-console` and `apps/indexer`: onboarding, trust/privacy UX, action replay, and audit surfaces
 - `apps/privacy-gateway`: deployable KMS-compatible and sealed-object gateway for production privacy infrastructure
 
-The design aims to keep Zeko responsible for control-plane truth while keeping raw user content encrypted and offchain by default.
 ClawZ now defaults its shared key-broker runtime to durable local file-backed storage rather than ephemeral in-memory keys, so the privacy foundation survives restarts even before you swap in an external KMS.
 
 OpenClaw is the baseline runtime dependency for the SantaClawz add-on path: existing OpenClaw operators can keep `openclaw` as the session, gateway, and MCP runtime, then layer `@clawz/openclaw-adapter` plus the ClawZ indexer/privacy services on top.
 
-## Workspace
+## Quick start
 
 ```bash
 pnpm install
@@ -41,6 +69,29 @@ Local defaults:
 - enterprise KMS: `http://127.0.0.1:8791`
 - privacy gateway: `http://127.0.0.1:8789`
 
+### Fast paths
+
+Local product preview:
+
+```bash
+pnpm start:indexer
+pnpm start:web
+```
+
+Public site packaging for Spaceship:
+
+```bash
+pnpm package:web:spaceship
+```
+
+Contract and testnet deployment path:
+
+```bash
+pnpm compile:contracts
+pnpm preflight:testnet
+pnpm deploy:testnet
+```
+
 Optional runtime configuration:
 
 - `VITE_CLAWZ_API_BASE_URL` to point the console at a remote indexer
@@ -53,12 +104,14 @@ Optional runtime configuration:
 - `CLAWZ_ENTERPRISE_KMS_PROVIDER_MODE=command-adapter` to bridge the regulated derivation rail into an enterprise-owned adapter command or internal proxy
 - `CLAWZ_REGULATED_ENTERPRISE=true` plus `CLAWZ_PRIVACY_GATEWAY_KEY_PROVIDER=external-hsm-derive` when the privacy gateway must run without root key material in process
 - `CLAWZ_PRIVACY_PROVING_LOCATION=client|server|sovereign-rollup` to choose where proving happens
-- `CLAWZ_SERVER_PROVER_URL` to advertise that application-data proofs are produced on the server
+- `CLAWZ_SERVER_PROVER_URL` only if you intentionally want application-data proofs produced on the server
 - `CLAWZ_SOVEREIGN_ROLLUP_ENABLED=true`, `CLAWZ_SOVEREIGN_ROLLUP_ENDPOINT`, and optionally `CLAWZ_SOVEREIGN_ROLLUP_STACK=docker-compose-phala` for the private Zeko sovereign-rollup path
 - `CLAWZ_KEY_BROKER_MODE=in-memory-default-export` only for isolated test runs
 - `CLAWZ_REQUIRE_API_AUTH=true`, `CLAWZ_API_KEY_SHA256`, and `CLAWZ_ALLOWED_ORIGINS` before exposing the indexer
 
 Programmable privacy defaults to `client`, which is the recommended baseline for user-data privacy on power-user machines. Switch to `server` when the app operator owns the sensitive application context, or `sovereign-rollup` when regulated enterprise workloads should prove inside the private Zeko rollup path.
+
+For the SantaClawz public deployment, keep `CLAWZ_PRIVACY_PROVING_LOCATION=client` and do not set `CLAWZ_SERVER_PROVER_URL`.
 
 Developer health checks:
 
@@ -69,13 +122,14 @@ Developer health checks:
 - `pnpm check:privacy-gateway` to verify deployed KMS + sealed-object endpoints before pointing the indexer at them
 - `pnpm smoke:regulated-local` to boot the enterprise-KMS plus privacy-gateway chain locally and run the external-HSM preflight end to end
 
-See `docs/production-hardening.md` for the production operator checklist.
+## Docs
 
-See `docs/openclaw-addon.md` for the direct OpenClaw install path.
-
-See `docs/spaceship-deployment.md` for packaging the public SantaClawz site for Spaceship hosting.
-
-See `docs/render-backend-rollout.md` for the step-by-step Render plus Spaceship deployment order.
+- `docs/production-hardening.md`: production operator checklist
+- `docs/openclaw-addon.md`: direct OpenClaw install path
+- `docs/spaceship-deployment.md`: public SantaClawz site packaging for Spaceship
+- `docs/render-backend-rollout.md`: step-by-step Render plus Spaceship deployment order
+- `docs/interop-proof-surface.md`: interoperable verifier and proof surface
+- `docs/zktls-adapter.md`: planned zkTLS-origin attestation rail
 
 ## Interoperable proof surface
 
