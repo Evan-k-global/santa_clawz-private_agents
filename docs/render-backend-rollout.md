@@ -57,6 +57,11 @@ Render setup:
 
 1. Create a new Web Service in Render from this repo.
 2. Use the values from `deploy/render/enterprise-kms.render.yaml`.
+   Build command:
+
+```bash
+corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter @clawz/enterprise-kms build
+```
 3. Set the custom domain to `kms.santaclawz.ai`.
 4. Fill the secret env vars:
    - `CLAWZ_ENTERPRISE_KMS_API_KEY`
@@ -85,6 +90,11 @@ Render setup:
 
 1. Create a second Web Service in Render from this repo.
 2. Use the values from `deploy/render/privacy-gateway.render.yaml`.
+   Build command:
+
+```bash
+corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter @clawz/privacy-gateway build
+```
 3. Set the custom domain to `privacy.santaclawz.ai`.
 4. Fill the secret env vars above.
 5. Deploy.
@@ -126,6 +136,11 @@ Render setup:
 
 1. Create a third Web Service in Render from this repo.
 2. Use the values from `deploy/render/indexer-public-onboarding.render.yaml`.
+   Build command:
+
+```bash
+corepack enable && pnpm install --frozen-lockfile --prod=false && pnpm --filter @clawz/indexer... build
+```
 3. Set the custom domain to `api.santaclawz.ai`.
 4. Fill the secret env vars above.
 5. Deploy.
