@@ -1,0 +1,42 @@
+{
+  "name": "clawz",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@9.15.0",
+  "scripts": {
+    "build": "pnpm -r build",
+    "doctor": "node scripts/doctor.mjs",
+    "doctor:full": "node scripts/doctor.mjs --full",
+    "doctor:testnet": "node scripts/doctor.mjs --testnet",
+    "check:privacy-gateway": "node scripts/check-privacy-gateway.mjs",
+    "smoke:regulated-local": "node scripts/smoke-regulated-local.mjs",
+    "preflight:production": "node scripts/preflight-production.mjs",
+    "test:enterprise-kms": "pnpm --filter @clawz/enterprise-kms test",
+    "test:contracts": "pnpm --filter @clawz/contracts test",
+    "test:key-broker": "pnpm --filter @clawz/key-broker test",
+    "test:privacy-gateway": "pnpm --filter @clawz/privacy-gateway test",
+    "test:testnet-flow": "pnpm --filter @clawz/contracts test:testnet-flow",
+    "test:indexer": "pnpm --filter @clawz/indexer test",
+    "test:interop-sdk": "pnpm run build && node packages/agent-sdk/test/client.test.mjs",
+    "test:hardening": "pnpm run test:contracts && pnpm run test:key-broker && pnpm run test:enterprise-kms && pnpm run test:privacy-gateway && pnpm run test:indexer",
+    "typecheck": "pnpm -r typecheck",
+    "dev:web": "pnpm --filter @clawz/web-console dev",
+    "dev:indexer": "pnpm --filter @clawz/indexer dev",
+    "dev:enterprise-kms": "pnpm --filter @clawz/enterprise-kms dev",
+    "dev:privacy-gateway": "pnpm --filter @clawz/privacy-gateway dev",
+    "dev": "pnpm --parallel --filter @clawz/web-console --filter @clawz/indexer dev",
+    "package:web:spaceship": "node scripts/package-spaceship-web-console.mjs",
+    "start:web": "pnpm --filter @clawz/web-console preview",
+    "start:indexer": "pnpm --filter @clawz/indexer start",
+    "start:enterprise-kms": "pnpm --filter @clawz/enterprise-kms start",
+    "start:privacy-gateway": "pnpm --filter @clawz/privacy-gateway start",
+    "verify:proof": "pnpm --filter @clawz/indexer verify:proof",
+    "compile:contracts": "pnpm --filter @clawz/contracts compile:contracts",
+    "preflight:testnet": "pnpm --filter @clawz/contracts preflight:testnet",
+    "deploy:testnet": "pnpm --filter @clawz/contracts deploy:testnet"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.3"
+  }
+}

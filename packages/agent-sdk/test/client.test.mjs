@@ -1,0 +1,172 @@
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { mkdtemp, rm } from "node:fs/promises";
+import net from "node:net";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
+
+const sdkEntry = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+const serverEntry = fileURLToPath(new URL("../../../apps/indexer/dist/apps/indexer/src/server.js", import.meta.url));
+
+function startServer(workspaceDir, port) {
+  const stdout = [];
+  const stderr = [];
+  const child = spawn("node", [serverEntry], {
+    cwd: workspaceDir,
+    env: {
+      ...process.env,
+      HOST: "127.0.0.1",
+      PORT: String(port)
+    },
+    stdio: ["ignore", "pipe", "pipe"]
+  });
+
+  child.stdout.on("data", (chunk) => {
+    stdout.push(String(chunk));
+  });
+  child.stderr.on("data", (chunk) => {
+    stderr.push(String(chunk));
+  });
+
+  return {
+    child,
+    stdout,
+    stderr
+  };
+}
+
+async function waitForJson(url, timeoutMs = 15000, logs = { stdout: [], stderr: [] }) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        return response.json();
+      }
+    } catch {}
+
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+
+  throw new Error(
+    [
+      `Timed out waiting for ${url}`,
+      logs.stdout.length > 0 ? `stdout:\n${logs.stdout.join("")}` : "",
+      logs.stderr.length > 0 ? `stderr:\n${logs.stderr.join("")}` : ""
+    ]
+      .filter(Boolean)
+      .join("\n\n")
+  );
+}
+
+async function stopProcess(child) {
+  if (child.exitCode !== null) {
+    return;
+  }
+
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      resolve();
+    };
+
+    child.once("exit", finish);
+    child.once("close", finish);
+
+    if (child.exitCode !== null) {
+      finish();
+      return;
+    }
+
+    child.kill("SIGTERM");
+    setTimeout(finish, 1000);
+  });
+}
+
+async function reservePort() {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.unref();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close(() => {
+          reject(new Error("Unable to reserve a TCP port."));
+        });
+        return;
+      }
+
+      server.close((error) => {
+        if (error) {
+          reject(error);
+          return;
+        }
+        resolve(address.port);
+      });
+    });
+  });
+}
+
+async function main() {
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "clawz-agent-sdk-"));
+  const port = await reservePort();
+  const baseUrl = `http://127.0.0.1:${port}`;
+  const server = startServer(workspaceDir, port);
+
+  try {
+    const health = await waitForJson(`${baseUrl}/health`, 15000, server);
+    assert.equal(health.service, "clawz-indexer");
+    const { createClawzAgentClient } = await import(pathToFileURL(sdkEntry).href);
+    const client = createClawzAgentClient({ baseUrl });
+
+    const discovery = await client.getDiscovery();
+    assert.equal(discovery.protocol, "clawz-agent-proof");
+    assert.equal(discovery.endpoints.discovery, `${baseUrl}/.well-known/agent-interop.json?sessionId=${discovery.focusedSessionId}`);
+    assert.equal(discovery.endpoints.verify, `${baseUrl}/api/interop/verify?sessionId=${discovery.focusedSessionId}`);
+
+    const bundle = await client.getProofBundle();
+    assert.equal(bundle.protocol, "clawz-agent-proof");
+    assert.ok(bundle.originProofs.length >= 1);
+
+    const verification = await client.getVerification();
+    assert.equal(verification.ok, true);
+    assert.equal(verification.source.mode, "self");
+    assert.equal(verification.question.payment.settlementAsset, "MINA");
+    assert.ok(verification.question.origin.proofCount >= 1);
+
+    const remoteVerification = await client.getVerification({ url: baseUrl });
+    assert.equal(remoteVerification.ok, true);
+    assert.equal(remoteVerification.source.mode, "live-url");
+
+    const localVerification = await client.verifyLiveProof();
+    assert.equal(localVerification.report.ok, true);
+    assert.equal(localVerification.question.authority.sessionId, bundle.authority.sessionId);
+
+    const tools = await client.listTools();
+    assert.ok(tools.some((tool) => tool.name === "verify_agent_proof"));
+
+    const mcpBundle = await client.getAgentProofBundleViaMcp();
+    assert.equal(mcpBundle.bundleDigest.sha256Hex, bundle.bundleDigest.sha256Hex);
+
+    const mcpVerification = await client.verifyAgentProofViaMcp();
+    assert.equal(mcpVerification.ok, true);
+    assert.equal(mcpVerification.summary.bundleDigestSha256, bundle.bundleDigest.sha256Hex);
+
+    console.log("ok - agent sdk discovers, verifies, and speaks MCP against a live ClawZ runtime");
+  } finally {
+    await stopProcess(server.child);
+    await rm(workspaceDir, { recursive: true, force: true });
+  }
+}
+
+main().catch((error) => {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+});

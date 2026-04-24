@@ -1,0 +1,820 @@
+import express from "express";
+
+import {
+  assertClawzJsonRpcRequest,
+  buildProofVerificationResponse,
+  type ClawzAgentDiscoveryDocument,
+  type ClawzAgentProofBundle,
+  type ClawzAgentProofVerificationRequest,
+  type ClawzAgentProofVerificationResponse,
+  type PrivacyApprovalRecord,
+  type TrustModeId,
+  type WitnessPlanLike,
+  verifyAgentProofBundle
+} from "@clawz/protocol";
+
+import { ClawzControlPlane } from "./control-plane.js";
+import { buildAgentProofBundle, buildDiscoveryDocument, buildMcpToolDefinitions } from "./interop.js";
+import {
+  apiAuthMiddleware,
+  publicSecurityStatus,
+  resolveSecurityConfig,
+  securityMiddleware
+} from "./security.js";
+
+const app = express();
+const securityConfig = resolveSecurityConfig();
+
+interface IndexerRequest<
+  Params extends Record<string, string> = Record<string, string>,
+  ReqBody = unknown,
+  ReqQuery extends Record<string, unknown> = Record<string, unknown>
+> {
+  body: ReqBody;
+  params: Params;
+  query: ReqQuery;
+  header(name: string): string | undefined;
+}
+
+interface IndexerResponse<ResBody = unknown> {
+  end(): IndexerResponse<ResBody>;
+  json(body: ResBody | unknown): IndexerResponse<ResBody>;
+  set(name: string, value: string): IndexerResponse<ResBody>;
+  send(body: string): IndexerResponse<ResBody>;
+  status(code: number): IndexerResponse<ResBody>;
+  type(contentType: string): IndexerResponse<ResBody>;
+}
+
+function route<
+  Params extends Record<string, string> = Record<string, string>,
+  ReqBody = unknown,
+  ReqQuery extends Record<string, unknown> = Record<string, unknown>
+>(
+  handler: (
+    request: IndexerRequest<Params, ReqBody, ReqQuery>,
+    response: IndexerResponse
+  ) => void | Promise<void>
+) {
+  return (request: unknown, response: unknown) =>
+    handler(
+      request as IndexerRequest<Params, ReqBody, ReqQuery>,
+      response as IndexerResponse
+    );
+}
+
+app.use(securityMiddleware(securityConfig));
+app.options(
+  "*",
+  route((_request, response) => {
+    response.status(204).end();
+  })
+);
+app.use(apiAuthMiddleware(securityConfig));
+app.use(express.json());
+
+const controlPlane = await ClawzControlPlane.boot(process.env.CLAWZ_DATA_DIR?.trim() || undefined);
+const LIVE_FLOW_KINDS = ["first-turn", "next-turn", "abort-turn", "refund-turn", "revoke-disclosure"] as const;
+type LiveFlowKind = (typeof LIVE_FLOW_KINDS)[number];
+type TrustModeRequestBody = { modeId?: unknown; sessionId?: unknown };
+type SponsorRequestBody = { amountMina?: unknown; sessionId?: unknown; purpose?: unknown };
+type RecoveryRequestBody = { sessionId?: unknown };
+type PrivacyExceptionApprovalBody = {
+  actorRole?: unknown;
+  actorId?: unknown;
+  note?: unknown;
+  sessionId?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLiveFlowKind(value: string): value is LiveFlowKind {
+  return LIVE_FLOW_KINDS.includes(value as LiveFlowKind);
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
+}
+
+function queryString(query: unknown, key: string): string | undefined {
+  if (!isRecord(query)) {
+    return undefined;
+  }
+
+  return typeof query[key] === "string" && query[key].trim().length > 0 ? query[key].trim() : undefined;
+}
+
+function parseTrustModeRequest(body: unknown): TrustModeRequestBody {
+  return isRecord(body)
+    ? {
+        modeId: body.modeId,
+        sessionId: body.sessionId
+      }
+    : {};
+}
+
+function parseSponsorRequest(body: unknown): SponsorRequestBody {
+  return isRecord(body)
+    ? {
+        amountMina: body.amountMina,
+        sessionId: body.sessionId,
+        purpose: body.purpose
+      }
+    : {};
+}
+
+function parseRecoveryRequest(body: unknown): RecoveryRequestBody {
+  return isRecord(body)
+    ? {
+        sessionId: body.sessionId
+      }
+    : {};
+}
+
+function parsePrivacyExceptionApproval(body: unknown): PrivacyExceptionApprovalBody {
+  return isRecord(body)
+    ? {
+        actorRole: body.actorRole,
+        actorId: body.actorId,
+        note: body.note,
+        sessionId: body.sessionId
+      }
+    : {};
+}
+
+function parseLiveFlowRequest(body: unknown): {
+  flowKind?: LiveFlowKind;
+  sessionId?: string;
+  turnId?: string;
+  sourceTurnId?: string;
+  sourceDisclosureId?: string;
+  abortReason?: string;
+  revocationReason?: string;
+  refundAmountMina?: string;
+} {
+  if (!isRecord(body)) {
+    return {};
+  }
+
+  const rawFlowKind = optionalString(body.flowKind);
+  if (rawFlowKind && !isLiveFlowKind(rawFlowKind)) {
+    throw new Error(`Unsupported live flow kind: ${rawFlowKind}`);
+  }
+  const flowKind = rawFlowKind && isLiveFlowKind(rawFlowKind) ? rawFlowKind : undefined;
+  const sessionId = optionalString(body.sessionId);
+  const turnId = optionalString(body.turnId);
+  const sourceTurnId = optionalString(body.sourceTurnId);
+  const sourceDisclosureId = optionalString(body.sourceDisclosureId);
+  const abortReason = optionalString(body.abortReason);
+  const revocationReason = optionalString(body.revocationReason);
+  const refundAmountMina = optionalString(body.refundAmountMina);
+
+  return {
+    ...(flowKind ? { flowKind } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(turnId ? { turnId } : {}),
+    ...(sourceTurnId ? { sourceTurnId } : {}),
+    ...(sourceDisclosureId ? { sourceDisclosureId } : {}),
+    ...(abortReason ? { abortReason } : {}),
+    ...(revocationReason ? { revocationReason } : {}),
+    ...(refundAmountMina ? { refundAmountMina } : {})
+  };
+}
+
+function getBaseUrl(request: IndexerRequest): string {
+  const forwardedProto = request.header("x-forwarded-proto");
+  const protocol = typeof forwardedProto === "string" && forwardedProto.length > 0 ? forwardedProto : "http";
+  const host = request.header("host") ?? "127.0.0.1";
+  return `${protocol}://${host}`;
+}
+
+async function buildInteropSnapshot(request: IndexerRequest) {
+  const baseUrl = getBaseUrl(request);
+  return buildInteropSnapshotFromQuery(baseUrl, request.query);
+}
+
+async function buildInteropSnapshotFromQuery(baseUrl: string, query: unknown) {
+  const sessionId = queryString(query, "sessionId");
+  const turnId = queryString(query, "turnId");
+  const consoleState = await controlPlane.getConsoleState(sessionId ? { sessionId } : {});
+  const resolvedSessionId = consoleState.session.sessionId;
+  const [events, sessionView] = await Promise.all([
+    controlPlane.listEvents({ sessionId: resolvedSessionId }),
+    controlPlane.getSession(resolvedSessionId)
+  ]);
+
+  if (turnId && !sessionView.turns.includes(turnId)) {
+    throw new Error(`Unknown turn for session ${resolvedSessionId}: ${turnId}`);
+  }
+
+  return {
+    baseUrl,
+    sessionId: resolvedSessionId,
+    turnId,
+    consoleState,
+    events,
+    sessionView
+  };
+}
+
+function normalizeBaseUrl(value: string): string {
+  return value.endsWith("/") ? value.slice(0, -1) : value;
+}
+
+async function fetchJson<T>(url: string): Promise<T> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to fetch ${url}: ${response.status}`);
+  }
+
+  return (await response.json()) as T;
+}
+
+async function fetchDiscoveryDocument(baseUrl: string, sessionId?: string): Promise<ClawzAgentDiscoveryDocument> {
+  const candidates = ["/.well-known/agent-interop.json", "/.well-known/clawz-agent.json"];
+  const normalizedBaseUrl = normalizeBaseUrl(baseUrl);
+
+  for (const candidate of candidates) {
+    const url = new URL(`${normalizedBaseUrl}${candidate}`);
+    if (sessionId) {
+      url.searchParams.set("sessionId", sessionId);
+    }
+
+    try {
+      return await fetchJson<ClawzAgentDiscoveryDocument>(url.toString());
+    } catch (error) {
+      if (!(error instanceof Error) || !error.message.endsWith(": 404")) {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(`Unable to locate a ClawZ discovery document at ${normalizedBaseUrl}.`);
+}
+
+async function buildLocalInteropArtifacts(baseUrl: string, sessionId?: string, turnId?: string) {
+  const snapshot = await buildInteropSnapshotFromQuery(baseUrl, {
+    ...(sessionId ? { sessionId } : {}),
+    ...(turnId ? { turnId } : {})
+  });
+  const discovery = buildDiscoveryDocument({
+    baseUrl: snapshot.baseUrl,
+    consoleState: snapshot.consoleState,
+    sessionId: snapshot.sessionId
+  });
+  const bundle = buildAgentProofBundle({
+    baseUrl: snapshot.baseUrl,
+    consoleState: snapshot.consoleState,
+    sessionView: snapshot.sessionView,
+    events: snapshot.events,
+    sessionId: snapshot.sessionId,
+    ...(snapshot.turnId ? { turnId: snapshot.turnId } : {})
+  });
+
+  return {
+    snapshot,
+    discovery,
+    bundle
+  };
+}
+
+function parseVerificationRequest(value: unknown): ClawzAgentProofVerificationRequest {
+  if (!isRecord(value)) {
+    return {};
+  }
+
+  const url = optionalString(value.url);
+  const sessionId = optionalString(value.sessionId);
+  const turnId = optionalString(value.turnId);
+  const bundle = isRecord(value.bundle) ? (value.bundle as unknown as ClawzAgentProofBundle) : undefined;
+  const discovery = isRecord(value.discovery)
+    ? (value.discovery as unknown as ClawzAgentDiscoveryDocument)
+    : undefined;
+  const witnessPlan = isRecord(value.witnessPlan)
+    ? (value.witnessPlan as unknown as WitnessPlanLike)
+    : undefined;
+
+  return {
+    ...(url ? { url } : {}),
+    ...(sessionId ? { sessionId } : {}),
+    ...(turnId ? { turnId } : {}),
+    ...(bundle ? { bundle } : {}),
+    ...(discovery ? { discovery } : {}),
+    ...(witnessPlan ? { witnessPlan } : {})
+  };
+}
+
+async function verifyInteropProof(
+  input: ClawzAgentProofVerificationRequest,
+  localBaseUrl: string
+): Promise<ClawzAgentProofVerificationResponse> {
+  if (input.bundle) {
+    const report = verifyAgentProofBundle(input.bundle, {
+      ...(input.discovery ? { discovery: input.discovery } : {}),
+      ...(input.witnessPlan ? { witnessPlan: input.witnessPlan } : {})
+    });
+
+    return buildProofVerificationResponse({
+      source: {
+        mode: "bundle",
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.turnId ? { turnId: input.turnId } : {}),
+        discoveryProvided: Boolean(input.discovery),
+        witnessPlanProvided: Boolean(input.witnessPlan)
+      },
+      bundle: input.bundle,
+      report,
+      ...(input.discovery ? { discovery: input.discovery } : {})
+    });
+  }
+
+  if (input.url) {
+    const baseUrl = normalizeBaseUrl(input.url);
+    const discovery = input.discovery ?? (await fetchDiscoveryDocument(baseUrl, input.sessionId));
+    const proofUrl = new URL(`${baseUrl}/api/interop/agent-proof`);
+    if (input.sessionId) {
+      proofUrl.searchParams.set("sessionId", input.sessionId);
+    }
+    if (input.turnId) {
+      proofUrl.searchParams.set("turnId", input.turnId);
+    }
+    const bundle = await fetchJson<ClawzAgentProofBundle>(proofUrl.toString());
+    const report = verifyAgentProofBundle(bundle, {
+      discovery,
+      ...(input.witnessPlan ? { witnessPlan: input.witnessPlan } : {})
+    });
+
+    return buildProofVerificationResponse({
+      source: {
+        mode: "live-url",
+        baseUrl,
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.turnId ? { turnId: input.turnId } : {}),
+        discoveryProvided: true,
+        witnessPlanProvided: Boolean(input.witnessPlan)
+      },
+      bundle,
+      report,
+      discovery
+    });
+  }
+
+  const local = await buildLocalInteropArtifacts(localBaseUrl, input.sessionId, input.turnId);
+  const report = verifyAgentProofBundle(local.bundle, {
+    discovery: local.discovery,
+    ...(input.witnessPlan ? { witnessPlan: input.witnessPlan } : {})
+  });
+
+  return buildProofVerificationResponse({
+    source: {
+      mode: "self",
+      baseUrl: local.snapshot.baseUrl,
+      sessionId: local.snapshot.sessionId,
+      ...(local.snapshot.turnId ? { turnId: local.snapshot.turnId } : {}),
+      discoveryProvided: true,
+      witnessPlanProvided: Boolean(input.witnessPlan)
+    },
+    bundle: local.bundle,
+    report,
+    discovery: local.discovery
+  });
+}
+
+app.get("/health", route((_request, response) => {
+  response.json({
+    ok: true,
+    service: "clawz-indexer"
+  });
+}));
+
+app.get("/ready", route(async (_request, response) => {
+  try {
+    const deployment = await controlPlane.getDeploymentState();
+    const checks = [
+      {
+        label: "control-plane",
+        ok: true
+      },
+      {
+        label: "privacy-runtime",
+        ok: deployment.keyManagement !== "in-memory-default-export",
+        detail: deployment.keyManagement
+      },
+      {
+        label: "api-auth",
+        ok: !securityConfig.apiAuthRequired || securityConfig.apiKeyConfigured,
+        detail: securityConfig.apiAuthRequired ? "required" : "not-required"
+      },
+      {
+        label: "cors",
+        ok: !securityConfig.productionMode || securityConfig.allowedOrigins !== "*",
+        detail: securityConfig.allowedOrigins === "*" ? "*" : securityConfig.allowedOrigins.join(",")
+      },
+      {
+        label: "zeko-deployment",
+        ok: deployment.mode !== "local-runtime",
+        detail: deployment.mode
+      }
+    ];
+    const payload = {
+      ok: checks.every((check) => check.ok),
+      service: "clawz-indexer",
+      generatedAtIso: new Date().toISOString(),
+      security: publicSecurityStatus(securityConfig),
+      deployment: {
+        mode: deployment.mode,
+        networkId: deployment.networkId,
+        keyManagement: deployment.keyManagement,
+        privacyGrade: deployment.privacyGrade
+      },
+      checks
+    };
+
+    response.status(payload.ok ? 200 : 503).json(payload);
+  } catch (error) {
+    response.status(503).json({
+      ok: false,
+      service: "clawz-indexer",
+      error: error instanceof Error ? error.message : "Unable to evaluate readiness."
+    });
+  }
+}));
+
+const handleDiscoveryDocument = route(async (request, response) => {
+  try {
+    const snapshot = await buildInteropSnapshot(request);
+    response.json(
+      buildDiscoveryDocument({
+        baseUrl: snapshot.baseUrl,
+        consoleState: snapshot.consoleState,
+        sessionId: snapshot.sessionId
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to build discovery document."
+    });
+  }
+});
+
+app.get("/.well-known/clawz-agent.json", handleDiscoveryDocument);
+app.get("/.well-known/agent-interop.json", handleDiscoveryDocument);
+
+app.get("/api/events", route(async (request, response) => {
+  const sessionId = queryString(request.query, "sessionId");
+  const turnId = queryString(request.query, "turnId");
+  response.json(
+    await controlPlane.listEvents({
+      ...(sessionId ? { sessionId } : {}),
+      ...(turnId ? { turnId } : {})
+    })
+  );
+}));
+
+app.get("/api/sessions/:sessionId", route(async (request, response) => {
+  const sessionId = request.params.sessionId;
+  if (!sessionId) {
+    response.status(400).json({ error: "sessionId is required." });
+    return;
+  }
+
+  response.json(await controlPlane.getSession(sessionId));
+}));
+
+app.get("/api/turns/:turnId/replay", route(async (request, response) => {
+  const turnId = request.params.turnId;
+  if (!turnId) {
+    response.status(400).json({ error: "turnId is required." });
+    return;
+  }
+
+  response.json(await controlPlane.getTurnReplay(turnId));
+}));
+
+app.get("/api/privacy-exceptions", route(async (request, response) => {
+  response.json(await controlPlane.listPrivacyExceptions(queryString(request.query, "sessionId")));
+}));
+
+app.get("/api/console/state", route(async (request, response) => {
+  try {
+    const sessionId = queryString(request.query, "sessionId");
+    response.json(await controlPlane.getConsoleState(sessionId ? { sessionId } : {}));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to load console state."
+    });
+  }
+}));
+
+app.get("/api/zeko/deployment", route(async (_request, response) => {
+  response.json(await controlPlane.getDeploymentState());
+}));
+
+app.post("/api/zeko/session-turn/run", route(async (request, response) => {
+  try {
+    response.json(await controlPlane.runLiveSessionTurnFlow(parseLiveFlowRequest(request.body)));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to execute live Zeko session flow."
+    });
+  }
+}));
+
+app.post("/api/zeko/flow/run", route(async (request, response) => {
+  try {
+    response.json(await controlPlane.runLiveSessionTurnFlow(parseLiveFlowRequest(request.body)));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to execute live Zeko flow."
+    });
+  }
+}));
+
+app.get("/api/interop/agent-proof", route(async (request, response) => {
+  try {
+    const snapshot = await buildInteropSnapshot(request);
+    response.json(
+      buildAgentProofBundle({
+        baseUrl: snapshot.baseUrl,
+        consoleState: snapshot.consoleState,
+        sessionView: snapshot.sessionView,
+        events: snapshot.events,
+        sessionId: snapshot.sessionId,
+        ...(snapshot.turnId ? { turnId: snapshot.turnId } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to build agent proof bundle."
+    });
+  }
+}));
+
+app.get("/api/interop/verify", route(async (request, response) => {
+  try {
+    const sessionId = queryString(request.query, "sessionId");
+    const turnId = queryString(request.query, "turnId");
+    response.json(
+      await verifyInteropProof(
+        {
+          ...(sessionId ? { sessionId } : {}),
+          ...(turnId ? { turnId } : {})
+        },
+        getBaseUrl(request)
+      )
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to verify agent proof bundle."
+    });
+  }
+}));
+
+app.post("/api/interop/verify", route(async (request, response) => {
+  try {
+    response.json(await verifyInteropProof(parseVerificationRequest(request.body ?? null), getBaseUrl(request)));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to verify agent proof bundle."
+    });
+  }
+}));
+
+app.post("/mcp", route(async (request, response) => {
+  try {
+    const rpc = assertClawzJsonRpcRequest(request.body ?? null);
+
+    if (rpc.method === "tools/list") {
+      response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          tools: buildMcpToolDefinitions()
+        }
+      });
+      return;
+    }
+
+    const params = isRecord(rpc.params) ? rpc.params : {};
+    const name = params.name;
+    const args = isRecord(params.arguments) ? params.arguments : {};
+
+    if (name === "get_agent_discovery") {
+      const snapshot = await buildInteropSnapshotFromQuery(getBaseUrl(request), {
+        ...(typeof args.sessionId === "string" ? { sessionId: args.sessionId } : {})
+      });
+      const discovery = buildDiscoveryDocument({
+        baseUrl: snapshot.baseUrl,
+        consoleState: snapshot.consoleState,
+        sessionId: snapshot.sessionId
+      });
+      response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(discovery, null, 2)
+            }
+          ],
+          structuredContent: discovery
+        }
+      });
+      return;
+    }
+
+    if (name === "get_agent_proof_bundle") {
+      const snapshot = await buildInteropSnapshotFromQuery(getBaseUrl(request), {
+        ...(typeof args.sessionId === "string" ? { sessionId: args.sessionId } : {}),
+        ...(typeof args.turnId === "string" ? { turnId: args.turnId } : {})
+      });
+      const bundle = buildAgentProofBundle({
+        baseUrl: snapshot.baseUrl,
+        consoleState: snapshot.consoleState,
+        sessionView: snapshot.sessionView,
+        events: snapshot.events,
+        sessionId: snapshot.sessionId,
+        ...(snapshot.turnId ? { turnId: snapshot.turnId } : {})
+      });
+      response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(bundle, null, 2)
+            }
+          ],
+          structuredContent: bundle
+        }
+      });
+      return;
+    }
+
+    if (name === "verify_agent_proof") {
+      const verification = await verifyInteropProof(parseVerificationRequest(args), getBaseUrl(request));
+      response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(verification, null, 2)
+            }
+          ],
+          structuredContent: verification
+        }
+      });
+      return;
+    }
+
+    if (name === "get_zeko_deployment") {
+      const deployment = await controlPlane.getDeploymentState();
+      response.json({
+        jsonrpc: "2.0",
+        id: rpc.id,
+        result: {
+          content: [
+            {
+              type: "text",
+              text: JSON.stringify(deployment, null, 2)
+            }
+          ],
+          structuredContent: deployment
+        }
+      });
+      return;
+    }
+
+    response.status(404).json({
+      jsonrpc: "2.0",
+      id: rpc.id,
+      error: {
+        code: -32601,
+        message: `Unknown tool: ${String(name)}`
+      }
+    });
+  } catch (error) {
+    response.status(400).json({
+      jsonrpc: "2.0",
+      id: isRecord(request.body) && "id" in request.body ? (request.body as Record<string, unknown>).id ?? null : null,
+      error: {
+        code: -32600,
+        message: error instanceof Error ? error.message : "Invalid MCP request."
+      }
+    });
+  }
+}));
+
+app.post("/api/console/trust-mode", route(async (request, response) => {
+  const body = parseTrustModeRequest(request.body ?? null);
+  const nextMode = body.modeId;
+  const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+  if (
+    nextMode !== "fast" &&
+    nextMode !== "private" &&
+    nextMode !== "verified" &&
+    nextMode !== "team-governed"
+  ) {
+    response.status(400).json({
+      error: "modeId is required."
+    });
+    return;
+  }
+
+  try {
+    response.json(await controlPlane.setTrustMode(nextMode as TrustModeId, sessionId));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to update trust mode."
+    });
+  }
+}));
+
+app.post("/api/wallet/sponsor", route(async (request, response) => {
+  const body = parseSponsorRequest(request.body ?? null);
+  const resolvedSessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+  response.json(
+    await controlPlane.sponsorWallet({
+      ...(typeof body.amountMina === "string" ? { amountMina: body.amountMina } : {}),
+      ...(resolvedSessionId ? { sessionId: resolvedSessionId } : {}),
+      ...(body.purpose === "onboarding" || body.purpose === "top-up" || body.purpose === "publish"
+        ? { purpose: body.purpose }
+        : {})
+    })
+  );
+}));
+
+app.get("/api/wallet/sponsor/queue", route(async (request, response) => {
+  response.json(await controlPlane.listSponsorQueue(queryString(request.query, "sessionId")));
+}));
+
+app.post("/api/wallet/recovery/prepare", route(async (request, response) => {
+  const body = parseRecoveryRequest(request.body ?? null);
+  response.json(
+    await controlPlane.prepareRecoveryKit(optionalString(body.sessionId) ?? queryString(request.query, "sessionId"))
+  );
+}));
+
+app.post(
+  "/api/privacy-exceptions/:id/approve",
+  route(async (request, response) => {
+    const body = parsePrivacyExceptionApproval(request.body ?? null);
+    const exceptionId = request.params.id;
+    if (!exceptionId) {
+      response.status(400).json({ error: "privacy exception id is required." });
+      return;
+    }
+
+    const rawActorRole = body.actorRole;
+    const actorRole: PrivacyApprovalRecord["actorRole"] | undefined =
+      rawActorRole === "operator" ||
+      rawActorRole === "tenant-admin" ||
+      rawActorRole === "compliance-reviewer" ||
+      rawActorRole === "workspace-member"
+        ? rawActorRole
+        : undefined;
+
+    try {
+      response.json(
+        await controlPlane.approvePrivacyException(
+          exceptionId,
+          typeof body.actorId === "string" ? body.actorId : undefined,
+          actorRole,
+          typeof body.note === "string" ? body.note : undefined,
+          optionalString(body.sessionId) ?? queryString(request.query, "sessionId")
+        )
+      );
+    } catch (error) {
+      response.status(400).json({
+        error: error instanceof Error ? error.message : "Unable to approve privacy exception."
+      });
+    }
+  })
+);
+
+app.post("/api/events/ingest", route(async (request, response) => {
+  try {
+    const event = await controlPlane.ingestEvent(request.body ?? null);
+    response.status(202).json({
+      accepted: true,
+      event
+    });
+  } catch (error) {
+    response.status(400).json({
+      accepted: false,
+      error: error instanceof Error ? error.message : "Invalid event payload."
+    });
+  }
+}));
+
+const port = Number(process.env.PORT ?? 4318);
+const host = process.env.HOST ?? "127.0.0.1";
+
+app.listen(port, host, () => {
+  console.log(`ClawZ indexer listening on http://${host}:${port}`);
+});

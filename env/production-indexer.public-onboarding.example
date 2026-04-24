@@ -1,0 +1,26 @@
+# ClawZ Indexer for the public SantaClawz onboarding site.
+# Keeps operator auth enabled while allowing the browser onboarding flow to call a narrow public route set.
+
+NODE_ENV=production
+CLAWZ_RUNTIME_ENV=production
+CLAWZ_REGULATED_ENTERPRISE=true
+HOST=0.0.0.0
+PORT=8788
+
+CLAWZ_DATA_DIR=/var/lib/clawz
+CLAWZ_REQUIRE_API_AUTH=true
+CLAWZ_PUBLIC_ONBOARDING=true
+CLAWZ_API_KEY_SHA256=replace_with_sha256_of_operator_api_key
+CLAWZ_ALLOWED_ORIGINS=https://santaclawz.ai
+CLAWZ_PUBLIC_PROOF_SURFACE=discovery-only
+CLAWZ_STRUCTURED_LOGS=true
+CLAWZ_PRIVACY_GATEWAY_ATTESTED_EXTERNAL_HSM=true
+CLAWZ_PRIVACY_PROVING_LOCATION=client
+
+CLAWZ_KEY_BROKER_MODE=external-kms-backed
+CLAWZ_KMS_ENDPOINT=https://privacy.santaclawz.ai
+CLAWZ_KMS_API_KEY=replace_with_long_random_gateway_token
+
+CLAWZ_BLOB_STORE_MODE=http-object-store
+CLAWZ_BLOB_STORE_ENDPOINT=https://privacy.santaclawz.ai
+CLAWZ_BLOB_STORE_API_KEY=replace_with_long_random_gateway_token
