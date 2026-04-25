@@ -240,12 +240,18 @@ export interface SponsorQueueState {
   items: SponsorQueueJob[];
 }
 
+export interface AgentPayoutWallets {
+  zeko?: string;
+  base?: string;
+  ethereum?: string;
+}
+
 export interface AgentProfileState {
   agentName: string;
   representedPrincipal: string;
   headline: string;
   openClawUrl: string;
-  payoutAddress?: string;
+  payoutWallets: AgentPayoutWallets;
   preferredProvingLocation: PrivacyProvingLocation;
 }
 

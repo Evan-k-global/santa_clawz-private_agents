@@ -83,6 +83,7 @@ type RegisterAgentRequestBody = {
   headline?: unknown;
   openClawUrl?: unknown;
   payoutAddress?: unknown;
+  payoutWallets?: unknown;
   trustModeId?: unknown;
   preferredProvingLocation?: unknown;
 };
@@ -92,6 +93,7 @@ type ProfileRequestBody = {
   headline?: unknown;
   openClawUrl?: unknown;
   payoutAddress?: unknown;
+  payoutWallets?: unknown;
   preferredProvingLocation?: unknown;
   sessionId?: unknown;
 };
@@ -129,6 +131,18 @@ function queryString(query: unknown, key: string): string | undefined {
   return typeof query[key] === "string" && query[key].trim().length > 0 ? query[key].trim() : undefined;
 }
 
+function parsePayoutWallets(value: unknown): AgentProfileState["payoutWallets"] | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof value.zeko === "string" ? { zeko: value.zeko } : {}),
+    ...(typeof value.base === "string" ? { base: value.base } : {}),
+    ...(typeof value.ethereum === "string" ? { ethereum: value.ethereum } : {})
+  };
+}
+
 function parseTrustModeRequest(body: unknown): TrustModeRequestBody {
   return isRecord(body)
     ? {
@@ -146,6 +160,7 @@ function parseRegisterAgentRequest(body: unknown): RegisterAgentRequestBody {
         headline: body.headline,
         openClawUrl: body.openClawUrl,
         payoutAddress: body.payoutAddress,
+        payoutWallets: body.payoutWallets,
         trustModeId: body.trustModeId,
         preferredProvingLocation: body.preferredProvingLocation
       }
@@ -160,6 +175,7 @@ function parseProfileRequest(body: unknown): ProfileRequestBody {
           headline: body.headline,
           openClawUrl: body.openClawUrl,
           payoutAddress: body.payoutAddress,
+          payoutWallets: body.payoutWallets,
           preferredProvingLocation: body.preferredProvingLocation,
           sessionId: body.sessionId
         }
@@ -804,6 +820,7 @@ app.post("/api/console/trust-mode", route(async (request, response) => {
 
 app.post("/api/console/register", route(async (request, response) => {
   const body = parseRegisterAgentRequest(request.body ?? null);
+  const payoutWallets = parsePayoutWallets(body.payoutWallets);
   const trustModeId =
     body.trustModeId === "fast" ||
     body.trustModeId === "private" ||
@@ -825,6 +842,7 @@ app.post("/api/console/register", route(async (request, response) => {
         headline: typeof body.headline === "string" ? body.headline : "",
         openClawUrl: typeof body.openClawUrl === "string" ? body.openClawUrl : "",
         ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
+        ...(payoutWallets ? { payoutWallets } : {}),
         ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
         ...(trustModeId ? { trustModeId } : {}),
         ...(preferredProvingLocation ? { preferredProvingLocation } : {})
@@ -840,12 +858,21 @@ app.post("/api/console/register", route(async (request, response) => {
 app.post("/api/console/profile", route(async (request, response) => {
   const body = parseProfileRequest(request.body ?? null);
   const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+  const payoutWallets = parsePayoutWallets(body.payoutWallets);
   const profile: Partial<AgentProfileState> = {
     ...(typeof body.agentName === "string" ? { agentName: body.agentName } : {}),
     ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
     ...(typeof body.headline === "string" ? { headline: body.headline } : {}),
     ...(typeof body.openClawUrl === "string" ? { openClawUrl: body.openClawUrl } : {}),
-    ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
+    ...(payoutWallets ? { payoutWallets } : {}),
+    ...(typeof body.payoutAddress === "string"
+      ? {
+          payoutWallets: {
+            ...(payoutWallets ?? {}),
+            base: body.payoutAddress
+          }
+        }
+      : {}),
     ...(body.preferredProvingLocation === "client" ||
     body.preferredProvingLocation === "server" ||
     body.preferredProvingLocation === "sovereign-rollup"

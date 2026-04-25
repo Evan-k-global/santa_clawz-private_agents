@@ -117,7 +117,7 @@ export function registerAgent(input: {
   representedPrincipal?: string;
   headline: string;
   openClawUrl: string;
-  payoutAddress?: string;
+  payoutWallets?: AgentProfileState["payoutWallets"];
   trustModeId?: TrustModeId;
   preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
 }): Promise<ConsoleStateResponse> {

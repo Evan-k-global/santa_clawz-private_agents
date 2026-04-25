@@ -212,6 +212,7 @@ interface RegisterAgentOptions {
   representedPrincipal?: string;
   headline: string;
   openClawUrl: string;
+  payoutWallets?: AgentProfileState["payoutWallets"];
   payoutAddress?: string;
   trustModeId?: TrustModeId;
   preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
@@ -459,6 +460,7 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
     representedPrincipal: "Existing OpenClaw operator",
     headline: "Private, verifiable agent work on Zeko.",
     openClawUrl: "",
+    payoutWallets: {},
     preferredProvingLocation: trustMode.defaultProvingLocation
   };
 }
@@ -502,8 +504,31 @@ function isMainnetNetwork(deployment: Pick<ZekoDeploymentState, "networkId" | "m
   return networkId.includes("mainnet") && !networkId.includes("testnet");
 }
 
+function sanitizePayoutWalletValue(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 180) : undefined;
+}
+
+function sanitizePayoutWallets(
+  input: Partial<AgentProfileState["payoutWallets"]> | undefined,
+  fallback: AgentProfileState["payoutWallets"],
+  legacyPayoutAddress?: unknown
+): AgentProfileState["payoutWallets"] {
+  const zeko = sanitizePayoutWalletValue(input?.zeko) ?? sanitizePayoutWalletValue(fallback.zeko);
+  const base =
+    sanitizePayoutWalletValue(input?.base) ??
+    sanitizePayoutWalletValue(legacyPayoutAddress) ??
+    sanitizePayoutWalletValue(fallback.base);
+  const ethereum = sanitizePayoutWalletValue(input?.ethereum) ?? sanitizePayoutWalletValue(fallback.ethereum);
+
+  return {
+    ...(zeko ? { zeko } : {}),
+    ...(base ? { base } : {}),
+    ...(ethereum ? { ethereum } : {})
+  };
+}
+
 function hasPayoutAddress(profile: AgentProfileState): boolean {
-  return typeof profile.payoutAddress === "string" && profile.payoutAddress.trim().length > 0;
+  return Object.values(profile.payoutWallets).some((value) => typeof value === "string" && value.trim().length > 0);
 }
 
 function computePaidJobsEnabled(
@@ -754,6 +779,7 @@ export class ClawzControlPlane {
       input.preferredProvingLocation && trustMode.supportedProvingLocations.includes(input.preferredProvingLocation)
         ? input.preferredProvingLocation
         : fallback.preferredProvingLocation;
+    const legacyPayoutAddress = (input as { payoutAddress?: unknown }).payoutAddress;
 
     return {
       agentName: typeof input.agentName === "string" ? input.agentName.trim().slice(0, 120) : fallback.agentName,
@@ -763,11 +789,7 @@ export class ClawzControlPlane {
           : fallback.representedPrincipal,
       headline: typeof input.headline === "string" ? input.headline.trim().slice(0, 280) : fallback.headline,
       openClawUrl: typeof input.openClawUrl === "string" ? input.openClawUrl.trim().slice(0, 280) : fallback.openClawUrl,
-      ...(typeof input.payoutAddress === "string" && input.payoutAddress.trim().length > 0
-        ? { payoutAddress: input.payoutAddress.trim().slice(0, 180) }
-        : fallback.payoutAddress
-          ? { payoutAddress: fallback.payoutAddress }
-          : {}),
+      payoutWallets: sanitizePayoutWallets(input.payoutWallets, fallback.payoutWallets, legacyPayoutAddress),
       preferredProvingLocation
     };
   }
@@ -2144,6 +2166,7 @@ export class ClawzControlPlane {
         agentName: options.agentName,
         headline: options.headline,
         openClawUrl: options.openClawUrl,
+        ...(options.payoutWallets ? { payoutWallets: options.payoutWallets } : {}),
         ...(options.payoutAddress ? { payoutAddress: options.payoutAddress } : {}),
         ...(options.representedPrincipal ? { representedPrincipal: options.representedPrincipal } : {}),
         ...(options.preferredProvingLocation ? { preferredProvingLocation: options.preferredProvingLocation } : {})

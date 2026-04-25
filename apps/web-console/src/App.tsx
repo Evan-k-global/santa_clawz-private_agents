@@ -132,19 +132,44 @@ function formatRegistryHireStatus(agent: AgentRegistryEntry) {
   if (!agent.published) {
     return "Publish first";
   }
-  if (agent.paidJobsEnabled) {
-    return isMainnetNetworkId(agent.networkId) ? "Paid jobs enabled" : "Testnet-ready";
+  if (agent.payoutAddressConfigured) {
+    return isMainnetNetworkId(agent.networkId) ? "Payout wallet on file" : "Payment-ready metadata on file";
   }
-  return "Needs payout wallet";
+  return "No payout wallet on file yet";
+}
+
+function formatConfiguredPayoutWallets(wallets: AgentProfileState["payoutWallets"]) {
+  const labels = [
+    ...(wallets.zeko ? [`Zeko: ${wallets.zeko}`] : []),
+    ...(wallets.base ? [`Base: ${wallets.base}`] : []),
+    ...(wallets.ethereum ? [`Ethereum: ${wallets.ethereum}`] : [])
+  ];
+  return labels.length > 0 ? labels.join(" • ") : "No payout wallets configured yet.";
 }
 
 function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): AgentProfileDraft {
+  const legacyPayoutAddress =
+    typeof (input as { payoutAddress?: unknown } | undefined)?.payoutAddress === "string"
+      ? ((input as { payoutAddress?: string }).payoutAddress ?? "")
+      : "";
   return {
     agentName: typeof input?.agentName === "string" ? input.agentName : "",
     representedPrincipal: typeof input?.representedPrincipal === "string" ? input.representedPrincipal : "",
     headline: typeof input?.headline === "string" ? input.headline : "",
     openClawUrl: typeof input?.openClawUrl === "string" ? input.openClawUrl : "",
-    payoutAddress: typeof input?.payoutAddress === "string" ? input.payoutAddress : "",
+    payoutWallets: {
+      ...(typeof input?.payoutWallets?.zeko === "string" && input.payoutWallets.zeko.trim().length > 0
+        ? { zeko: input.payoutWallets.zeko }
+        : {}),
+      ...(typeof input?.payoutWallets?.base === "string" && input.payoutWallets.base.trim().length > 0
+        ? { base: input.payoutWallets.base }
+        : legacyPayoutAddress.trim().length > 0
+          ? { base: legacyPayoutAddress }
+          : {}),
+      ...(typeof input?.payoutWallets?.ethereum === "string" && input.payoutWallets.ethereum.trim().length > 0
+        ? { ethereum: input.payoutWallets.ethereum }
+        : {})
+    },
     preferredProvingLocation:
       input?.preferredProvingLocation === "client" || input?.preferredProvingLocation === "sovereign-rollup"
         ? input.preferredProvingLocation
@@ -566,14 +591,14 @@ export function App() {
   const paidJobsEnabled = state.paidJobsEnabled;
   const paidWorkStatusLabel = !published
     ? "Publish first"
-    : paidJobsEnabled
+    : payoutConfigured
       ? networkIsMainnet
-        ? "Paid jobs enabled"
-        : "Testnet-ready"
-      : "Needs payout wallet";
+        ? "Payout wallet on file"
+        : "Payment-ready metadata on file"
+      : "No payout wallet on file yet";
   const payoutCopy = networkIsMainnet
-    ? "Add the payout wallet that should receive real job proceeds. Registration can stay sponsor-first."
-    : "Optional on testnet. Add this now only if you want to prep the agent for a later mainnet cutover.";
+    ? "Optional, but recommended. Add any payout wallet you want on file before real payments arrive."
+    : "Optional on testnet. Add these now if you want this agent ready for future payment rails.";
   const publicAgentUrl = isRegisteredSession && state.agentId ? buildPublicAgentUrl(state.agentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl ? buildShareOnXUrl(publicAgentUrl) : null;
@@ -585,7 +610,15 @@ export function App() {
     ...(profile.representedPrincipal.trim().length > 0
       ? [`--represented-principal ${shellQuote(profile.representedPrincipal)}`]
       : []),
-    ...(profile.payoutAddress?.trim().length ? [`--payout-address ${shellQuote(profile.payoutAddress)}`] : [])
+    ...(profile.payoutWallets.zeko?.trim().length
+      ? [`--zeko-payout-address ${shellQuote(profile.payoutWallets.zeko)}`]
+      : []),
+    ...(profile.payoutWallets.base?.trim().length
+      ? [`--base-payout-address ${shellQuote(profile.payoutWallets.base)}`]
+      : []),
+    ...(profile.payoutWallets.ethereum?.trim().length
+      ? [`--ethereum-payout-address ${shellQuote(profile.payoutWallets.ethereum)}`]
+      : [])
   ].join(" ");
   const canSubmitHire =
     Boolean(sharedAgentId) &&
@@ -797,7 +830,7 @@ export function App() {
                           representedPrincipal: profile.representedPrincipal,
                           headline: profile.headline,
                           openClawUrl: profile.openClawUrl,
-                          ...(profile.payoutAddress?.trim().length ? { payoutAddress: profile.payoutAddress } : {}),
+                          ...(Object.keys(profile.payoutWallets).length > 0 ? { payoutWallets: profile.payoutWallets } : {}),
                           preferredProvingLocation: profile.preferredProvingLocation
                         })
                       );
@@ -943,33 +976,68 @@ export function App() {
             </div>
           </div>
 
-          {networkIsMainnet ? (
-            <div className="action-row action-row-form">
-              <div>
-                <strong>Payout wallet</strong>
-                <p className="panel-copy">{payoutCopy}</p>
-                <p className="panel-copy">
-                  {payoutConfigured ? `Current wallet: ${profile.payoutAddress}` : "No payout wallet configured yet."}
-                </p>
-              </div>
-              <div className="action-form-stack">
+          <div className="action-row action-row-form">
+            <div>
+              <strong>Optional payout wallets</strong>
+              <p className="panel-copy">{payoutCopy}</p>
+              <p className="panel-copy">{formatConfiguredPayoutWallets(profile.payoutWallets)}</p>
+            </div>
+            <div className="action-form-stack">
+              <div className="field-grid compact-field-grid">
                 <label className="field">
-                  <span>Payout wallet address</span>
+                  <span>Zeko address</span>
                   <input
                     className="text-input"
-                    value={profile.payoutAddress ?? ""}
+                    value={profile.payoutWallets.zeko ?? ""}
                     onChange={(event: ValueInputEvent) => {
                       setProfile({
                         ...profile,
-                        payoutAddress: event.target.value
+                        payoutWallets: {
+                          ...profile.payoutWallets,
+                          zeko: event.target.value
+                        }
                       });
                     }}
-                    placeholder="Enter the wallet that should receive paid-job proceeds"
+                    placeholder="B62..."
+                  />
+                </label>
+                <label className="field">
+                  <span>Base address</span>
+                  <input
+                    className="text-input"
+                    value={profile.payoutWallets.base ?? ""}
+                    onChange={(event: ValueInputEvent) => {
+                      setProfile({
+                        ...profile,
+                        payoutWallets: {
+                          ...profile.payoutWallets,
+                          base: event.target.value
+                        }
+                      });
+                    }}
+                    placeholder="0x..."
+                  />
+                </label>
+                <label className="field">
+                  <span>Ethereum address</span>
+                  <input
+                    className="text-input"
+                    value={profile.payoutWallets.ethereum ?? ""}
+                    onChange={(event: ValueInputEvent) => {
+                      setProfile({
+                        ...profile,
+                        payoutWallets: {
+                          ...profile.payoutWallets,
+                          ethereum: event.target.value
+                        }
+                      });
+                    }}
+                    placeholder="0x..."
                   />
                 </label>
               </div>
             </div>
-          ) : null}
+          </div>
 
           <div className="action-row share-row">
             <div>

@@ -10,7 +10,9 @@ function printUsage() {
     --headline "Private research and verifiable delivery." \\
     --openclaw-url "https://agent.example.com" \\
     [--represented-principal "Northstar Labs"] \\
-    [--payout-address "B62..."] \\
+    [--zeko-payout-address "B62..."] \\
+    [--base-payout-address "0x..."] \\
+    [--ethereum-payout-address "0x..."] \\
     [--trust-mode private] \\
     [--proving-location client] \\
     [--api-base https://api.santaclawz.ai] \\
@@ -60,7 +62,17 @@ const headline = typeof args.headline === "string" ? args.headline.trim() : "";
 const openClawUrl = typeof args["openclaw-url"] === "string" ? args["openclaw-url"].trim() : "";
 const representedPrincipal =
   typeof args["represented-principal"] === "string" ? args["represented-principal"].trim() : undefined;
-const payoutAddress = typeof args["payout-address"] === "string" ? args["payout-address"].trim() : undefined;
+const payoutWallets = {
+  ...(typeof args["zeko-payout-address"] === "string" && args["zeko-payout-address"].trim().length > 0
+    ? { zeko: args["zeko-payout-address"].trim() }
+    : {}),
+  ...(typeof args["base-payout-address"] === "string" && args["base-payout-address"].trim().length > 0
+    ? { base: args["base-payout-address"].trim() }
+    : {}),
+  ...(typeof args["ethereum-payout-address"] === "string" && args["ethereum-payout-address"].trim().length > 0
+    ? { ethereum: args["ethereum-payout-address"].trim() }
+    : {})
+};
 const trustModeId = typeof args["trust-mode"] === "string" ? args["trust-mode"].trim() : "private";
 const preferredProvingLocation =
   typeof args["proving-location"] === "string" ? args["proving-location"].trim() : undefined;
@@ -89,7 +101,7 @@ const response = await fetch(`${apiBase}/api/console/register`, {
     agentName,
     headline,
     openClawUrl,
-    ...(payoutAddress ? { payoutAddress } : {}),
+    ...(Object.keys(payoutWallets).length > 0 ? { payoutWallets } : {}),
     ...(representedPrincipal ? { representedPrincipal } : {}),
     trustModeId,
     ...(preferredProvingLocation ? { preferredProvingLocation } : {})
@@ -135,6 +147,6 @@ if (args.json) {
   console.log(`Public URL: ${result.publicAgentUrl}`);
   console.log(`Discovery URL: ${result.discoveryUrl}`);
   console.log(`Verify URL: ${result.verifyUrl}`);
-  console.log(`Payout configured: ${result.payoutAddressConfigured ? "yes" : "no"}`);
+  console.log(`Payout wallets configured: ${result.payoutAddressConfigured ? "yes" : "no"}`);
   console.log(`Paid jobs enabled: ${result.paidJobsEnabled ? "yes" : "no"}`);
 }
