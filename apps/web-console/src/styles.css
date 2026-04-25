@@ -3,18 +3,18 @@
 :root {
   --bg-top: #0a1521;
   --bg-bottom: #f4efe6;
-  --panel: rgba(255, 252, 247, 0.9);
-  --panel-strong: rgba(255, 248, 241, 0.96);
+  --panel: rgba(255, 252, 247, 0.78);
+  --panel-strong: rgba(255, 248, 241, 0.84);
   --ink: #122336;
   --muted: #627383;
   --line: rgba(18, 35, 54, 0.1);
-  --accent: #d44227;
-  --accent-bright: #f06e49;
+  --accent: #b92d22;
+  --accent-bright: #b92d22;
   --teal: #59d2c6;
   --teal-ink: #0f7467;
   --gold: #f2c168;
   --white: #fffaf3;
-  --warning: #c86a2f;
+  --warning: #b92d22;
   --danger: #b54832;
   --success: #167158;
   --shadow: 0 28px 90px rgba(8, 17, 31, 0.16);
@@ -289,13 +289,13 @@ pre,
   padding: 18px;
   border: 1px solid var(--line);
   border-radius: 22px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.82), rgba(246, 250, 253, 0.92));
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.68), rgba(246, 250, 253, 0.78));
 }
 
 .explore-card-featured {
   grid-column: 1 / -1;
-  border-color: rgba(212, 66, 39, 0.16);
-  background: linear-gradient(180deg, rgba(255, 248, 241, 0.96), rgba(246, 250, 253, 0.98));
+  border-color: rgba(185, 45, 34, 0.18);
+  background: linear-gradient(180deg, rgba(255, 248, 241, 0.78), rgba(246, 250, 253, 0.84));
 }
 
 .explore-card-head {
@@ -358,7 +358,7 @@ pre,
   padding: 16px 18px;
   border: 1px solid var(--line);
   border-radius: 20px;
-  background: rgba(246, 250, 253, 0.9);
+  background: rgba(246, 250, 253, 0.72);
 }
 
 .action-row-form {
@@ -996,7 +996,7 @@ h3 {
   padding: 14px 16px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(245, 249, 253, 0.72);
+  background: rgba(245, 249, 253, 0.58);
 }
 
 .advanced-panel summary {
@@ -1017,7 +1017,7 @@ h3 {
   padding: 14px;
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: rgba(245, 249, 253, 0.86);
+  background: rgba(245, 249, 253, 0.68);
 }
 
 .endpoint-value {
@@ -1072,7 +1072,7 @@ h3 {
 .primary-button {
   background: linear-gradient(135deg, var(--accent), var(--accent-bright));
   color: white;
-  box-shadow: 0 14px 30px rgba(212, 66, 39, 0.26);
+  box-shadow: 0 14px 30px rgba(185, 45, 34, 0.26);
 }
 
 .secondary-button,
@@ -1124,8 +1124,8 @@ button:disabled {
 }
 
 .queue-status-queued {
-  background: rgba(242, 193, 104, 0.22);
-  color: #8d5d09;
+  background: rgba(185, 45, 34, 0.14);
+  color: var(--accent);
 }
 
 .queue-status-running {
