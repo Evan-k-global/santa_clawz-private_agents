@@ -361,6 +361,10 @@ pre,
   background: rgba(246, 250, 253, 0.9);
 }
 
+.action-row-form {
+  align-items: start;
+}
+
 .action-row strong {
   display: block;
   margin-bottom: 4px;
@@ -380,6 +384,17 @@ pre,
   align-items: center;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.action-form-stack {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 420px);
+  min-width: min(100%, 360px);
+}
+
+.hire-form-stack {
+  width: min(100%, 520px);
 }
 
 .compact-queue-list,
@@ -659,6 +674,12 @@ h3 {
   border-color: rgba(255, 255, 255, 0.18);
   background: rgba(8, 18, 30, 0.42);
   color: rgba(255, 248, 239, 0.92);
+}
+
+.status-banner-success {
+  border-color: rgba(22, 113, 88, 0.18);
+  background: rgba(22, 113, 88, 0.1);
+  color: var(--success);
 }
 
 .api-value {
@@ -970,6 +991,28 @@ h3 {
   margin-top: 18px;
 }
 
+.advanced-panel {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(245, 249, 253, 0.72);
+}
+
+.advanced-panel summary {
+  cursor: pointer;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.advanced-panel[open] summary {
+  margin-bottom: 12px;
+}
+
+.advanced-actions {
+  margin-top: 12px;
+}
+
 .endpoint-item {
   padding: 14px;
   border: 1px solid var(--line);
@@ -1249,6 +1292,12 @@ button:disabled {
 
   .action-side {
     width: 100%;
+  }
+
+  .action-form-stack,
+  .hire-form-stack {
+    width: 100%;
+    min-width: 0;
   }
 
   .action-side button,

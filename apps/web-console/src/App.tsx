@@ -1,56 +1,44 @@
 import { useEffect, useState } from "react";
 
-import type { ConsoleStateResponse, PrivacyProvingLocation, SponsorQueueJob, TrustModeCard } from "@clawz/protocol";
+import type {
+  AgentProfileState,
+  AgentRegistryEntry,
+  ConsoleStateResponse,
+  HireRequestReceipt,
+  PrivacyProvingLocation,
+  SponsorQueueJob,
+  TrustModeCard
+} from "@clawz/protocol";
 
 import {
   approvePrivacyException,
+  fetchAgentRegistry,
   fetchConsoleState,
   getApiBase,
   getZekoFaucetConfig,
   prepareRecoveryKit,
+  registerAgent,
   runLiveSessionTurnFlow,
   sponsorWallet,
+  submitHireRequest,
+  updateAgentProfile,
   updateTrustMode
 } from "./api.js";
 
-interface AgentProfileDraft {
-  agentName: string;
-  representedPrincipal: string;
-  headline: string;
-  openClawUrl: string;
-  hireStatus: "open" | "invite-only";
-  preferredProvingLocation: PrivacyProvingLocation;
-}
+type AgentProfileDraft = AgentProfileState;
+type HireDraft = {
+  taskPrompt: string;
+  budgetMina: string;
+  requesterContact: string;
+};
 
 type ValueInputEvent = { target: { value: string } };
 
-const FEATURED_AGENTS = [
-  {
-    name: "Northstar Research",
-    status: "Open for jobs",
-    blurb: "Private research, synthesis, and document review with proof-backed delivery.",
-    proving: "Client",
-    trust: "Verified"
-  },
-  {
-    name: "Signal Ops",
-    status: "Invite only",
-    blurb: "Governed workflows and approvals for teams that need operator-blind execution.",
-    proving: "Server",
-    trust: "Team-governed"
-  },
-  {
-    name: "Ledger Harbor",
-    status: "Enterprise",
-    blurb: "Sensitive finance and compliance work routed through sovereign privacy rails.",
-    proving: "Sovereign rollup",
-    trust: "Private"
-  }
-] as const;
-
 const MASTHEAD_COPY =
-  "SantaClawz enables OpenClaw agents to operate autonomously in the real world on private, verifiable coordination rails, and delivers your agent data packages without revealing their contents.";
+  "SantaClawz enables OpenClaw agents to operate autonomously in the real world on private, verifiable coordination rails, delivering your agent data packages without revealing their contents.";
 const MASTHEAD_STEPS = "1) Connect agent, 2) Choose privacy, 3) Deploy, 4) Share";
+const EXPLORE_COPY = "Explore OpenClaw agents for hire with private execution and verifiable results.";
+const EXPLORE_STEPS = "1) Explore, 2) Verify, 3) Hire";
 
 type NavSectionKey = "register" | "explore";
 
@@ -97,11 +85,8 @@ function formatProofLevel(mode: TrustModeCard) {
   return "Signed receipts";
 }
 
-function formatProvingLocation(location: PrivacyProvingLocation) {
-  if (location === "sovereign-rollup") {
-    return "Sovereign rollup";
-  }
-  return `${location.charAt(0).toUpperCase()}${location.slice(1)}`;
+function formatConnectedNetworkLabel(networkId = "testnet") {
+  return `connected: zeko_${networkId}`;
 }
 
 function formatQueueStatus(status: SponsorQueueJob["status"] | ConsoleStateResponse["sponsorQueue"]["status"]) {
@@ -120,39 +105,6 @@ function formatQueueStatus(status: SponsorQueueJob["status"] | ConsoleStateRespo
   return "Idle";
 }
 
-function buildProfileSeed(state: ConsoleStateResponse): AgentProfileDraft {
-  const currentMode = activeModeFor(state);
-  return {
-    agentName: "SantaClawz Operator",
-    representedPrincipal: "Existing OpenClaw operator",
-    headline: "Private, verifiable agent work on Zeko.",
-    openClawUrl: "",
-    hireStatus: "open",
-    preferredProvingLocation: currentMode.defaultProvingLocation
-  };
-}
-
-function profileStorageKey(sessionId: string) {
-  return `santaclawz-profile:${sessionId}`;
-}
-
-function readStoredProfile(sessionId: string) {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = window.localStorage.getItem(profileStorageKey(sessionId));
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    return JSON.parse(raw) as Partial<AgentProfileDraft>;
-  } catch {
-    return null;
-  }
-}
-
 function buildEndpointRows(apiBase: string, sessionId: string) {
   const query = new URLSearchParams({
     sessionId
@@ -161,7 +113,7 @@ function buildEndpointRows(apiBase: string, sessionId: string) {
   return [
     {
       id: "discovery",
-      label: "Discovery URL",
+      label: "Auto Agent Discovery URL",
       value: `${apiBase}/.well-known/agent-interop.json?${query}`
     },
     {
@@ -195,19 +147,6 @@ function slugify(value: string) {
   return normalized.length > 0 ? normalized : "agent";
 }
 
-function buildAgentShareId(agentName: string, sessionId: string) {
-  return `${slugify(agentName)}--${sessionId}`;
-}
-
-function sessionIdFromAgentShareId(agentId: string) {
-  const separatorIndex = agentId.lastIndexOf("--");
-  if (separatorIndex === -1) {
-    return null;
-  }
-  const sessionId = agentId.slice(separatorIndex + 2);
-  return sessionId.length > 0 ? sessionId : null;
-}
-
 function parseRouteState(pathname: string, hash: string): AppRouteState {
   const normalizedPath = pathname.replace(/\/+$/, "") || "/";
   if (normalizedPath === "/explore") {
@@ -222,7 +161,7 @@ function parseRouteState(pathname: string, hash: string): AppRouteState {
     return {
       agentId,
       section: "explore",
-      sessionId: sessionIdFromAgentShareId(agentId)
+      sessionId: null
     };
   }
   return {
@@ -248,6 +187,10 @@ function buildShareOnXUrl(callbackUrl: string) {
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
 }
 
+function shellQuote(value: string) {
+  return "'" + value.replace(/'/g, "'\\''") + "'";
+}
+
 async function copyText(value: string) {
   if (typeof navigator === "undefined" || !navigator.clipboard?.writeText) {
     throw new Error("Clipboard access is unavailable in this browser.");
@@ -258,6 +201,29 @@ async function copyText(value: string) {
 function hasPositiveMina(value?: string) {
   const parsed = Number.parseFloat(value ?? "0");
   return Number.isFinite(parsed) && parsed > 0;
+}
+
+function isMainnetDeployment(deployment: ConsoleStateResponse["deployment"]) {
+  const networkId = deployment.networkId.toLowerCase();
+  if (deployment.mode === "local-runtime" || deployment.mode === "planned-testnet" || deployment.mode === "testnet-live") {
+    return false;
+  }
+  return networkId.includes("mainnet") && !networkId.includes("testnet");
+}
+
+function isMainnetNetworkId(networkId: string) {
+  const normalized = networkId.toLowerCase();
+  return normalized.includes("mainnet") && !normalized.includes("testnet");
+}
+
+function formatRegistryHireStatus(agent: AgentRegistryEntry) {
+  if (!agent.published) {
+    return "Publish first";
+  }
+  if (agent.paidJobsEnabled) {
+    return isMainnetNetworkId(agent.networkId) ? "Paid jobs enabled" : "Testnet-ready";
+  }
+  return "Needs payout wallet";
 }
 
 export function App() {
@@ -279,17 +245,24 @@ export function App() {
     representedPrincipal: "",
     headline: "",
     openClawUrl: "",
-    hireStatus: "open",
+    payoutAddress: "",
     preferredProvingLocation: "client"
   });
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+  const [registry, setRegistry] = useState<AgentRegistryEntry[]>([]);
+  const [hireDraft, setHireDraft] = useState<HireDraft>({
+    taskPrompt: "",
+    budgetMina: "",
+    requesterContact: ""
+  });
+  const [hireReceipt, setHireReceipt] = useState<HireRequestReceipt | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
-    void fetchConsoleState(selectedSessionId ?? undefined)
+    void fetchConsoleState(selectedSessionId ?? undefined, selectedSessionId ? undefined : sharedAgentId ?? undefined)
       .then((nextState) => {
         if (cancelled) {
           return;
@@ -311,7 +284,7 @@ export function App() {
     return () => {
       cancelled = true;
     };
-  }, [selectedSessionId]);
+  }, [selectedSessionId, sharedAgentId]);
 
   useEffect(() => {
     if (!state) {
@@ -330,7 +303,7 @@ export function App() {
 
     let cancelled = false;
     const intervalId = window.setInterval(() => {
-      void fetchConsoleState(selectedSessionId ?? undefined)
+      void fetchConsoleState(selectedSessionId ?? undefined, selectedSessionId ? undefined : sharedAgentId ?? undefined)
         .then((nextState) => {
           if (!cancelled) {
             setState(nextState);
@@ -355,29 +328,79 @@ export function App() {
     }
 
     if (profileSessionId !== state.session.sessionId) {
-      const seed = buildProfileSeed(state);
-      const stored = readStoredProfile(state.session.sessionId);
-      setProfile(stored ? { ...seed, ...stored } : seed);
+      setProfile(state.profile);
       setProfileSessionId(state.session.sessionId);
       return;
     }
 
     const currentMode = activeModeFor(state);
-    if (!currentMode.supportedProvingLocations.includes(profile.preferredProvingLocation)) {
+    const allowedLocations: PrivacyProvingLocation[] = currentMode.supportedProvingLocations.filter(
+      (location): location is PrivacyProvingLocation => location !== "server"
+    );
+    if (!allowedLocations.includes(profile.preferredProvingLocation)) {
       setProfile({
         ...profile,
-        preferredProvingLocation: currentMode.defaultProvingLocation
+        preferredProvingLocation: allowedLocations[0] ?? "client"
       });
     }
   }, [profile.preferredProvingLocation, profileSessionId, state]);
 
   useEffect(() => {
-    if (!profileSessionId || typeof window === "undefined") {
+    const isRegisteredSession = state?.session.sessionId.startsWith("session_agent_") ?? false;
+    if (!state || !isRegisteredSession || !profileSessionId || profileSessionId !== state.session.sessionId) {
       return;
     }
 
-    window.localStorage.setItem(profileStorageKey(profileSessionId), JSON.stringify(profile));
-  }, [profile, profileSessionId]);
+    if (JSON.stringify(state.profile) === JSON.stringify(profile)) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      void updateAgentProfile(profile, profileSessionId)
+        .then((nextState) => {
+          setState(nextState);
+        })
+        .catch((nextError: Error) => {
+          setError(nextError.message);
+        });
+    }, 350);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+    };
+  }, [profile, profileSessionId, state]);
+
+  useEffect(() => {
+    if (activeSection !== "explore") {
+      return;
+    }
+
+    let cancelled = false;
+    void fetchAgentRegistry()
+      .then((nextRegistry) => {
+        if (!cancelled) {
+          setRegistry(nextRegistry);
+        }
+      })
+      .catch((nextError: Error) => {
+        if (!cancelled) {
+          setError(nextError.message);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, state?.session.sessionId]);
+
+  useEffect(() => {
+    setHireReceipt(null);
+    setHireDraft({
+      taskPrompt: "",
+      budgetMina: "",
+      requesterContact: ""
+    });
+  }, [sharedAgentId, state?.agentId]);
 
   useEffect(() => {
     if (typeof window === "undefined") {
@@ -390,6 +413,8 @@ export function App() {
       setSharedAgentId(nextRoute.agentId);
       if (nextRoute.sessionId) {
         setSelectedSessionId(nextRoute.sessionId);
+      } else if (nextRoute.agentId) {
+        setSelectedSessionId(null);
       }
     };
 
@@ -437,12 +462,22 @@ export function App() {
     }
   }
 
+  function showAgentProfile(agentId: string) {
+    setSharedAgentId(agentId);
+    setSelectedSessionId(null);
+    setActiveSection("explore");
+    if (typeof window !== "undefined") {
+      window.history.pushState(null, "", buildSectionPath("explore", agentId));
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }
+
   async function retryInitialLoad() {
     setPendingAction("retry-bootstrap");
     setError(null);
 
     try {
-      const nextState = await fetchConsoleState(selectedSessionId ?? undefined);
+      const nextState = await fetchConsoleState(selectedSessionId ?? undefined, selectedSessionId ? undefined : sharedAgentId ?? undefined);
       setState(nextState);
       setSelectedSessionId(nextState.session.sessionId);
     } catch (nextError) {
@@ -455,6 +490,8 @@ export function App() {
   const apiBase = getApiBase();
   const isExploreView = activeSection === "explore";
   const mastheadTitle = isExploreView ? "Explore verified agents" : "Register your OpenClaw agent";
+  const mastheadCopy = isExploreView ? EXPLORE_COPY : MASTHEAD_COPY;
+  const mastheadSteps = isExploreView ? EXPLORE_STEPS : MASTHEAD_STEPS;
 
   if (!state) {
     return (
@@ -495,12 +532,12 @@ export function App() {
             <div className="masthead-content">
               <div className="masthead-copy">
                 <h1>{mastheadTitle}</h1>
-                <p className="masthead-copyline">{MASTHEAD_COPY}</p>
+                <p className="masthead-copyline">{mastheadCopy}</p>
               </div>
 
               <div className="masthead-footer">
-                <p className="eyebrow">{MASTHEAD_STEPS}</p>
-                <span className="subtle-pill">testnet</span>
+                <p className="eyebrow">{mastheadSteps}</p>
+                <span className="subtle-pill">{formatConnectedNetworkLabel()}</span>
               </div>
             </div>
           </div>
@@ -579,19 +616,13 @@ export function App() {
             </div>
 
             <div className="explore-grid">
-              {FEATURED_AGENTS.map((agent) => (
-                <article key={agent.name} className="explore-card">
-                  <div className="explore-card-head">
-                    <strong>{agent.name}</strong>
-                    <span className="subtle-pill">{agent.status}</span>
-                  </div>
-                  <p className="panel-copy">{agent.blurb}</p>
-                  <div className="inline-summary">
-                    <span className="subtle-pill">{agent.trust}</span>
-                    <span className="subtle-pill">{agent.proving}</span>
-                  </div>
-                </article>
-              ))}
+              <article className="explore-card explore-card-featured">
+                <div className="explore-card-head">
+                  <strong>Directory loading</strong>
+                  <span className="subtle-pill">Waiting</span>
+                </div>
+                <p className="panel-copy">SantaClawz needs the onboarding API before it can show registered agents here.</p>
+              </article>
             </div>
           </section>
         )}
@@ -619,13 +650,52 @@ export function App() {
   const published = Boolean(activeTurn?.turnId) || state.liveFlow.status === "succeeded";
   const connectReady =
     profile.agentName.trim().length > 0 && profile.openClawUrl.trim().length > 0 && profile.headline.trim().length > 0;
+  const isRegisteredSession = state.session.sessionId.startsWith("session_agent_");
+  const canPublish = connectReady && hasSponsoredBalance && recoveryReady;
   const activationStatus = autoRefreshActive ? "Working" : published ? "Done" : hasSponsoredBalance && recoveryReady ? "Ready" : "Needed";
   const publishStatusLabel = liveFlowBusy ? formatQueueStatus(state.liveFlow.status) : published ? "Live" : "Not live";
-  const agentShareId = buildAgentShareId(profile.agentName, sessionId);
-  const publicAgentUrl = buildPublicAgentUrl(agentShareId);
-  const routedPublicAgentUrl = buildPublicAgentUrl(sharedAgentId ?? agentShareId);
+  const networkIsMainnet = isMainnetDeployment(state.deployment);
+  const payoutConfigured = state.payoutAddressConfigured;
+  const paidJobsEnabled = state.paidJobsEnabled;
+  const networkStatusCopy = networkIsMainnet
+    ? "Mainnet mode: registration can still be sponsored, but add a payout wallet before this agent can accept paid jobs."
+    : "Testnet mode: SantaClawz can sponsor registration and publish without requiring a payout wallet.";
+  const paidWorkStatusLabel = !published
+    ? "Publish first"
+    : paidJobsEnabled
+      ? networkIsMainnet
+        ? "Paid jobs enabled"
+        : "Testnet-ready"
+      : "Needs payout wallet";
+  const payoutCopy = networkIsMainnet
+    ? "Add the payout wallet that should receive real job proceeds. Registration can stay sponsor-first."
+    : "Optional on testnet. Add this now only if you want to prep the agent for a later mainnet cutover.";
+  const publicAgentUrl = buildPublicAgentUrl(state.agentId);
+  const routedPublicAgentUrl = buildPublicAgentUrl(sharedAgentId ?? state.agentId);
   const shareOnXUrl = buildShareOnXUrl(publicAgentUrl);
-  const sharedAgentStatus = profile.hireStatus === "open" ? "Open for jobs" : "Invite only";
+  const cliRegisterCommand = [
+    "pnpm register:agent --",
+    `--agent-name ${shellQuote(profile.agentName || "SantaClawz Operator")}`,
+    `--headline ${shellQuote(profile.headline || "Private research and verifiable delivery.")}`,
+    `--openclaw-url ${shellQuote(profile.openClawUrl || "https://your-openclaw-agent.example.com")}`,
+    ...(profile.representedPrincipal.trim().length > 0
+      ? [`--represented-principal ${shellQuote(profile.representedPrincipal)}`]
+      : []),
+    ...(profile.payoutAddress?.trim().length ? [`--payout-address ${shellQuote(profile.payoutAddress)}`] : []),
+    `--trust-mode ${currentMode.id}`
+  ].join(" ");
+  const canSubmitHire =
+    Boolean(sharedAgentId) &&
+    published &&
+    profile.openClawUrl.trim().length > 0 &&
+    (!networkIsMainnet || paidJobsEnabled) &&
+    hireDraft.taskPrompt.trim().length > 0 &&
+    hireDraft.requesterContact.trim().length > 0;
+  const hireStatusCopy = !published
+    ? "This agent still needs to publish on Zeko before it can accept work."
+    : networkIsMainnet && !paidJobsEnabled
+      ? "This mainnet agent still needs a payout wallet before it can accept paid jobs."
+      : `Hire requests route to ${profile.openClawUrl}.`;
   return (
     <main id="top" className="app-shell onboarding-shell">
       <header className="site-header">
@@ -664,18 +734,19 @@ export function App() {
           <div className="masthead-content">
               <div className="masthead-copy">
                 <h1>{mastheadTitle}</h1>
-                <p className="masthead-copyline">{MASTHEAD_COPY}</p>
+                <p className="masthead-copyline">{mastheadCopy}</p>
               </div>
 
               <div className="masthead-footer">
-                <p className="eyebrow">{MASTHEAD_STEPS}</p>
-                <span className="subtle-pill">{state.deployment.networkId}</span>
+                <p className="eyebrow">{mastheadSteps}</p>
+                <span className="subtle-pill">{formatConnectedNetworkLabel(state.deployment.networkId)}</span>
               </div>
             </div>
         </div>
       </section>
 
       {error ? <p className="status-banner">{error}</p> : null}
+      <p className="status-banner status-banner-neutral">{networkStatusCopy}</p>
 
       {activeSection === "register" ? (
         <section id="register" className="step-stack">
@@ -691,16 +762,49 @@ export function App() {
             <span className="subtle-pill">{connectReady ? "Ready" : "Needs input"}</span>
           </div>
 
-          <div className="command-strip">
-            <code>pnpm add openclaw @clawz/openclaw-adapter</code>
+	          <div className="command-strip">
+	            <code>pnpm add openclaw @clawz/openclaw-adapter</code>
             <button
               className="copy-button"
               onClick={() => {
                 void copyValue("install-command", "pnpm add openclaw @clawz/openclaw-adapter");
               }}
             >
-              {copiedKey === "install-command" ? "Copied" : "Copy"}
-            </button>
+	              {copiedKey === "install-command" ? "Copied" : "Copy"}
+	            </button>
+	          </div>
+
+          <div className="action-row">
+            <div>
+                <strong>Register this agent</strong>
+                <p className="panel-copy">
+                  {isRegisteredSession
+                    ? `Registered to ${state.agentId}`
+                    : "Create a real SantaClawz registration record before deploy and sharing."}
+              </p>
+            </div>
+            <div className="action-side">
+              <span className="subtle-pill">{isRegisteredSession ? "Registered" : "Required"}</span>
+              <button
+                className="secondary-button"
+                disabled={pendingAction === "register-agent" || !connectReady || isRegisteredSession}
+                onClick={() => {
+                  void runAction("register-agent", () =>
+                    registerAgent({
+                      agentName: profile.agentName,
+                      representedPrincipal: profile.representedPrincipal,
+                      headline: profile.headline,
+                      openClawUrl: profile.openClawUrl,
+                      ...(profile.payoutAddress?.trim().length ? { payoutAddress: profile.payoutAddress } : {}),
+                      trustModeId: currentMode.id,
+                      preferredProvingLocation: profile.preferredProvingLocation
+                    })
+                  );
+                }}
+              >
+                {pendingAction === "register-agent" ? "Registering..." : isRegisteredSession ? "Registered" : "Register agent"}
+              </button>
+            </div>
           </div>
 
           {sessionIds.length > 1 ? (
@@ -784,23 +888,23 @@ export function App() {
               />
             </label>
 
-            <label className="field">
-              <span>Availability</span>
-              <select
-                className="select-input"
-                value={profile.hireStatus}
-                onChange={(event: ValueInputEvent) => {
-                  setProfile({
-                    ...profile,
-                    hireStatus: event.target.value as AgentProfileDraft["hireStatus"]
-                  });
+          </div>
+
+          <details className="advanced-panel">
+            <summary>Prefer CLI registration?</summary>
+            <p className="panel-copy">Most operators will onboard through the CLI. This command mirrors the current registration inputs.</p>
+            <div className="command-strip">
+              <code>{cliRegisterCommand}</code>
+              <button
+                className="copy-button"
+                onClick={() => {
+                  void copyValue("cli-register-command", cliRegisterCommand);
                 }}
               >
-                <option value="open">Open for jobs</option>
-                <option value="invite-only">Invite only</option>
-              </select>
-            </label>
-          </div>
+                {copiedKey === "cli-register-command" ? "Copied" : "Copy"}
+              </button>
+            </div>
+          </details>
           </section>
 
           <section className="panel step-card">
@@ -809,7 +913,7 @@ export function App() {
               <span className="step-number">2</span>
               <div>
                 <h2>Choose privacy</h2>
-                <p className="panel-copy">Pick the trust mode and where proving happens.</p>
+                <p className="panel-copy">Pick the privacy posture SantaClawz should advertise and the sponsor policy it should use.</p>
               </div>
             </div>
             <span className="subtle-pill">{formatProofLevel(currentMode)}</span>
@@ -830,40 +934,15 @@ export function App() {
                     aria-checked={mode.id === currentMode.id}
                   >
                     <strong>{mode.label}</strong>
-                    <span>{mode.maxSpendMina} MINA max</span>
+                    <span>Treasury cap {mode.maxSpendMina} MINA</span>
                   </button>
                 ))}
               </div>
             </div>
-
-            <div>
-              <span className="metric">Proving location</span>
-              <div className="choice-row" role="radiogroup" aria-label="Preferred proving location">
-                {currentMode.supportedProvingLocations.map((location) => (
-                  <button
-                    key={location}
-                    className={location === profile.preferredProvingLocation ? "choice-chip active" : "choice-chip"}
-                    onClick={() => {
-                      setProfile({
-                        ...profile,
-                        preferredProvingLocation: location
-                      });
-                    }}
-                    role="radio"
-                    aria-checked={location === profile.preferredProvingLocation}
-                  >
-                    <strong>{formatProvingLocation(location)}</strong>
-                    <span>
-                      {location === "client"
-                        ? "User-owned data"
-                        : location === "server"
-                          ? "App-owned data"
-                          : "Enterprise private rollup"}
-                    </span>
-                  </button>
-                ))}
-              </div>
-            </div>
+            <p className="panel-copy">
+              Treasury caps are SantaClawz sponsor limits for registration and publish work. They are not a requirement for you to
+              preload MINA just to get this agent live.
+            </p>
           </div>
           </section>
 
@@ -873,7 +952,11 @@ export function App() {
               <span className="step-number">3</span>
               <div>
                 <h2>Deploy</h2>
-                <p className="panel-copy">Use sponsor first. If needed, self-fund with the faucet.</p>
+                <p className="panel-copy">
+                  {networkIsMainnet
+                    ? "Use sponsor-first activation, then publish the agent on Zeko. Paid jobs come later once a payout wallet is set."
+                    : "Use sponsor-first activation and publish on Zeko without needing a wallet up front."}
+                </p>
               </div>
             </div>
             <span className="subtle-pill">{activationStatus}</span>
@@ -882,8 +965,10 @@ export function App() {
           <div className="action-list">
             <div className="action-row">
               <div>
-                <strong>Fund automatically</strong>
-                <p className="panel-copy">Fast path. Current sponsored balance: {formatMina(state.wallet.sponsoredRemainingMina)}</p>
+                <strong>Sponsor activation</strong>
+                <p className="panel-copy">
+                  Fast path. Current sponsored balance: {formatMina(state.wallet.sponsoredRemainingMina)}
+                </p>
               </div>
               <div className="action-side">
                 <span className="subtle-pill">
@@ -897,31 +982,6 @@ export function App() {
                   }}
                 >
                   {pendingAction === "sponsor-wallet" ? "Queueing..." : "Use sponsor queue"}
-                </button>
-              </div>
-            </div>
-
-            <div className="action-row">
-              <div>
-                <strong>Manual fallback</strong>
-                <p className="panel-copy">
-                  {sponsorQueueFailed
-                    ? "Sponsor queue failed. Fund the wallet manually with the Zeko faucet."
-                    : "If you prefer self-funding, use the Zeko faucet and continue here."}
-                </p>
-              </div>
-              <div className="action-side">
-                <span className="subtle-pill">{sponsorQueueFailed ? "Recommended" : "Fallback"}</span>
-                <a className="secondary-button" href={faucetConfig.uiUrl} target="_blank" rel="noreferrer">
-                  Open faucet
-                </a>
-                <button
-                  className="secondary-button"
-                  onClick={() => {
-                    void copyValue("wallet-public-key", state.wallet.publicKey);
-                  }}
-                >
-                  {copiedKey === "wallet-public-key" ? "Wallet copied" : "Copy wallet"}
                 </button>
               </div>
             </div>
@@ -951,14 +1011,20 @@ export function App() {
                 <p className="panel-copy">
                   {published
                     ? `Live turn ${shorten(activeTurn?.turnId ?? state.liveFlow.turnId, 12, 10)}`
-                    : "No live turn yet."}
+                    : canPublish
+                      ? "No live turn yet."
+                      : !connectReady
+                        ? "Complete the agent profile first."
+                        : !hasSponsoredBalance
+                          ? "Fund the shadow wallet before publishing."
+                          : "Seal the recovery kit before publishing."}
                 </p>
               </div>
               <div className="action-side">
                 <span className="subtle-pill">{publishStatusLabel}</span>
                 <button
                   className="primary-button"
-                  disabled={pendingAction === "publish-turn" || state.liveFlow.status === "running"}
+                  disabled={pendingAction === "publish-turn" || state.liveFlow.status === "running" || !canPublish}
                   onClick={() => {
                     void runAction("publish-turn", () =>
                       launchTarget
@@ -979,6 +1045,22 @@ export function App() {
               </div>
             </div>
           </div>
+
+          {!networkIsMainnet ? (
+            <details className="advanced-panel">
+              <summary>Advanced funding options</summary>
+              <p className="panel-copy">
+                Sponsor queue is the supported default. Self-custodied wallet funding is not fully wired into SantaClawz yet, so
+                the fallback path stays manual for now.
+              </p>
+              <div className="action-side advanced-actions">
+                <span className="subtle-pill">{sponsorQueueFailed ? "Queue failed" : "Optional"}</span>
+                <a className="secondary-button" href={faucetConfig.uiUrl} target="_blank" rel="noreferrer">
+                  Open Zeko faucet
+                </a>
+              </div>
+            </details>
+          ) : null}
 
           {state.sponsorQueue.items.length > 0 ? (
             <div className="queue-list compact-queue-list">
@@ -1038,17 +1120,50 @@ export function App() {
               <span className="step-number">4</span>
               <div>
                 <h2>Share</h2>
-                <p className="panel-copy">Share your public callback URL and live endpoints after deploy.</p>
+                <p className="panel-copy">Share the public profile, then turn on paid work when you are ready.</p>
               </div>
             </div>
             <span className="subtle-pill">{published ? "Ready to share" : "Waiting on publish"}</span>
           </div>
 
           <div className="inline-summary">
-            <span className="subtle-pill">Wallet {shorten(state.wallet.publicKey, 12, 10)}</span>
+            <span className="subtle-pill">{formatConnectedNetworkLabel(state.deployment.networkId)}</span>
+            <span className="subtle-pill">{published ? "Published" : "Registered"}</span>
+            <span className="subtle-pill">{paidWorkStatusLabel}</span>
             <span className="subtle-pill">{currentMode.label}</span>
             <span className="subtle-pill">{formatProofLevel(currentMode)}</span>
             <span className="subtle-pill">{formatTimestamp(state.liveFlow.lastFinishedAtIso ?? state.deployment.generatedAtIso)}</span>
+          </div>
+
+          <div className="action-row action-row-form">
+            <div>
+              <strong>Payout wallet</strong>
+              <p className="panel-copy">{payoutCopy}</p>
+              <p className="panel-copy">
+                {payoutConfigured ? `Current wallet: ${profile.payoutAddress}` : "No payout wallet configured yet."}
+              </p>
+            </div>
+            <div className="action-form-stack">
+              <label className="field">
+                <span>Payout wallet address</span>
+                <input
+                  className="text-input"
+                  value={profile.payoutAddress ?? ""}
+                  onChange={(event: ValueInputEvent) => {
+                    setProfile({
+                      ...profile,
+                      payoutAddress: event.target.value
+                    });
+                  }}
+                  placeholder={networkIsMainnet ? "Enter the wallet that should receive paid-job proceeds" : "Optional on testnet"}
+                />
+              </label>
+              <div className="action-side">
+                <span className="subtle-pill">
+                  {payoutConfigured ? "Configured" : networkIsMainnet ? "Required for paid jobs" : "Optional"}
+                </span>
+              </div>
+            </div>
           </div>
 
           <div className="action-row share-row">
@@ -1071,52 +1186,41 @@ export function App() {
             </div>
           </div>
 
-          <div className="endpoint-list compact-endpoint-list">
-            <article className="endpoint-item">
-              <div className="endpoint-head">
-                <span className="endpoint-label">Public agent URL</span>
-                <button
-                  className="mini-button"
-                  onClick={() => {
-                    void copyValue("public-agent-url-endpoint", publicAgentUrl);
-                  }}
-                >
-                  {copiedKey === "public-agent-url-endpoint" ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <div className="endpoint-value">{publicAgentUrl}</div>
-            </article>
-            <article className="endpoint-item">
-              <div className="endpoint-head">
-                <span className="endpoint-label">Faucet claim API</span>
-                <button
-                  className="mini-button"
-                  onClick={() => {
-                    void copyValue("faucet-claim-api", faucetConfig.claimApiUrl);
-                  }}
-                >
-                  {copiedKey === "faucet-claim-api" ? "Copied" : "Copy"}
-                </button>
-              </div>
-              <div className="endpoint-value">{faucetConfig.claimApiUrl}</div>
-            </article>
-            {endpointRows.map((row) => (
-              <article key={row.id} className="endpoint-item">
+          <details className="advanced-panel">
+            <summary>Advanced endpoints</summary>
+            <div className="endpoint-list compact-endpoint-list">
+              <article className="endpoint-item">
                 <div className="endpoint-head">
-                  <span className="endpoint-label">{row.label}</span>
+                  <span className="endpoint-label">Faucet claim API</span>
                   <button
                     className="mini-button"
                     onClick={() => {
-                      void copyValue(row.id, row.value);
+                      void copyValue("faucet-claim-api", faucetConfig.claimApiUrl);
                     }}
                   >
-                    {copiedKey === row.id ? "Copied" : "Copy"}
+                    {copiedKey === "faucet-claim-api" ? "Copied" : "Copy"}
                   </button>
                 </div>
-                <div className="endpoint-value">{row.value}</div>
+                <div className="endpoint-value">{faucetConfig.claimApiUrl}</div>
               </article>
-            ))}
-          </div>
+              {endpointRows.map((row) => (
+                <article key={row.id} className="endpoint-item">
+                  <div className="endpoint-head">
+                    <span className="endpoint-label">{row.label}</span>
+                    <button
+                      className="mini-button"
+                      onClick={() => {
+                        void copyValue(row.id, row.value);
+                      }}
+                    >
+                      {copiedKey === row.id ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                  <div className="endpoint-value">{row.value}</div>
+                </article>
+              ))}
+            </div>
+          </details>
           </section>
         </section>
       ) : (
@@ -1124,55 +1228,176 @@ export function App() {
           <div className="section-head">
             <div>
               <p className="eyebrow">Explore</p>
-              <h2>Browse other agents</h2>
+                <h2>Browse other agents</h2>
             </div>
-            <span className="subtle-pill">Directory preview</span>
+            <span className="subtle-pill">{sharedAgentId ? "Shared profile" : `${registry.length} listed`}</span>
           </div>
 
           <div className="explore-grid">
             {sharedAgentId ? (
-              <article className="explore-card explore-card-featured">
-                <div className="explore-card-head">
-                  <strong>{profile.agentName}</strong>
-                  <span className="subtle-pill">{sharedAgentStatus}</span>
-                </div>
+                <article className="explore-card explore-card-featured">
+                  <div className="explore-card-head">
+                    <strong>{profile.agentName}</strong>
+                    <span className="subtle-pill">{currentMode.label}</span>
+                  </div>
                 <p className="panel-copy">{profile.headline}</p>
                 <div className="inline-summary">
-                  <span className="subtle-pill">Shared profile</span>
+                  <span className="subtle-pill">{formatConnectedNetworkLabel(state.deployment.networkId)}</span>
+                  <span className="subtle-pill">{published ? "Published" : "Registered"}</span>
+                  <span className="subtle-pill">{paidWorkStatusLabel}</span>
                   <span className="subtle-pill">{formatProofLevel(currentMode)}</span>
-                  <span className="subtle-pill">{formatProvingLocation(profile.preferredProvingLocation)}</span>
                 </div>
-                <div className="endpoint-list compact-endpoint-list">
-                  <article className="endpoint-item">
-                    <div className="endpoint-head">
-                      <span className="endpoint-label">Callback URL</span>
+                <div className="action-list">
+                  <div className="action-row">
+                    <div>
+                      <strong>Public agent URL</strong>
+                      <p className="panel-copy">{routedPublicAgentUrl}</p>
+                    </div>
+                    <div className="action-side">
                       <button
-                        className="mini-button"
+                        className="secondary-button"
                         onClick={() => {
                           void copyValue("shared-public-agent-url", routedPublicAgentUrl);
                         }}
                       >
                         {copiedKey === "shared-public-agent-url" ? "Copied" : "Copy"}
                       </button>
+                      <button
+                        className="secondary-button"
+                        onClick={() => {
+                          showSection("explore");
+                        }}
+                      >
+                        Back to directory
+                      </button>
                     </div>
-                    <div className="endpoint-value">{routedPublicAgentUrl}</div>
-                  </article>
+                  </div>
+
+                  <div className="action-row action-row-form">
+                    <div>
+                      <strong>Hire this agent</strong>
+                      <p className="panel-copy">{hireStatusCopy}</p>
+                    </div>
+                    <div className="action-form-stack hire-form-stack">
+                      <label className="field">
+                        <span>Task prompt</span>
+                        <textarea
+                          className="text-area compact-text-area"
+                          value={hireDraft.taskPrompt}
+                          onChange={(event: ValueInputEvent) => {
+                            setHireDraft({
+                              ...hireDraft,
+                              taskPrompt: event.target.value
+                            });
+                          }}
+                          placeholder="Ask the agent what you want done."
+                        />
+                      </label>
+                      <div className="field-grid compact-field-grid">
+                        <label className="field">
+                          <span>Budget (optional)</span>
+                          <input
+                            className="text-input"
+                            value={hireDraft.budgetMina}
+                            onChange={(event: ValueInputEvent) => {
+                              setHireDraft({
+                                ...hireDraft,
+                                budgetMina: event.target.value
+                              });
+                            }}
+                            placeholder="0.50"
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Reply contact</span>
+                          <input
+                            className="text-input"
+                            value={hireDraft.requesterContact}
+                            onChange={(event: ValueInputEvent) => {
+                              setHireDraft({
+                                ...hireDraft,
+                                requesterContact: event.target.value
+                              });
+                            }}
+                            placeholder="name@example.com or callback URL"
+                          />
+                        </label>
+                      </div>
+                      <div className="action-side">
+                        <span className="subtle-pill">{paidWorkStatusLabel}</span>
+                        <button
+                          className="primary-button"
+                          disabled={pendingAction === "hire-request" || !canSubmitHire}
+                          onClick={() => {
+                            if (!sharedAgentId) {
+                              return;
+                            }
+                            setPendingAction("hire-request");
+                            setError(null);
+                            void submitHireRequest(sharedAgentId, {
+                              taskPrompt: hireDraft.taskPrompt,
+                              requesterContact: hireDraft.requesterContact,
+                              ...(hireDraft.budgetMina.trim().length > 0 ? { budgetMina: hireDraft.budgetMina } : {})
+                            })
+                              .then((receipt) => {
+                                setHireReceipt(receipt);
+                              })
+                              .catch((nextError: Error) => {
+                                setError(nextError.message);
+                              })
+                              .finally(() => {
+                                setPendingAction(null);
+                              });
+                          }}
+                        >
+                          {pendingAction === "hire-request" ? "Sending..." : "Send hire request"}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
+                {hireReceipt ? (
+                  <p className="status-banner status-banner-success">
+                    Hire request {hireReceipt.requestId} sent to {hireReceipt.deliveryTarget}.
+                  </p>
+                ) : null}
               </article>
             ) : null}
-            {FEATURED_AGENTS.map((agent) => (
-              <article key={agent.name} className="explore-card">
+            {registry.length === 0 ? (
+              <article className="explore-card explore-card-featured">
                 <div className="explore-card-head">
-                  <strong>{agent.name}</strong>
-                  <span className="subtle-pill">{agent.status}</span>
+                  <strong>No registered agents yet</strong>
+                  <span className="subtle-pill">Be first</span>
                 </div>
-                <p className="panel-copy">{agent.blurb}</p>
+                <p className="panel-copy">Register an OpenClaw agent to make it discoverable here for humans and other agents.</p>
+              </article>
+            ) : (
+              registry.map((agent) => (
+              <article key={agent.agentId} className="explore-card">
+                <div className="explore-card-head">
+                  <strong>{agent.agentName}</strong>
+                  <span className="subtle-pill">{agent.trustModeLabel}</span>
+                </div>
+                <p className="panel-copy">{agent.headline}</p>
                 <div className="inline-summary">
-                  <span className="subtle-pill">{agent.trust}</span>
-                  <span className="subtle-pill">{agent.proving}</span>
+                  <span className="subtle-pill">{formatConnectedNetworkLabel(agent.networkId)}</span>
+                  <span className="subtle-pill">{agent.published ? "Published" : "Registered"}</span>
+                  <span className="subtle-pill">{formatRegistryHireStatus(agent)}</span>
+                </div>
+                <div className="action-side">
+                  <a
+                    className="secondary-button"
+                    href={buildPublicAgentUrl(agent.agentId)}
+                    onClick={(event: { preventDefault(): void }) => {
+                      event.preventDefault();
+                      showAgentProfile(agent.agentId);
+                    }}
+                  >
+                    View profile
+                  </a>
                 </div>
               </article>
-            ))}
+            )))}
           </div>
         </section>
       )}

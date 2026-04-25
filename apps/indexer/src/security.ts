@@ -117,6 +117,10 @@ function isPublicReadPath(pathname: string, method: string, config: SecurityConf
     return true;
   }
 
+  if (method === "GET" && pathname === "/api/agents") {
+    return true;
+  }
+
   if (config.publicProofSurface !== "disabled" && method === "GET" && pathname.startsWith("/.well-known/")) {
     return true;
   }
@@ -139,7 +143,10 @@ function isPublicOnboardingPath(pathname: string, method: string, config: Securi
   return (
     (method === "GET" && (pathname === "/api/console/state" || pathname === "/api/wallet/sponsor/queue")) ||
     (method === "POST" &&
-      (pathname === "/api/console/trust-mode" ||
+      (pathname === "/api/console/register" ||
+        (/^\/api\/agents\/[^/]+\/hire$/.test(pathname)) ||
+        pathname === "/api/console/trust-mode" ||
+        pathname === "/api/console/profile" ||
         pathname === "/api/wallet/sponsor" ||
         pathname === "/api/wallet/recovery/prepare" ||
         pathname === "/api/zeko/flow/run" ||

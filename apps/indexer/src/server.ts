@@ -1,6 +1,7 @@
 import express from "express";
 
 import {
+  type AgentProfileState,
   assertClawzJsonRpcRequest,
   buildProofVerificationResponse,
   type ClawzAgentDiscoveryDocument,
@@ -76,6 +77,29 @@ const controlPlane = await ClawzControlPlane.boot(process.env.CLAWZ_DATA_DIR?.tr
 const LIVE_FLOW_KINDS = ["first-turn", "next-turn", "abort-turn", "refund-turn", "revoke-disclosure"] as const;
 type LiveFlowKind = (typeof LIVE_FLOW_KINDS)[number];
 type TrustModeRequestBody = { modeId?: unknown; sessionId?: unknown };
+type RegisterAgentRequestBody = {
+  agentName?: unknown;
+  representedPrincipal?: unknown;
+  headline?: unknown;
+  openClawUrl?: unknown;
+  payoutAddress?: unknown;
+  trustModeId?: unknown;
+  preferredProvingLocation?: unknown;
+};
+type ProfileRequestBody = {
+  agentName?: unknown;
+  representedPrincipal?: unknown;
+  headline?: unknown;
+  openClawUrl?: unknown;
+  payoutAddress?: unknown;
+  preferredProvingLocation?: unknown;
+  sessionId?: unknown;
+};
+type HireRequestBody = {
+  taskPrompt?: unknown;
+  budgetMina?: unknown;
+  requesterContact?: unknown;
+};
 type SponsorRequestBody = { amountMina?: unknown; sessionId?: unknown; purpose?: unknown };
 type RecoveryRequestBody = { sessionId?: unknown };
 type PrivacyExceptionApprovalBody = {
@@ -110,6 +134,44 @@ function parseTrustModeRequest(body: unknown): TrustModeRequestBody {
     ? {
         modeId: body.modeId,
         sessionId: body.sessionId
+      }
+    : {};
+}
+
+function parseRegisterAgentRequest(body: unknown): RegisterAgentRequestBody {
+  return isRecord(body)
+    ? {
+        agentName: body.agentName,
+        representedPrincipal: body.representedPrincipal,
+        headline: body.headline,
+        openClawUrl: body.openClawUrl,
+        payoutAddress: body.payoutAddress,
+        trustModeId: body.trustModeId,
+        preferredProvingLocation: body.preferredProvingLocation
+      }
+    : {};
+}
+
+function parseProfileRequest(body: unknown): ProfileRequestBody {
+  return isRecord(body)
+      ? {
+          agentName: body.agentName,
+          representedPrincipal: body.representedPrincipal,
+          headline: body.headline,
+          openClawUrl: body.openClawUrl,
+          payoutAddress: body.payoutAddress,
+          preferredProvingLocation: body.preferredProvingLocation,
+          sessionId: body.sessionId
+        }
+    : {};
+}
+
+function parseHireRequest(body: unknown): HireRequestBody {
+  return isRecord(body)
+    ? {
+        taskPrompt: body.taskPrompt,
+        budgetMina: body.budgetMina,
+        requesterContact: body.requesterContact
       }
     : {};
 }
@@ -499,12 +561,17 @@ app.get("/api/privacy-exceptions", route(async (request, response) => {
 app.get("/api/console/state", route(async (request, response) => {
   try {
     const sessionId = queryString(request.query, "sessionId");
-    response.json(await controlPlane.getConsoleState(sessionId ? { sessionId } : {}));
+    const agentId = queryString(request.query, "agentId");
+    response.json(await controlPlane.getConsoleState(sessionId ? { sessionId } : agentId ? { agentId } : {}));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to load console state."
     });
   }
+}));
+
+app.get("/api/agents", route(async (_request, response) => {
+  response.json(await controlPlane.listRegisteredAgents());
 }));
 
 app.get("/api/zeko/deployment", route(async (_request, response) => {
@@ -731,6 +798,83 @@ app.post("/api/console/trust-mode", route(async (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to update trust mode."
+    });
+  }
+}));
+
+app.post("/api/console/register", route(async (request, response) => {
+  const body = parseRegisterAgentRequest(request.body ?? null);
+  const trustModeId =
+    body.trustModeId === "fast" ||
+    body.trustModeId === "private" ||
+    body.trustModeId === "verified" ||
+    body.trustModeId === "team-governed"
+      ? body.trustModeId
+      : undefined;
+  const preferredProvingLocation =
+    body.preferredProvingLocation === "client" ||
+    body.preferredProvingLocation === "server" ||
+    body.preferredProvingLocation === "sovereign-rollup"
+      ? body.preferredProvingLocation
+      : undefined;
+
+  try {
+    response.json(
+      await controlPlane.registerAgent({
+        agentName: typeof body.agentName === "string" ? body.agentName : "",
+        headline: typeof body.headline === "string" ? body.headline : "",
+        openClawUrl: typeof body.openClawUrl === "string" ? body.openClawUrl : "",
+        ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
+        ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
+        ...(trustModeId ? { trustModeId } : {}),
+        ...(preferredProvingLocation ? { preferredProvingLocation } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to register agent."
+    });
+  }
+}));
+
+app.post("/api/console/profile", route(async (request, response) => {
+  const body = parseProfileRequest(request.body ?? null);
+  const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+  const profile: Partial<AgentProfileState> = {
+    ...(typeof body.agentName === "string" ? { agentName: body.agentName } : {}),
+    ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
+    ...(typeof body.headline === "string" ? { headline: body.headline } : {}),
+    ...(typeof body.openClawUrl === "string" ? { openClawUrl: body.openClawUrl } : {}),
+    ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
+    ...(body.preferredProvingLocation === "client" ||
+    body.preferredProvingLocation === "server" ||
+    body.preferredProvingLocation === "sovereign-rollup"
+      ? { preferredProvingLocation: body.preferredProvingLocation }
+      : {})
+  };
+  response.json(await controlPlane.updateAgentProfile(sessionId, profile));
+}));
+
+app.post("/api/agents/:agentId/hire", route(async (request, response) => {
+  const agentId = request.params.agentId;
+  if (!agentId) {
+    response.status(400).json({ error: "agentId is required." });
+    return;
+  }
+
+  const body = parseHireRequest(request.body ?? null);
+  try {
+    response.json(
+      await controlPlane.submitHireRequest({
+        agentId,
+        taskPrompt: typeof body.taskPrompt === "string" ? body.taskPrompt : "",
+        requesterContact: typeof body.requesterContact === "string" ? body.requesterContact : "",
+        ...(typeof body.budgetMina === "string" ? { budgetMina: body.budgetMina } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to submit hire request."
     });
   }
 }));

@@ -240,7 +240,48 @@ export interface SponsorQueueState {
   items: SponsorQueueJob[];
 }
 
+export interface AgentProfileState {
+  agentName: string;
+  representedPrincipal: string;
+  headline: string;
+  openClawUrl: string;
+  payoutAddress?: string;
+  preferredProvingLocation: PrivacyProvingLocation;
+}
+
+export interface AgentRegistryEntry {
+  agentId: string;
+  sessionId: string;
+  networkId: string;
+  agentName: string;
+  representedPrincipal: string;
+  headline: string;
+  openClawUrl: string;
+  trustModeId: TrustModeId;
+  trustModeLabel: string;
+  proofLevel: "signed" | "rooted" | "proof-backed";
+  preferredProvingLocation: PrivacyProvingLocation;
+  payoutAddressConfigured: boolean;
+  paidJobsEnabled: boolean;
+  published: boolean;
+  lastUpdatedAtIso?: string;
+}
+
+export interface HireRequestReceipt {
+  requestId: string;
+  agentId: string;
+  sessionId: string;
+  networkId: string;
+  submittedAtIso: string;
+  status: "submitted";
+  deliveryTarget: string;
+  paidJobsEnabled: boolean;
+}
+
 export interface ConsoleStateResponse {
+  agentId: string;
+  payoutAddressConfigured: boolean;
+  paidJobsEnabled: boolean;
   wallet: ShadowWalletState;
   trustModes: TrustModeCard[];
   ghostRun: GhostRunPlan;
@@ -252,6 +293,7 @@ export interface ConsoleStateResponse {
   liveFlowTargets: LiveFlowTargets;
   liveFlow: LiveSessionTurnFlowState;
   sponsorQueue: SponsorQueueState;
+  profile: AgentProfileState;
 }
 
 export const TRUST_MODE_PRESETS: TrustModeCard[] = [

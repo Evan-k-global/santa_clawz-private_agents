@@ -7,6 +7,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createSealedBlobStore, type SealedBlobStore } from "@clawz/blob-store";
 import { createTenantKeyBroker, type TenantKeyBrokerRuntimeDescriptor, TenantKeyBroker } from "@clawz/key-broker";
 import {
+  type AgentRegistryEntry,
+  type AgentProfileState,
+  type HireRequestReceipt,
   type SponsorQueueJob,
   type SponsorQueueState,
   TRUST_MODE_PRESETS,
@@ -77,6 +80,8 @@ interface ConsolePersistenceState {
   activeMode: TrustModeId;
   wallet: ShadowWalletState;
   privacyExceptions: PrivacyExceptionQueueItem[];
+  agentIdsBySession: Record<string, string>;
+  profilesBySession: Record<string, AgentProfileState>;
 }
 
 interface DeploymentManifestFile {
@@ -202,8 +207,26 @@ interface SponsorWalletOptions {
   purpose?: SponsorQueueJob["purpose"];
 }
 
+interface RegisterAgentOptions {
+  agentName: string;
+  representedPrincipal?: string;
+  headline: string;
+  openClawUrl: string;
+  payoutAddress?: string;
+  trustModeId?: TrustModeId;
+  preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
+}
+
+interface SubmitHireRequestOptions {
+  agentId: string;
+  taskPrompt: string;
+  budgetMina?: string;
+  requesterContact: string;
+}
+
 interface ConsoleStateOptions {
   sessionId?: string;
+  agentId?: string;
 }
 
 interface EventListOptions {
@@ -233,6 +256,23 @@ interface LiveSessionTurnFlowModule {
 
 interface SponsorQueueFile {
   jobs: SponsorQueueJob[];
+}
+
+interface HireRequestRecord {
+  requestId: string;
+  agentId: string;
+  sessionId: string;
+  networkId: string;
+  submittedAtIso: string;
+  status: "submitted";
+  taskPrompt: string;
+  budgetMina?: string;
+  requesterContact: string;
+  deliveryTarget: string;
+}
+
+interface HireRequestFile {
+  requests: HireRequestRecord[];
 }
 
 function isLiveFlowKind(value: string): value is LiveFlowKind {
@@ -389,7 +429,37 @@ function buildDefaultState(nowIso: string): ConsolePersistenceState {
     currentSessionId: DEFAULT_SESSION_ID,
     activeMode: "private",
     wallet: buildWalletState(nowIso),
-    privacyExceptions: buildPrivacyExceptions(nowIso)
+    privacyExceptions: buildPrivacyExceptions(nowIso),
+    agentIdsBySession: {
+      [DEFAULT_SESSION_ID]: buildStableAgentId("SantaClawz Operator", DEFAULT_SESSION_ID)
+    },
+    profilesBySession: {
+      [DEFAULT_SESSION_ID]: buildDefaultProfile("private")
+    }
+  };
+}
+
+function slugify(value: string): string {
+  const normalized = value
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized.length > 0 ? normalized : "agent";
+}
+
+function buildStableAgentId(agentName: string, sessionId: string): string {
+  return `${slugify(agentName)}--${sessionId}`;
+}
+
+function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
+  const trustMode = TRUST_MODE_PRESETS.find((mode) => mode.id === trustModeId) ?? TRUST_MODE_PRESETS[0]!;
+  return {
+    agentName: "SantaClawz Operator",
+    representedPrincipal: "Existing OpenClaw operator",
+    headline: "Private, verifiable agent work on Zeko.",
+    openClawUrl: "",
+    preferredProvingLocation: trustMode.defaultProvingLocation
   };
 }
 
@@ -418,6 +488,32 @@ function buildDefaultSponsorQueue(): SponsorQueueFile {
   };
 }
 
+function buildDefaultHireRequestFile(): HireRequestFile {
+  return {
+    requests: []
+  };
+}
+
+function isMainnetNetwork(deployment: Pick<ZekoDeploymentState, "networkId" | "mode">): boolean {
+  const networkId = deployment.networkId.toLowerCase();
+  if (deployment.mode === "local-runtime" || deployment.mode === "planned-testnet" || deployment.mode === "testnet-live") {
+    return false;
+  }
+  return networkId.includes("mainnet") && !networkId.includes("testnet");
+}
+
+function hasPayoutAddress(profile: AgentProfileState): boolean {
+  return typeof profile.payoutAddress === "string" && profile.payoutAddress.trim().length > 0;
+}
+
+function computePaidJobsEnabled(
+  profile: AgentProfileState,
+  published: boolean,
+  deployment: Pick<ZekoDeploymentState, "networkId" | "mode">
+): boolean {
+  return published && (!isMainnetNetwork(deployment) || hasPayoutAddress(profile));
+}
+
 export class ClawzControlPlane {
   private readonly statePath: string;
   private readonly eventsPath: string;
@@ -429,6 +525,7 @@ export class ClawzControlPlane {
   private readonly liveFlowPlanPath: string;
   private readonly liveFlowStatusPath: string;
   private readonly sponsorQueuePath: string;
+  private readonly hireRequestPath: string;
   private readonly keyBroker: TenantKeyBroker;
   private readonly keyBrokerRuntime: TenantKeyBrokerRuntimeDescriptor;
   private readonly blobStore: SealedBlobStore;
@@ -452,6 +549,7 @@ export class ClawzControlPlane {
     );
     this.liveFlowStatusPath = path.join(baseDir, "state", "live-session-turn-flow.json");
     this.sponsorQueuePath = path.join(baseDir, "state", "wallet-sponsor-queue.json");
+    this.hireRequestPath = path.join(baseDir, "state", "hire-requests.json");
     this.keyBroker = createTenantKeyBroker({
       baseDir: path.join(baseDir, "kms"),
       wrappedKeyDir: path.join(baseDir, "kms", "wrapped-keys")
@@ -478,16 +576,38 @@ export class ClawzControlPlane {
     await this.ensureDirs();
     const state = await readJsonFile<ConsolePersistenceState>(this.statePath);
     if (state) {
-      if (state.schemaVersion !== 1) {
-        const migratedState: ConsolePersistenceState = {
-          ...state,
-          schemaVersion: 1
-        };
+      const migratedState: ConsolePersistenceState = {
+        ...state,
+        schemaVersion: 1,
+        agentIdsBySession:
+          state.agentIdsBySession && Object.keys(state.agentIdsBySession).length > 0
+            ? state.agentIdsBySession
+            : Object.fromEntries(
+                Object.entries(
+                  state.profilesBySession && Object.keys(state.profilesBySession).length > 0
+                    ? state.profilesBySession
+                    : {
+                        [state.currentSessionId]: buildDefaultProfile(state.activeMode)
+                      }
+                ).map(([sessionId, profile]) => [sessionId, buildStableAgentId(profile.agentName, sessionId)])
+              ),
+        profilesBySession:
+          state.profilesBySession && Object.keys(state.profilesBySession).length > 0
+            ? state.profilesBySession
+            : {
+                [state.currentSessionId]: buildDefaultProfile(state.activeMode)
+              }
+      };
+      if (
+        state.schemaVersion !== 1 ||
+        !state.agentIdsBySession ||
+        Object.keys(state.agentIdsBySession).length === 0 ||
+        !state.profilesBySession ||
+        Object.keys(state.profilesBySession).length === 0
+      ) {
         await this.saveState(migratedState);
-        return migratedState;
       }
-
-      return state;
+      return migratedState;
     }
 
     const fallback = buildDefaultState(new Date().toISOString());
@@ -558,6 +678,23 @@ export class ClawzControlPlane {
     await writeJsonFile(this.sponsorQueuePath, queue);
   }
 
+  private async loadHireRequestFile(): Promise<HireRequestFile> {
+    await this.ensureDirs();
+    const file = await readJsonFile<HireRequestFile>(this.hireRequestPath);
+    if (file?.requests) {
+      return file;
+    }
+
+    const fallback = buildDefaultHireRequestFile();
+    await this.saveHireRequestFile(fallback);
+    return fallback;
+  }
+
+  private async saveHireRequestFile(file: HireRequestFile) {
+    await this.ensureDirs();
+    await writeJsonFile(this.hireRequestPath, file);
+  }
+
   private async saveEvents(events: ClawzEvent[]) {
     await this.ensureDirs();
     await writeJsonFile(this.eventsPath, events);
@@ -589,6 +726,49 @@ export class ClawzControlPlane {
         ...state.wallet,
         trustModeId
       }
+    };
+  }
+
+  private profileForSession(state: ConsolePersistenceState, sessionId: string, trustModeId = state.activeMode): AgentProfileState {
+    return state.profilesBySession[sessionId] ?? buildDefaultProfile(trustModeId);
+  }
+
+  private agentIdForSession(state: ConsolePersistenceState, sessionId: string, trustModeId = state.activeMode): string {
+    return (
+      state.agentIdsBySession[sessionId] ??
+      buildStableAgentId(this.profileForSession(state, sessionId, trustModeId).agentName, sessionId)
+    );
+  }
+
+  private resolveSessionIdFromAgentId(state: ConsolePersistenceState, agentId: string): string | undefined {
+    return Object.entries(state.agentIdsBySession).find(([, value]) => value === agentId)?.[0];
+  }
+
+  private sanitizeProfileInput(
+    trustModeId: TrustModeId,
+    input: Partial<AgentProfileState>,
+    fallback: AgentProfileState
+  ): AgentProfileState {
+    const trustMode = TRUST_MODE_PRESETS.find((mode) => mode.id === trustModeId) ?? TRUST_MODE_PRESETS[0]!;
+    const preferredProvingLocation =
+      input.preferredProvingLocation && trustMode.supportedProvingLocations.includes(input.preferredProvingLocation)
+        ? input.preferredProvingLocation
+        : fallback.preferredProvingLocation;
+
+    return {
+      agentName: typeof input.agentName === "string" ? input.agentName.trim().slice(0, 120) : fallback.agentName,
+      representedPrincipal:
+        typeof input.representedPrincipal === "string"
+          ? input.representedPrincipal.trim().slice(0, 160)
+          : fallback.representedPrincipal,
+      headline: typeof input.headline === "string" ? input.headline.trim().slice(0, 280) : fallback.headline,
+      openClawUrl: typeof input.openClawUrl === "string" ? input.openClawUrl.trim().slice(0, 280) : fallback.openClawUrl,
+      ...(typeof input.payoutAddress === "string" && input.payoutAddress.trim().length > 0
+        ? { payoutAddress: input.payoutAddress.trim().slice(0, 180) }
+        : fallback.payoutAddress
+          ? { payoutAddress: fallback.payoutAddress }
+          : {}),
+      preferredProvingLocation
     };
   }
 
@@ -724,6 +904,7 @@ export class ClawzControlPlane {
     const existingEvents = await this.loadEvents();
     const state = await this.loadState();
     await this.loadSponsorQueueFile();
+    await this.loadHireRequestFile();
 
     if (existingEvents.length === 0) {
       await this.saveEvents(sampleEvents);
@@ -1818,7 +1999,13 @@ export class ClawzControlPlane {
       this.loadSponsorQueueFile()
     ]);
     const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
-    const focus = this.resolveSessionFocus(state, events, liveFlowTargets, liveFlow, options.sessionId);
+    const requestedSessionId =
+      options.sessionId ??
+      (options.agentId ? this.resolveSessionIdFromAgentId(state, options.agentId) : undefined);
+    if (options.agentId && !requestedSessionId) {
+      throw new Error(`Unknown agent: ${options.agentId}`);
+    }
+    const focus = this.resolveSessionFocus(state, events, liveFlowTargets, liveFlow, requestedSessionId);
     const materializer = new ReplayMaterializer(events);
     const session = materializer.getSession(focus.sessionId);
     const sessionManifests = focus.sessionId === state.currentSessionId ? manifests : await this.blobStore.listManifests(focus.sessionId);
@@ -1827,8 +2014,16 @@ export class ClawzControlPlane {
       .sort((left, right) => left.status.localeCompare(right.status) || right.severity.localeCompare(left.severity));
     const sessionTimeMachine = new ReplayMaterializer(session.events).buildTimeMachineEntries().slice(0, 12);
     const sponsorQueue = this.buildSponsorQueueState(sponsorQueueFile, focus.sessionId);
+    const profile = this.profileForSession(state, focus.sessionId, focus.trustModeId);
+    const agentId = this.agentIdForSession(state, focus.sessionId, focus.trustModeId);
+    const published = liveFlowTargets.turns.some((target) => target.sessionId === focus.sessionId);
+    const payoutAddressConfigured = hasPayoutAddress(profile);
+    const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
 
     return {
+      agentId,
+      payoutAddressConfigured,
+      paidJobsEnabled,
       wallet: {
         ...state.wallet,
         trustModeId: focus.trustModeId
@@ -1857,8 +2052,61 @@ export class ClawzControlPlane {
       deployment,
       liveFlowTargets,
       liveFlow,
-      sponsorQueue
+      sponsorQueue,
+      profile
     };
+  }
+
+  async listRegisteredAgents(): Promise<AgentRegistryEntry[]> {
+    const state = await this.loadState();
+    const events = await this.loadEvents();
+    const [liveFlow, deployment] = await Promise.all([this.getLiveFlowState(), this.getDeploymentState()]);
+    const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
+    const materializer = new ReplayMaterializer(events);
+    const proofRank = (proofLevel: AgentRegistryEntry["proofLevel"]) =>
+      proofLevel === "proof-backed" ? 3 : proofLevel === "rooted" ? 2 : 1;
+
+    return this.buildKnownSessionIds(state, events)
+      .map((sessionId) => {
+        const trustModeId = this.resolveSessionTrustMode(events, sessionId, state.activeMode);
+        const trustMode = TRUST_MODE_PRESETS.find((mode) => mode.id === trustModeId) ?? TRUST_MODE_PRESETS[0]!;
+        const profile = this.profileForSession(state, sessionId, trustModeId);
+        const session = materializer.getSession(sessionId);
+        const published = liveFlowTargets.turns.some((target) => target.sessionId === sessionId);
+        const lastUpdatedAtIso = session.events.at(-1)?.occurredAtIso;
+        return {
+          agentId: this.agentIdForSession(state, sessionId, trustModeId),
+          sessionId,
+          networkId: deployment.networkId,
+          agentName: profile.agentName,
+          representedPrincipal: profile.representedPrincipal,
+          headline: profile.headline,
+          openClawUrl: profile.openClawUrl,
+          trustModeId,
+          trustModeLabel: trustMode.label,
+          proofLevel: trustMode.proofLevel,
+          preferredProvingLocation: profile.preferredProvingLocation,
+          payoutAddressConfigured: hasPayoutAddress(profile),
+          paidJobsEnabled: computePaidJobsEnabled(profile, published, deployment),
+          published,
+          ...(lastUpdatedAtIso ? { lastUpdatedAtIso } : {})
+        } satisfies AgentRegistryEntry;
+      })
+      .filter((entry) => entry.openClawUrl.trim().length > 0 && entry.agentName.trim().length > 0 && entry.headline.trim().length > 0)
+      .sort((left, right) => {
+        if (left.published !== right.published) {
+          return Number(right.published) - Number(left.published);
+        }
+        const byProof = proofRank(right.proofLevel) - proofRank(left.proofLevel);
+        if (byProof !== 0) {
+          return byProof;
+        }
+        const byUpdated = (right.lastUpdatedAtIso ?? "").localeCompare(left.lastUpdatedAtIso ?? "");
+        if (byUpdated !== 0) {
+          return byUpdated;
+        }
+        return left.agentName.localeCompare(right.agentName);
+      });
   }
 
   async listEvents(options: EventListOptions = {}): Promise<ClawzEvent[]> {
@@ -1883,16 +2131,182 @@ export class ClawzControlPlane {
     return this.getSponsorQueueState(sessionId);
   }
 
+  async registerAgent(options: RegisterAgentOptions): Promise<ConsoleStateResponse> {
+    const state = await this.loadState();
+    const registeredAtIso = new Date().toISOString();
+    const trustModeId = options.trustModeId ?? "private";
+    const sessionSlug = randomUUID().replace(/-/g, "").slice(0, 12);
+    const sessionId = `session_agent_${sessionSlug}`;
+    const fallbackProfile = buildDefaultProfile(trustModeId);
+    const profile = this.sanitizeProfileInput(
+      trustModeId,
+      {
+        agentName: options.agentName,
+        headline: options.headline,
+        openClawUrl: options.openClawUrl,
+        ...(options.payoutAddress ? { payoutAddress: options.payoutAddress } : {}),
+        ...(options.representedPrincipal ? { representedPrincipal: options.representedPrincipal } : {}),
+        ...(options.preferredProvingLocation ? { preferredProvingLocation: options.preferredProvingLocation } : {})
+      },
+      fallbackProfile
+    );
+
+    if (profile.agentName.trim().length === 0 || profile.headline.trim().length === 0 || profile.openClawUrl.trim().length === 0) {
+      throw new Error("agentName, headline, and openClawUrl are required.");
+    }
+
+    const agentId = buildStableAgentId(profile.agentName, sessionId);
+    const nextState: ConsolePersistenceState = {
+      ...this.applyFocusedSession(state, sessionId, trustModeId),
+      agentIdsBySession: {
+        ...state.agentIdsBySession,
+        [sessionId]: agentId
+      },
+      profilesBySession: {
+        ...state.profilesBySession,
+        [sessionId]: profile
+      }
+    };
+
+    await this.saveState(nextState);
+    await this.appendEvent(
+      "SessionCreated",
+      {
+        sessionId,
+        tenantId: DEFAULT_TENANT_ID,
+        trustMode: trustModeId,
+        registrationSource: "self-serve",
+        representedPrincipal: profile.representedPrincipal
+      },
+      registeredAtIso
+    );
+    await this.appendEvent(
+      "SessionCheckpointed",
+      {
+        sessionId,
+        agentId,
+        registeredAgent: true
+      },
+      registeredAtIso
+    );
+
+    return this.getConsoleState({ sessionId });
+  }
+
+  async submitHireRequest(options: SubmitHireRequestOptions): Promise<HireRequestReceipt> {
+    const state = await this.loadState();
+    const sessionId = this.resolveSessionIdFromAgentId(state, options.agentId);
+    if (!sessionId) {
+      throw new Error(`Unknown agent: ${options.agentId}`);
+    }
+
+    const [events, liveFlow, deployment, hireRequests] = await Promise.all([
+      this.loadEvents(),
+      this.getLiveFlowState(),
+      this.getDeploymentState(),
+      this.loadHireRequestFile()
+    ]);
+    const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
+    const trustModeId = this.resolveSessionTrustMode(events, sessionId, state.activeMode);
+    const profile = this.profileForSession(state, sessionId, trustModeId);
+    const published = liveFlowTargets.turns.some((target) => target.sessionId === sessionId);
+    const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
+
+    if (!published) {
+      throw new Error("This agent needs to publish on Zeko before it can accept hire requests.");
+    }
+    if (!profile.openClawUrl.trim()) {
+      throw new Error("This agent has no OpenClaw callback URL configured yet.");
+    }
+    if (isMainnetNetwork(deployment) && !paidJobsEnabled) {
+      throw new Error("This mainnet agent still needs a payout wallet before it can accept paid jobs.");
+    }
+    if (options.taskPrompt.trim().length === 0 || options.requesterContact.trim().length === 0) {
+      throw new Error("taskPrompt and requesterContact are required.");
+    }
+
+    const submittedAtIso = new Date().toISOString();
+    const requestId = `hire_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+    const nextRecord: HireRequestRecord = {
+      requestId,
+      agentId: options.agentId,
+      sessionId,
+      networkId: deployment.networkId,
+      submittedAtIso,
+      status: "submitted",
+      taskPrompt: options.taskPrompt.trim().slice(0, 2000),
+      ...(typeof options.budgetMina === "string" && options.budgetMina.trim().length > 0
+        ? { budgetMina: options.budgetMina.trim().slice(0, 40) }
+        : {}),
+      requesterContact: options.requesterContact.trim().slice(0, 240),
+      deliveryTarget: profile.openClawUrl
+    };
+
+    await this.saveHireRequestFile({
+      requests: [nextRecord, ...hireRequests.requests].slice(0, 200)
+    });
+
+    return {
+      requestId,
+      agentId: options.agentId,
+      sessionId,
+      networkId: deployment.networkId,
+      submittedAtIso,
+      status: "submitted",
+      deliveryTarget: profile.openClawUrl,
+      paidJobsEnabled
+    };
+  }
+
   async setTrustMode(modeId: TrustModeId, sessionId?: string): Promise<ConsoleStateResponse> {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
     const focus = this.resolveSessionFocus(state, events, this.buildLiveFlowTargets(events, liveFlow), liveFlow, sessionId);
-    const nextState = this.applyFocusedSession(state, focus.sessionId, modeId);
+    const baseState = this.applyFocusedSession(state, focus.sessionId, modeId);
+    const fallbackProfile = buildDefaultProfile(modeId);
+    const currentProfile = this.profileForSession(state, focus.sessionId, modeId);
+    const nextState: ConsolePersistenceState = {
+      ...baseState,
+      profilesBySession: {
+        ...baseState.profilesBySession,
+        [focus.sessionId]: this.sanitizeProfileInput(modeId, currentProfile, {
+          ...fallbackProfile,
+          ...currentProfile
+        })
+      }
+    };
     await this.saveState(nextState);
     await this.appendEvent("SessionCheckpointed", {
       sessionId: focus.sessionId,
       trustMode: modeId
+    });
+    return this.getConsoleState({ sessionId: focus.sessionId });
+  }
+
+  async updateAgentProfile(sessionId: string | undefined, input: Partial<AgentProfileState>): Promise<ConsoleStateResponse> {
+    const state = await this.loadState();
+    const events = await this.loadEvents();
+    const liveFlow = await this.getLiveFlowState();
+    const focus = this.resolveSessionFocus(state, events, this.buildLiveFlowTargets(events, liveFlow), liveFlow, sessionId);
+    const trustModeId = focus.trustModeId;
+    const fallbackProfile = buildDefaultProfile(trustModeId);
+    const currentProfile = this.profileForSession(state, focus.sessionId, trustModeId);
+    const nextProfile = this.sanitizeProfileInput(trustModeId, input, {
+      ...fallbackProfile,
+      ...currentProfile
+    });
+    const nextState: ConsolePersistenceState = {
+      ...this.applyFocusedSession(state, focus.sessionId, trustModeId),
+      profilesBySession: {
+        ...state.profilesBySession,
+        [focus.sessionId]: nextProfile
+      }
+    };
+    await this.saveState(nextState);
+    await this.appendEvent("SessionCheckpointed", {
+      sessionId: focus.sessionId,
+      profileUpdated: true
     });
     return this.getConsoleState({ sessionId: focus.sessionId });
   }
@@ -1910,6 +2324,18 @@ export class ClawzControlPlane {
       options.sessionId
     );
     const queue = await this.loadSponsorQueueFile();
+    const existingPendingJob = queue.jobs.find(
+      (job) => job.sessionId === focus.sessionId && (job.status === "queued" || job.status === "running")
+    );
+    if (existingPendingJob) {
+      throw new Error("Sponsor queue already has a pending job for this agent.");
+    }
+
+    const remainingBudget = Number.parseFloat(state.wallet.sponsoredRemainingMina || "0");
+    if (Number.isFinite(remainingBudget) && remainingBudget >= 0.2) {
+      throw new Error("Shadow wallet already has enough sponsored balance for the next publish.");
+    }
+
     const slug = randomUUID().replace(/-/g, "").slice(0, 12);
     const requestedAtIso = new Date().toISOString();
     const nextJob: SponsorQueueJob = {

@@ -70,15 +70,22 @@ function buildProgrammablePrivacyPolicy(
   supportedLocations: PrivacyProvingLocation[],
   defaultLocation: PrivacyProvingLocation
 ): ProgrammablePrivacyPolicy {
+  const profilePreferredLocation = consoleState.profile.preferredProvingLocation;
   const requestedLocation = process.env.CLAWZ_PRIVACY_PROVING_LOCATION;
-  const selectedLocation =
-    isPrivacyProvingLocation(requestedLocation) && supportedLocations.includes(requestedLocation)
-      ? requestedLocation
-      : defaultLocation;
   const serverProverConfigured = Boolean(process.env.CLAWZ_SERVER_PROVER_URL?.trim());
   const sovereignRollupConfigured =
     Boolean(process.env.CLAWZ_SOVEREIGN_ROLLUP_ENDPOINT?.trim()) || truthy(process.env.CLAWZ_SOVEREIGN_ROLLUP_ENABLED);
   const teamGoverned = consoleState.wallet.trustModeId === "team-governed";
+  const isAvailable = (location: PrivacyProvingLocation) =>
+    location === "server" ? serverProverConfigured : location === "sovereign-rollup" ? sovereignRollupConfigured || teamGoverned : true;
+  const preferredLocation =
+    profilePreferredLocation && supportedLocations.includes(profilePreferredLocation) ? profilePreferredLocation : undefined;
+  const envSelectedLocation =
+    isPrivacyProvingLocation(requestedLocation) && supportedLocations.includes(requestedLocation) ? requestedLocation : undefined;
+  const candidateLocation = preferredLocation ?? envSelectedLocation ?? defaultLocation;
+  const selectedLocation = isAvailable(candidateLocation)
+    ? candidateLocation
+    : supportedLocations.find((location) => isAvailable(location)) ?? defaultLocation;
 
   return {
     selectedLocation,
@@ -93,7 +100,7 @@ function buildProgrammablePrivacyPolicy(
             ? "Server-side proving fits application-owned data and shared backend context where the app operator is the privacy boundary."
             : "Sovereign-rollup proving pushes enterprise workloads into a private Zeko app rollup, ideal for regulated teams running the Docker Compose plus Phala stack.",
       defaultSelected: location === selectedLocation,
-      available: location === "server" ? serverProverConfigured : location === "sovereign-rollup" ? sovereignRollupConfigured || teamGoverned : true
+      available: isAvailable(location)
     })),
     serverProverConfigured,
     sovereignRollupConfigured,
@@ -291,14 +298,17 @@ export function buildDiscoveryDocument(input: Omit<InteropBuildInput, "sessionVi
     activeMode.defaultProvingLocation
   );
   const focusedSessionId = input.sessionId ?? input.consoleState.session.sessionId;
+  const profile = input.consoleState.profile;
   const sessionQuery = `sessionId=${encodeURIComponent(focusedSessionId)}`;
   return {
     protocol: "clawz-agent-proof",
     version: "0.1",
     serviceId: SERVICE_ID,
-    title: "ClawZ Interoperable Agent Proof Surface",
+    title: `${profile.agentName} discovery surface`,
     summary:
-      "Deterministic proof surface for showing who an agent represents, what it is allowed to do, how it gets paid, which privacy boundaries govern the run, and where proving happens.",
+      profile.headline.length > 0
+        ? profile.headline
+        : "Deterministic proof surface for showing who an agent represents, what it is allowed to do, how it gets paid, which privacy boundaries govern the run, and where proving happens.",
     focusedSessionId,
     network: {
       chain: deployment.chain,
@@ -339,6 +349,7 @@ export function buildDiscoveryDocument(input: Omit<InteropBuildInput, "sessionVi
 export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProofBundle {
   const sessionId = input.sessionId ?? input.consoleState.session.sessionId;
   const turnId = selectTurnId(input.events, input.turnId);
+  const profile = input.consoleState.profile;
   const currentMode = TRUST_MODE_PRESETS.find((mode) => mode.id === input.consoleState.wallet.trustModeId) ?? TRUST_MODE_PRESETS[0]!;
   const programmablePrivacy = buildProgrammablePrivacyPolicy(
     input.consoleState,
@@ -386,7 +397,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
 
   const representationWithoutDigest = {
     serviceId: SERVICE_ID,
-    agentId: "agent_privacy_orchestrator",
+    agentId: input.consoleState.agentId,
     representedPrincipal: {
       type: "workspace-shadow-wallet" as const,
       publicKey: input.consoleState.wallet.publicKey,

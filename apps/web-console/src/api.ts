@@ -1,4 +1,11 @@
-import type { ConsoleStateResponse, PrivacyApprovalRecord, TrustModeId } from "@clawz/protocol";
+import type {
+  AgentProfileState,
+  AgentRegistryEntry,
+  ConsoleStateResponse,
+  HireRequestReceipt,
+  PrivacyApprovalRecord,
+  TrustModeId
+} from "@clawz/protocol";
 
 const LOCAL_INDEXER_BASE = "http://127.0.0.1:4318";
 const DEFAULT_ZEKO_FAUCET_UI_URL = "https://faucet.zeko.io";
@@ -47,14 +54,18 @@ export function getZekoFaucetConfig() {
   };
 }
 
-function buildPath(path: string, sessionId?: string) {
-  if (!sessionId) {
+function buildPath(path: string, sessionId?: string, agentId?: string) {
+  if (!sessionId && !agentId) {
     return path;
   }
 
-  const params = new URLSearchParams({
-    sessionId
-  });
+  const params = new URLSearchParams();
+  if (sessionId) {
+    params.set("sessionId", sessionId);
+  }
+  if (agentId) {
+    params.set("agentId", agentId);
+  }
   return `${path}?${params.toString()}`;
 }
 
@@ -93,8 +104,41 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return response.json() as Promise<T>;
 }
 
-export function fetchConsoleState(sessionId?: string): Promise<ConsoleStateResponse> {
-  return request<ConsoleStateResponse>(buildPath("/api/console/state", sessionId));
+export function fetchConsoleState(sessionId?: string, agentId?: string): Promise<ConsoleStateResponse> {
+  return request<ConsoleStateResponse>(buildPath("/api/console/state", sessionId, agentId));
+}
+
+export function fetchAgentRegistry(): Promise<AgentRegistryEntry[]> {
+  return request<AgentRegistryEntry[]>("/api/agents");
+}
+
+export function registerAgent(input: {
+  agentName: string;
+  representedPrincipal?: string;
+  headline: string;
+  openClawUrl: string;
+  payoutAddress?: string;
+  trustModeId?: TrustModeId;
+  preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
+}): Promise<ConsoleStateResponse> {
+  return request<ConsoleStateResponse>("/api/console/register", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
+export function submitHireRequest(
+  agentId: string,
+  input: {
+    taskPrompt: string;
+    requesterContact: string;
+    budgetMina?: string;
+  }
+): Promise<HireRequestReceipt> {
+  return request<HireRequestReceipt>(`/api/agents/${encodeURIComponent(agentId)}/hire`, {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
 }
 
 export function runLiveSessionTurnFlow(
@@ -113,6 +157,19 @@ export function updateTrustMode(modeId: TrustModeId, sessionId?: string): Promis
     method: "POST",
     body: JSON.stringify({
       modeId,
+      ...(sessionId ? { sessionId } : {})
+    })
+  });
+}
+
+export function updateAgentProfile(
+  profile: AgentProfileState,
+  sessionId?: string
+): Promise<ConsoleStateResponse> {
+  return request<ConsoleStateResponse>(buildPath("/api/console/profile", sessionId), {
+    method: "POST",
+    body: JSON.stringify({
+      ...profile,
       ...(sessionId ? { sessionId } : {})
     })
   });
