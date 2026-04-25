@@ -226,6 +226,20 @@ function formatRegistryHireStatus(agent: AgentRegistryEntry) {
   return "Needs payout wallet";
 }
 
+function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): AgentProfileDraft {
+  return {
+    agentName: typeof input?.agentName === "string" ? input.agentName : "",
+    representedPrincipal: typeof input?.representedPrincipal === "string" ? input.representedPrincipal : "",
+    headline: typeof input?.headline === "string" ? input.headline : "",
+    openClawUrl: typeof input?.openClawUrl === "string" ? input.openClawUrl : "",
+    payoutAddress: typeof input?.payoutAddress === "string" ? input.payoutAddress : "",
+    preferredProvingLocation:
+      input?.preferredProvingLocation === "client" || input?.preferredProvingLocation === "sovereign-rollup"
+        ? input.preferredProvingLocation
+        : "client"
+  };
+}
+
 export function App() {
   const initialRoute =
     typeof window === "undefined"
@@ -240,14 +254,7 @@ export function App() {
   const [profileSessionId, setProfileSessionId] = useState<string | null>(null);
   const [activeSection, setActiveSection] = useState<NavSectionKey>(initialRoute.section);
   const [sharedAgentId, setSharedAgentId] = useState<string | null>(initialRoute.agentId);
-  const [profile, setProfile] = useState<AgentProfileDraft>({
-    agentName: "",
-    representedPrincipal: "",
-    headline: "",
-    openClawUrl: "",
-    payoutAddress: "",
-    preferredProvingLocation: "client"
-  });
+  const [profile, setProfile] = useState<AgentProfileDraft>(normalizeProfileDraft());
   const [error, setError] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
@@ -328,7 +335,7 @@ export function App() {
     }
 
     if (profileSessionId !== state.session.sessionId) {
-      setProfile(state.profile);
+      setProfile(normalizeProfileDraft(state.profile));
       setProfileSessionId(state.session.sessionId);
       return;
     }

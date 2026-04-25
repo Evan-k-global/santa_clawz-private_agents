@@ -730,7 +730,7 @@ export class ClawzControlPlane {
   }
 
   private profileForSession(state: ConsolePersistenceState, sessionId: string, trustModeId = state.activeMode): AgentProfileState {
-    return state.profilesBySession[sessionId] ?? buildDefaultProfile(trustModeId);
+    return this.sanitizeProfileInput(trustModeId, state.profilesBySession[sessionId] ?? {}, buildDefaultProfile(trustModeId));
   }
 
   private agentIdForSession(state: ConsolePersistenceState, sessionId: string, trustModeId = state.activeMode): string {
