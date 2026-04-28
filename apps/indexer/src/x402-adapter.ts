@@ -5,28 +5,15 @@ import type {
   AgentX402RailPlan,
   ConsoleStateResponse
 } from "@clawz/protocol";
-import {
-  buildBaseMainnetUsdcRail,
-  buildCatalog,
-  buildEthereumMainnetUsdcRail,
-  buildPaymentRequired,
-  buildSettlementResponse,
-  assertPaymentPayload,
-  CDPFacilitatorClient,
-  decodeBase64Json,
-  encodeBase64Json,
-  HostedX402FacilitatorClient,
-  InMemorySettlementLedger,
-  verifyPayment,
-  X402_PAYMENT_REQUIRED_HEADER,
-  X402_PAYMENT_RESPONSE_HEADER,
-  X402_PAYMENT_SIGNATURE_HEADER
-} from "zeko-x402";
 
 export const X402_CATALOG_ROUTE = "/.well-known/x402.json";
 export const X402_RESOURCE_ROUTE = "/api/x402/proof";
 export const X402_VERIFY_ROUTE = "/api/x402/verify";
 export const X402_SETTLE_ROUTE = "/api/x402/settle";
+
+const X402_PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
+const X402_PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
+const X402_PAYMENT_RESPONSE_HEADER = "PAYMENT-RESPONSE";
 
 const BASE_MAINNET = {
   networkId: "eip155:8453",
@@ -45,6 +32,60 @@ const ETHEREUM_MAINNET = {
 };
 
 type JsonRecord = Record<string, unknown>;
+type FacilitatorClient = {
+  verify(input: { paymentPayload: JsonRecord; paymentRequirements: JsonRecord }): Promise<unknown>;
+  settle(input: { paymentPayload: JsonRecord; paymentRequirements: JsonRecord }): Promise<unknown>;
+};
+type SettlementLedger = {
+  settle(input: JsonRecord): unknown;
+};
+type ZekoX402Module = {
+  buildBaseMainnetUsdcRail(input: { payTo: string; amount: string; facilitatorUrl?: string }): unknown;
+  buildCatalog(input: JsonRecord): unknown;
+  buildEthereumMainnetUsdcRail(input: { payTo: string; amount: string; facilitatorUrl?: string }): unknown;
+  buildPaymentRequired(input: JsonRecord): unknown;
+  buildSettlementResponse(input: JsonRecord): unknown;
+  CDPFacilitatorClient: new (input: { bearerToken: string }) => FacilitatorClient;
+  HostedX402FacilitatorClient: new (input: {
+    baseUrl: string;
+    bearerToken?: string | undefined;
+    requireAuth?: boolean;
+  }) => FacilitatorClient;
+  InMemorySettlementLedger: new (input: {
+    sponsoredBudget: string;
+    budgetAsset: JsonRecord;
+  }) => SettlementLedger;
+  verifyPayment(input: { requirements: JsonRecord; payload: JsonRecord }): unknown;
+};
+
+function isMissingZekoX402(error: unknown) {
+  return (
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "ERR_MODULE_NOT_FOUND" &&
+    error.message.includes("zeko-x402")
+  );
+}
+
+async function loadZekoX402Module(): Promise<ZekoX402Module | null> {
+  try {
+    return (await import("zeko-x402")) as ZekoX402Module;
+  } catch (error) {
+    if (isMissingZekoX402(error)) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+const zekoX402Module = await loadZekoX402Module();
+
+function requireZekoX402Module(): ZekoX402Module {
+  if (!zekoX402Module) {
+    throw new Error("zeko-x402 is not installed on this deployment. Live x402 execution is unavailable.");
+  }
+  return zekoX402Module;
+}
 
 interface AgentX402RuntimeContext {
   plan: AgentX402Plan;
@@ -71,7 +112,7 @@ interface AgentX402SettlementResult extends AgentX402VerificationResult {
   paymentResponse: JsonRecord;
 }
 
-const settlementLedgers = new Map<string, any>();
+const settlementLedgers = new Map<string, SettlementLedger>();
 
 function normalizeBaseUrl(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
@@ -87,6 +128,21 @@ function defaultZekoAssetSymbol(networkId: string): string {
 
 function isRecord(value: unknown): value is JsonRecord {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function encodeBase64Json(value: JsonRecord): string {
+  return Buffer.from(JSON.stringify(value), "utf8").toString("base64");
+}
+
+function decodeBase64Json(value: string): unknown {
+  return JSON.parse(Buffer.from(value, "base64").toString("utf8"));
+}
+
+function assertPaymentPayload(value: unknown): JsonRecord {
+  if (!isRecord(value)) {
+    throw new Error("Invalid x402 payment payload.");
+  }
+  return value;
 }
 
 function isQuotedPricing(mode: AgentPricingMode): boolean {
@@ -518,18 +574,23 @@ function facilitatorTokenForEthereum(): string | undefined {
 }
 
 function facilitatorClientForRail(rail: AgentX402RailPlan) {
+  if (!zekoX402Module) {
+    return null;
+  }
+
   if (rail.rail === "base-usdc") {
+    const baseToken = facilitatorTokenForBase();
     if (rail.facilitatorUrl) {
-      return new HostedX402FacilitatorClient({
+      return new zekoX402Module.HostedX402FacilitatorClient({
         baseUrl: rail.facilitatorUrl,
-        ...(facilitatorTokenForBase() ? { bearerToken: facilitatorTokenForBase() } : {}),
+        ...(baseToken ? { bearerToken: baseToken } : {}),
         requireAuth: false
       });
     }
 
-    if (facilitatorTokenForBase()) {
-      return new CDPFacilitatorClient({
-        bearerToken: facilitatorTokenForBase()
+    if (baseToken) {
+      return new zekoX402Module.CDPFacilitatorClient({
+        bearerToken: baseToken
       });
     }
 
@@ -537,9 +598,10 @@ function facilitatorClientForRail(rail: AgentX402RailPlan) {
   }
 
   if (rail.rail === "ethereum-usdc" && rail.facilitatorUrl) {
-    return new HostedX402FacilitatorClient({
+    const ethereumToken = facilitatorTokenForEthereum();
+    return new zekoX402Module.HostedX402FacilitatorClient({
       baseUrl: rail.facilitatorUrl,
-      ...(facilitatorTokenForEthereum() ? { bearerToken: facilitatorTokenForEthereum() } : {}),
+      ...(ethereumToken ? { bearerToken: ethereumToken } : {}),
       requireAuth: false
     });
   }
@@ -559,24 +621,28 @@ function isLiveExactRail(plan: AgentX402Plan, rail: AgentX402RailPlan): boolean 
 }
 
 function buildLiveRail(rail: AgentX402RailPlan): JsonRecord | null {
+  if (!zekoX402Module) {
+    return null;
+  }
+
   if (!rail.payTo || !rail.amountUsd) {
     return null;
   }
 
   if (rail.rail === "base-usdc") {
-    return buildBaseMainnetUsdcRail({
+    return zekoX402Module.buildBaseMainnetUsdcRail({
       payTo: rail.payTo,
       amount: rail.amountUsd,
       ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {})
-    });
+    }) as JsonRecord;
   }
 
   if (rail.rail === "ethereum-usdc") {
-    return buildEthereumMainnetUsdcRail({
+    return zekoX402Module.buildEthereumMainnetUsdcRail({
       payTo: rail.payTo,
       amount: rail.amountUsd,
       ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {})
-    });
+    }) as JsonRecord;
   }
 
   return null;
@@ -587,6 +653,10 @@ export function buildAgentX402RuntimeContext(input: {
   plan: AgentX402Plan;
   serviceNetworkId: string;
 }): AgentX402RuntimeContext | null {
+  if (!zekoX402Module) {
+    return null;
+  }
+
   const runtimeRails = input.plan.rails.filter((rail) => isLiveExactRail(input.plan, rail));
   const rails = runtimeRails
     .map((rail) => buildLiveRail(rail))
@@ -611,8 +681,8 @@ export function buildAgentX402RuntimeContext(input: {
     plan: input.plan,
     serviceNetworkId: input.serviceNetworkId,
     paymentContext,
-    paymentRequired: buildPaymentRequired(paymentContext),
-    catalog: buildCatalog(paymentContext),
+    paymentRequired: zekoX402Module.buildPaymentRequired(paymentContext) as JsonRecord,
+    catalog: zekoX402Module.buildCatalog(paymentContext) as JsonRecord,
     runtimeRails
   };
 }
@@ -703,7 +773,7 @@ function settlementLedgerForRail(rail: AgentX402RailPlan) {
     return existing;
   }
 
-  const ledger = new InMemorySettlementLedger({
+  const ledger = new (requireZekoX402Module().InMemorySettlementLedger)({
     sponsoredBudget: sponsoredBudgetForRail(rail),
     budgetAsset: {
       symbol: rail.assetSymbol,
@@ -752,7 +822,7 @@ export async function verifyAgentX402Payment(input: {
     };
   }
 
-  const localVerification = verifyPayment({
+  const localVerification = requireZekoX402Module().verifyPayment({
     requirements: input.runtime.paymentRequired,
     payload: input.paymentPayload
   }) as JsonRecord;
@@ -841,7 +911,7 @@ export async function settleAgentX402Payment(input: {
     ...(settlementReference ? { settlementReference } : {})
   }) as JsonRecord;
 
-  const paymentResponse = buildSettlementResponse({
+  const paymentResponse = requireZekoX402Module().buildSettlementResponse({
     payload: input.paymentPayload,
     duplicate: ledgerResult.duplicate,
     eventIds: ledgerResult.settlement && isRecord(ledgerResult.settlement) && Array.isArray(ledgerResult.settlement.eventIds)
