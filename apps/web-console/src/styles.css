@@ -454,6 +454,11 @@ pre,
   margin-top: 14px;
 }
 
+.payment-step-status-inline {
+  max-width: min(34rem, 48%);
+  margin-top: 0;
+}
+
 .payment-step-status-ready {
   border-color: rgba(23, 102, 75, 0.16);
   background: rgba(29, 158, 117, 0.08);
@@ -601,6 +606,11 @@ pre,
   margin-top: 0;
 }
 
+.wallet-status-inline {
+  max-width: min(25rem, 42%);
+  align-self: start;
+}
+
 .wallet-status-note {
   padding: 8px 10px;
 }
@@ -609,6 +619,28 @@ pre,
   margin-top: 0;
   grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
   align-items: end;
+}
+
+.payment-compact-grid {
+  margin-top: 4px;
+  gap: 10px;
+}
+
+.payment-compact-grid-three {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.payment-compact-input {
+  padding: 11px 14px;
+  border-radius: 14px;
+}
+
+.compact-payment-copy {
+  margin-top: 2px;
+}
+
+.payment-notes-area {
+  min-height: 92px;
 }
 
 .wallet-builder-controls {
@@ -1306,11 +1338,23 @@ h3 {
 
 .facilitator-inline {
   display: grid;
-  gap: 10px;
-  padding: 12px 14px;
+  gap: 8px;
+  padding: 10px 12px;
   border: 1px solid rgba(18, 35, 54, 0.08);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.58);
+}
+
+.payment-status-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  margin-top: 2px;
+}
+
+.payment-summary-note {
+  margin-top: 0;
 }
 
 .endpoint-item {
@@ -1627,6 +1671,17 @@ button:disabled {
 
   .wallet-builder-grid {
     grid-template-columns: minmax(0, 108px) minmax(0, 1fr) auto;
+  }
+
+  .payment-step-status-inline,
+  .wallet-status-inline {
+    max-width: 100%;
+    width: 100%;
+  }
+
+  .payment-compact-grid-three,
+  .payment-status-grid {
+    grid-template-columns: 1fr;
   }
 
   .payment-save-row {

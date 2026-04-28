@@ -265,6 +265,40 @@ function paymentProfileSummary(
     : `${summary}. Finish the wallet, payment processor URL, and price details to go live.`;
 }
 
+function paymentProfileDraftReady(
+  published: boolean,
+  profile: AgentProfileState
+) {
+  const paymentProfile = effectivePaymentProfile(profile);
+  if (!paymentProfile.enabled || !published) {
+    return false;
+  }
+
+  const defaultRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0];
+  const hasWallet =
+    defaultRail === "ethereum-usdc"
+      ? Boolean(profile.payoutWallets.ethereum?.trim())
+      : Boolean(profile.payoutWallets.base?.trim());
+  const hasFacilitator =
+    defaultRail === "ethereum-usdc"
+      ? Boolean(paymentProfile.ethereumFacilitatorUrl?.trim())
+      : Boolean(paymentProfile.baseFacilitatorUrl?.trim());
+
+  if (!hasWallet || !hasFacilitator) {
+    return false;
+  }
+
+  if (paymentProfile.pricingMode === "fixed-exact") {
+    return Boolean(paymentProfile.fixedAmountUsd?.trim());
+  }
+
+  if (paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated") {
+    return Boolean(paymentProfile.quoteUrl?.trim());
+  }
+
+  return false;
+}
+
 function effectivePaymentProfile(profile: AgentProfileState): AgentProfileState["paymentProfile"] {
   const supportedRails: AgentProfileState["paymentProfile"]["supportedRails"] = [...derivedSupportedRails(profile.payoutWallets)];
   const defaultRail = profile.paymentProfile.defaultRail === "ethereum-usdc" ? "ethereum-usdc" : "base-usdc";
@@ -792,10 +826,12 @@ export function App() {
   const canPreparePublish = isRegisteredSession && connectReady;
   const canPublish = isRegisteredSession && connectReady && hasSponsoredBalance && recoveryReady;
   const hasAdminAccess = state.adminAccess.hasAdminAccess;
-  const paymentsEnabled = state.paymentsEnabled;
-  const paymentProfileReady = state.paymentProfileReady;
+  const savedPaymentsEnabled = state.paymentsEnabled;
+  const savedPaymentProfileReady = state.paymentProfileReady;
   const paidJobsEnabled = state.paidJobsEnabled;
   const paymentProfile = effectivePaymentProfile(profile);
+  const paymentsEnabled = paymentProfile.enabled;
+  const paymentProfileReady = paymentProfileDraftReady(published, profile);
   const profileForSave = {
     ...profile,
     paymentProfile
@@ -803,16 +839,25 @@ export function App() {
   const defaultPaymentRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0] ?? "base-usdc";
   const paidWorkStatusLabel = !published
     ? "Publish first"
-    : !paymentsEnabled
+    : !savedPaymentsEnabled
       ? "Custom terms"
-      : paymentProfileReady
+      : savedPaymentProfileReady
         ? `Payouts live on ${railLabel(defaultPaymentRail)}`
         : "Host facilitator and finish setup";
   const paymentToggleStatus = paymentProfile.enabled
-    ? paymentProfileReady
-      ? "Ready to accept paid jobs"
-      : "Finish setup to go live"
+    ? !published
+      ? "Publish the agent first"
+      : paymentProfileReady
+        ? "Ready to accept paid jobs"
+        : "Finish setup to go live"
     : "Not accepting paid jobs";
+  const paymentHeadlineMessage = !paymentProfile.enabled
+    ? "Not earning yet. Turn on paid jobs to start receiving payouts."
+    : !published
+      ? "Publish the agent first, then paid jobs can go live."
+      : paymentProfileReady
+        ? "Ready to accept paid jobs."
+        : "Finish setup to go live.";
   const paymentSaveLabel = pendingAction === "save-payment-profile"
     ? "Saving..."
     : paymentProfileReady
@@ -876,9 +921,9 @@ export function App() {
     hireDraft.requesterContact.trim().length > 0;
   const hireStatusCopy = !published
     ? "This agent still needs to publish on Zeko before it can accept work."
-    : paymentsEnabled && !paymentProfileReady
+    : savedPaymentsEnabled && !savedPaymentProfileReady
       ? "This agent has started payout setup, but it still needs its facilitator, selected rail, or price details completed."
-      : paymentsEnabled && paidJobsEnabled
+      : savedPaymentsEnabled && paidJobsEnabled
         ? `Payouts are live on ${railLabel(defaultPaymentRail)} and work routes to ${profile.openClawUrl}.`
         : `Hire requests route to ${profile.openClawUrl}.`
   ;
@@ -1386,7 +1431,7 @@ export function App() {
           </section>
 
           <section className="panel step-card">
-          <div className="step-head">
+          <div className="step-head get-paid-step-head">
             <div className="step-title">
               <span className="step-number">3</span>
               <div>
@@ -1394,30 +1439,27 @@ export function App() {
                 <p className="panel-copy">Start accepting paid jobs in a few minutes.</p>
               </div>
             </div>
+            <p
+              className={
+                !paymentProfile.enabled
+                  ? "status-note status-note-highlight payment-step-status payment-step-status-inline"
+                  : paymentProfileReady
+                    ? "status-note payment-step-status payment-step-status-ready payment-step-status-inline"
+                    : "status-note payment-step-status payment-step-status-inline"
+              }
+            >
+              {paymentHeadlineMessage}
+            </p>
           </div>
-
-          <p
-            className={
-              !paymentsEnabled
-                ? "status-note status-note-highlight payment-step-status"
-                : paymentProfileReady
-                  ? "status-note payment-step-status payment-step-status-ready"
-                  : "status-note payment-step-status"
-            }
-          >
-            {!paymentsEnabled
-              ? "Not earning yet. Turn on paid jobs to start receiving payouts."
-              : paymentProfileReady
-                ? "Ready to accept paid jobs."
-                : "Setup in progress. Finish your payout wallet, payment processor URL, and price to go live."}
-          </p>
 
           <div className="payment-step-list">
           <div className="payment-subcard">
-            <div className="payment-subcard-copy">
-              <strong>Payout wallets</strong>
-              <p className="panel-copy">Add where you want to receive payments.</p>
-              <p className={configuredPayoutWallets.length > 0 ? "status-note status-note-compact wallet-status-note" : "status-note status-note-highlight status-note-compact wallet-status-note"}>
+            <div className="payment-subcard-head payout-subcard-head">
+              <div className="payment-subcard-copy">
+                <strong>Payout wallets</strong>
+                <p className="panel-copy">Add where you want to receive payments.</p>
+              </div>
+              <p className={configuredPayoutWallets.length > 0 ? "status-note status-note-compact wallet-status-note wallet-status-inline" : "status-note status-note-highlight status-note-compact wallet-status-note wallet-status-inline"}>
                 {configuredPayoutWallets.length > 0 ? "Wallets ready for payouts." : "No payout wallets configured yet."}
               </p>
             </div>
@@ -1489,10 +1531,10 @@ export function App() {
           <div className="payment-subcard payment-subcard-spaced">
             <div className="payment-subcard-head">
               <div className="payment-subcard-copy">
-              <strong>Accept paid jobs</strong>
-              <p className="panel-copy">
-                Turn this on when you want the agent to charge buyers. SantaClawz will use the payout wallets above as the future payment destinations.
-              </p>
+                <strong>Accept paid jobs</strong>
+                <p className="panel-copy">
+                  Turn this on when you want the agent to charge buyers. SantaClawz will use the payout wallets above as the future payment destinations.
+                </p>
               </div>
               <div className="inline-toggle compact-inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
                 <button
@@ -1531,20 +1573,15 @@ export function App() {
                 </button>
               </div>
             </div>
-            <p className="status-note status-note-compact payment-inline-status">
-              Status: {paymentToggleStatus}
-            </p>
 
             <div className="payment-subcard-body">
-              <p className="status-note status-note-compact">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
-
               {paymentProfile.enabled ? (
                 <>
-                  <div className="field-grid compact-field-grid">
+                  <div className="field-grid compact-field-grid payment-compact-grid">
                     <label className="field">
                       <span>Base payment URL</span>
                       <input
-                        className="text-input"
+                        className="text-input payment-compact-input"
                         value={paymentProfile.baseFacilitatorUrl ?? ""}
                         onChange={(event: ValueInputEvent) => {
                           setProfile({
@@ -1561,7 +1598,7 @@ export function App() {
                     <label className="field">
                       <span>Ethereum payment URL</span>
                       <input
-                        className="text-input"
+                        className="text-input payment-compact-input"
                         value={paymentProfile.ethereumFacilitatorUrl ?? ""}
                         onChange={(event: ValueInputEvent) => {
                           setProfile({
@@ -1602,11 +1639,33 @@ export function App() {
                     </div>
                   </div>
 
-                  <div className="field-grid compact-field-grid">
+                  <div className="field-grid compact-field-grid payment-compact-grid payment-compact-grid-three">
+                    <label className="field">
+                      <span>Payout method</span>
+                      <select
+                        className="text-input payment-compact-input"
+                        value={defaultPaymentRail}
+                        onChange={(event: ValueInputEvent) => {
+                          setProfile({
+                            ...profile,
+                            paymentProfile: {
+                              ...profile.paymentProfile,
+                              defaultRail: event.target.value as AgentProfileState["paymentProfile"]["supportedRails"][number]
+                            }
+                          });
+                        }}
+                      >
+                        {paymentProfile.supportedRails.map((rail) => (
+                          <option key={rail} value={rail}>
+                            {railLabel(rail)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
                     <label className="field">
                       <span>Pricing</span>
                       <select
-                        className="text-input"
+                        className="text-input payment-compact-input"
                         value={paymentProfile.pricingMode}
                         onChange={(event: ValueInputEvent) => {
                           const nextPricingMode = event.target.value as AgentProfileState["paymentProfile"]["pricingMode"];
@@ -1637,7 +1696,7 @@ export function App() {
                       <label className="field">
                         <span>Fixed price per job (USD)</span>
                         <input
-                          className="text-input"
+                          className="text-input payment-compact-input"
                           value={paymentProfile.fixedAmountUsd ?? ""}
                           onChange={(event: ValueInputEvent) => {
                             setProfile({
@@ -1655,7 +1714,7 @@ export function App() {
                       <label className="field">
                         <span>Quote URL</span>
                         <input
-                          className="text-input"
+                          className="text-input payment-compact-input"
                           value={paymentProfile.quoteUrl ?? ""}
                           onChange={(event: ValueInputEvent) => {
                             setProfile({
@@ -1672,55 +1731,38 @@ export function App() {
                     )}
                   </div>
 
-                  <details className="advanced-panel">
-                    <summary>Advanced settings</summary>
-                    <div className="field-grid compact-field-grid">
-                      <label className="field">
-                        <span>Payout method</span>
-                        <select
-                          className="text-input"
-                          value={defaultPaymentRail}
-                          onChange={(event: ValueInputEvent) => {
-                            setProfile({
-                              ...profile,
-                              paymentProfile: {
-                                ...profile.paymentProfile,
-                                defaultRail: event.target.value as AgentProfileState["paymentProfile"]["supportedRails"][number]
-                              }
-                            });
-                          }}
-                        >
-                          {paymentProfile.supportedRails.map((rail) => (
-                            <option key={rail} value={rail}>
-                              {railLabel(rail)}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                    <p className="panel-copy toggle-help">
-                      SantaClawz advertises the selected payout method first. You can keep more than one wallet on file and change the default later.
-                    </p>
-                    <label className="field">
-                      <span>Notes for users</span>
-                      <textarea
-                        className="text-area compact-text-area"
-                        value={paymentProfile.paymentNotes ?? ""}
-                        onChange={(event: ValueInputEvent) => {
-                          setProfile({
-                            ...profile,
-                            paymentProfile: {
-                              ...profile.paymentProfile,
-                              paymentNotes: event.target.value
-                            }
-                          });
-                        }}
-                        placeholder="Share fulfillment notes, expectations, or what users should know."
-                      />
-                    </label>
-                  </details>
+                  <p className="panel-copy compact-payment-copy">
+                    SantaClawz advertises the selected payout method first. You can keep more than one wallet on file and change the default later.
+                  </p>
+
+                  <label className="field">
+                    <span>Notes for users</span>
+                    <textarea
+                      className="text-area compact-text-area payment-notes-area"
+                      value={paymentProfile.paymentNotes ?? ""}
+                      onChange={(event: ValueInputEvent) => {
+                        setProfile({
+                          ...profile,
+                          paymentProfile: {
+                            ...profile.paymentProfile,
+                            paymentNotes: event.target.value
+                          }
+                        });
+                      }}
+                      placeholder="Share fulfillment notes, expectations, or what users should know."
+                    />
+                  </label>
                 </>
               ) : null}
+
+              <div className="payment-status-grid">
+                <p className="status-note status-note-compact payment-inline-status">
+                  Status: {paymentToggleStatus}
+                </p>
+                <p className="status-note status-note-compact payment-summary-note">
+                  {paymentProfileSummary(paymentProfileReady, paymentProfile)}
+                </p>
+              </div>
 
               <div className="payment-save-row">
                 <p className="panel-copy">
