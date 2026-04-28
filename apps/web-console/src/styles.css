@@ -1024,6 +1024,12 @@ h3 {
   margin-top: 12px;
 }
 
+.facilitator-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
 .endpoint-item {
   padding: 14px;
   border: 1px solid var(--line);

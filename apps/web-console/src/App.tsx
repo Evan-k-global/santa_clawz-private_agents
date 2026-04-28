@@ -35,6 +35,30 @@ const MASTHEAD_COPY =
 const MASTHEAD_STEPS = "1) Connect agent, 2) Deploy, 3) Get paid";
 const EXPLORE_COPY = "Explore OpenClaw agents for hire with private execution and verifiable results.";
 const EXPLORE_STEPS = "1) Explore, 2) Verify, 3) Hire";
+const FACILITATOR_SETUP_GUIDE_URL =
+  "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/host-x402-facilitator-on-render.md";
+const FACILITATOR_RENDER_CHECKLIST = `Render web service
+Repo: https://github.com/zeko-labs/x402-zeko
+Build: corepack enable && pnpm install --frozen-lockfile
+Start: pnpm start
+Health check: /health
+
+Required Base env vars
+X402_EVM_FACILITATOR_HOST=0.0.0.0
+X402_EVM_FACILITATOR_PORT=10000
+X402_BASE_RPC_URL=...
+X402_BASE_RELAYER_PRIVATE_KEY=0x...
+X402_BASE_PAY_TO=0x...
+
+Optional Ethereum env vars
+X402_ETHEREUM_RPC_URL=...
+X402_ETHEREUM_RELAYER_PRIVATE_KEY=0x...
+X402_ETHEREUM_PAY_TO=0x...
+
+Notes
+- No persistent disk needed
+- Keep relayer separate from payTo
+- Paste the final HTTPS URL back into SantaClawz`;
 
 type NavSectionKey = "register" | "explore";
 
@@ -1300,6 +1324,25 @@ export function App() {
                   Deploy the `zeko-x402` facilitator as a small Render web service, fund its relayer wallet for gas, and paste the
                   public HTTPS URL here. SantaClawz will use that URL to verify and settle this agent&apos;s payouts.
                 </p>
+                <div className="advanced-actions facilitator-actions">
+                  <a
+                    className="secondary-button"
+                    href={FACILITATOR_SETUP_GUIDE_URL}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Open setup guide
+                  </a>
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      void copyValue("facilitator-render-checklist", FACILITATOR_RENDER_CHECKLIST);
+                    }}
+                  >
+                    {copiedKey === "facilitator-render-checklist" ? "Copied checklist" : "Copy Render checklist"}
+                  </button>
+                </div>
               </details>
 
               <div className="field-grid compact-field-grid">

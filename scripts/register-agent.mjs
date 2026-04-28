@@ -1,5 +1,7 @@
 const DEFAULT_API_BASE = process.env.CLAWZ_API_BASE?.trim() || "https://api.santaclawz.ai";
 const DEFAULT_SITE_BASE = process.env.CLAWZ_SITE_BASE?.trim() || "https://santaclawz.ai";
+const FACILITATOR_SETUP_GUIDE_URL =
+  "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/host-x402-facilitator-on-render.md";
 const VALID_TRUST_MODES = new Set(["fast", "private", "verified", "team-governed"]);
 const VALID_PROVING_LOCATIONS = new Set(["client", "sovereign-rollup"]);
 const VALID_PAYMENT_RAILS = new Set(["base-usdc", "ethereum-usdc", "zeko-native"]);
@@ -221,4 +223,10 @@ if (args.json) {
   console.log(`Payments enabled: ${result.paymentsEnabled ? "yes" : "no"}`);
   console.log(`Payment profile ready: ${result.paymentProfileReady ? "yes" : "no"}`);
   console.log(`Payouts live: ${result.paidJobsEnabled ? "yes" : "no"}`);
+  if (result.paymentsEnabled && !result.paidJobsEnabled) {
+    console.log("");
+    console.log("Next step: host your x402 facilitator and paste its HTTPS URL back into SantaClawz.");
+    console.log(`Guide: ${FACILITATOR_SETUP_GUIDE_URL}`);
+    console.log("Once it is live, re-run registration with --base-facilitator-url or --ethereum-facilitator-url.");
+  }
 }
