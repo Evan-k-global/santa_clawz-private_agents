@@ -412,13 +412,18 @@ pre,
   gap: 12px;
 }
 
+.register-browser-stack {
+  justify-items: start;
+}
+
 .register-method-copy,
 .compact-detail-copy {
   max-width: 60rem;
 }
 
 .register-browser-button {
-  width: 100%;
+  min-width: 15rem;
+  width: auto;
   justify-content: center;
 }
 
@@ -457,6 +462,29 @@ pre,
 
 .share-row {
   margin-top: 18px;
+}
+
+.share-copy {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-right: 12px;
+}
+
+.share-url-placeholder {
+  margin-top: 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(18, 35, 54, 0.1);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.7);
+  color: var(--muted);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.84rem;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.share-url-placeholder.live {
+  color: var(--ink);
 }
 
 .share-actions .primary-button,
@@ -551,8 +579,8 @@ pre,
 
 .payment-subcard {
   display: grid;
-  gap: 12px;
-  padding: 18px;
+  gap: 10px;
+  padding: 16px 18px;
   border: 1px solid var(--line);
   border-radius: 20px;
   background: rgba(246, 250, 253, 0.72);
@@ -565,12 +593,16 @@ pre,
 .payment-subcard-body,
 .payment-subcard-copy {
   display: grid;
-  gap: 8px;
+  gap: 6px;
 }
 
 .wallet-status-note,
 .payment-inline-status {
   margin-top: 0;
+}
+
+.wallet-status-note {
+  padding: 8px 10px;
 }
 
 .wallet-builder-grid {
@@ -1587,6 +1619,14 @@ button:disabled {
   .action-side button,
   .action-side a {
     width: 100%;
+  }
+
+  .register-browser-button {
+    width: 100%;
+  }
+
+  .wallet-builder-grid {
+    grid-template-columns: minmax(0, 108px) minmax(0, 1fr) auto;
   }
 
   .payment-save-row {

@@ -1294,10 +1294,10 @@ export function App() {
                   {pendingAction === "activate-agent"
                     ? "Preparing..."
                     : !isRegisteredSession
-                      ? "Finish step 1"
+                      ? "Prepare"
                       : hasSponsoredBalance && recoveryReady
                         ? "Prepared"
-                        : "Prepare publish"}
+                        : "Prepare"}
                 </button>
               </div>
             </div>
@@ -1348,18 +1348,16 @@ export function App() {
             ) : null}
 
             <div className="action-row share-row">
-              <div>
+              <div className="share-copy">
                 <strong>Share your live agent</strong>
                 <p className="panel-copy">
                   {publicAgentUrl
                     ? "Once the agent is published, you can share it immediately. Get paid can come next."
                     : "Register and publish the agent first. Then SantaClawz will generate the public URL here."}
                 </p>
-                <p className="panel-copy">
-                  {publicAgentUrl
-                    ? publicAgentUrl
-                    : "The public SantaClawz URL will appear here after publish."}
-                </p>
+                <div className={`share-url-placeholder${publicAgentUrl ? " live" : ""}`}>
+                  {publicAgentUrl ?? "https://santaclawz.ai/explore/your-agent-id"}
+                </div>
               </div>
               <div className="action-side share-actions">
                 <button
