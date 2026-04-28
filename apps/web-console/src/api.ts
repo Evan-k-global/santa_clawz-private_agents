@@ -164,6 +164,16 @@ function buildAdminContext(sessionId?: string, agentId?: string): AdminKeyContex
   return Object.keys(context).length > 0 ? context : undefined;
 }
 
+function normalizeConsoleStateResponse(payload: ConsoleStateResponse): ConsoleStateResponse {
+  return {
+    ...payload,
+    adminAccess: payload.adminAccess ?? {
+      requiresAdminKey: false,
+      hasAdminAccess: true
+    }
+  };
+}
+
 async function request<T>(path: string, init?: RequestInit, adminContext?: AdminKeyContext): Promise<T> {
   const headers = new Headers(init?.headers ?? {});
   if (!headers.has("content-type")) {
@@ -202,7 +212,7 @@ export function fetchConsoleState(sessionId?: string, agentId?: string): Promise
     buildPath("/api/console/state", sessionId, agentId),
     undefined,
     buildAdminContext(sessionId, agentId)
-  );
+  ).then(normalizeConsoleStateResponse);
 }
 
 export function fetchAgentRegistry(): Promise<AgentRegistryEntry[]> {
@@ -222,7 +232,7 @@ export function registerAgent(input: {
   return request<ConsoleStateResponse>("/api/console/register", {
     method: "POST",
     body: JSON.stringify(input)
-  });
+  }).then(normalizeConsoleStateResponse);
 }
 
 export function submitHireRequest(
@@ -247,7 +257,7 @@ export function runLiveSessionTurnFlow(
   return request<ConsoleStateResponse>("/api/zeko/session-turn/run", {
     method: "POST",
     body: JSON.stringify(payload)
-  }, buildAdminContext(payload.sessionId));
+  }, buildAdminContext(payload.sessionId)).then(normalizeConsoleStateResponse);
 }
 
 export function updateTrustMode(modeId: TrustModeId, sessionId?: string): Promise<ConsoleStateResponse> {
@@ -257,7 +267,7 @@ export function updateTrustMode(modeId: TrustModeId, sessionId?: string): Promis
       modeId,
       ...(sessionId ? { sessionId } : {})
     })
-  }, buildAdminContext(sessionId));
+  }, buildAdminContext(sessionId)).then(normalizeConsoleStateResponse);
 }
 
 export function updateAgentProfile(
@@ -270,7 +280,7 @@ export function updateAgentProfile(
       ...profile,
       ...(sessionId ? { sessionId } : {})
     })
-  }, buildAdminContext(sessionId));
+  }, buildAdminContext(sessionId)).then(normalizeConsoleStateResponse);
 }
 
 export function sponsorWallet(
@@ -285,14 +295,14 @@ export function sponsorWallet(
       ...(purpose ? { purpose } : {}),
       ...(sessionId ? { sessionId } : {})
     })
-  }, buildAdminContext(sessionId));
+  }, buildAdminContext(sessionId)).then(normalizeConsoleStateResponse);
 }
 
 export function prepareRecoveryKit(sessionId?: string): Promise<ConsoleStateResponse> {
   return request<ConsoleStateResponse>(buildPath("/api/wallet/recovery/prepare", sessionId), {
     method: "POST",
     body: JSON.stringify(sessionId ? { sessionId } : {})
-  }, buildAdminContext(sessionId));
+  }, buildAdminContext(sessionId)).then(normalizeConsoleStateResponse);
 }
 
 export function approvePrivacyException(
@@ -310,5 +320,5 @@ export function approvePrivacyException(
       note,
       ...(sessionId ? { sessionId } : {})
     })
-  });
+  }).then(normalizeConsoleStateResponse);
 }
