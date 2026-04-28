@@ -370,6 +370,11 @@ pre,
   margin-bottom: 4px;
 }
 
+.stacked-action-row {
+  display: grid;
+  gap: 14px;
+}
+
 .share-row {
   margin-top: 18px;
 }
@@ -393,8 +398,73 @@ pre,
   min-width: min(100%, 360px);
 }
 
+.wide-action-form-stack {
+  width: 100%;
+  min-width: 0;
+}
+
 .hire-form-stack {
   width: min(100%, 520px);
+}
+
+.status-note {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 16px;
+  border: 1px solid rgba(18, 35, 54, 0.08);
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--ink);
+}
+
+.status-note-highlight {
+  border-color: rgba(185, 45, 34, 0.18);
+  background: rgba(185, 45, 34, 0.08);
+  color: var(--accent);
+}
+
+.wallet-chip-list {
+  display: grid;
+  gap: 12px;
+}
+
+.wallet-chip {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.wallet-chip strong {
+  overflow-wrap: anywhere;
+}
+
+.wallet-builder-row {
+  display: grid;
+  gap: 14px;
+}
+
+.wallet-builder-grid {
+  margin-top: 0;
+}
+
+.wallet-builder-controls {
+  display: flex;
+  justify-content: flex-start;
+}
+
+.round-add-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--accent), var(--accent-bright));
+  color: white;
+  font-size: 1.5rem;
+  line-height: 1;
+  box-shadow: 0 14px 30px rgba(185, 45, 34, 0.2);
 }
 
 .compact-queue-list,
@@ -854,6 +924,35 @@ h3 {
   margin-top: 16px;
 }
 
+.inline-toggle {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 6px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.inline-toggle-button {
+  min-width: 104px;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.inline-toggle-button.active,
+.inline-toggle-button:hover {
+  background: rgba(185, 45, 34, 0.12);
+  color: var(--accent);
+}
+
+.toggle-help {
+  margin-top: 12px;
+}
+
 .choice-grid {
   display: flex;
   flex-wrap: wrap;
@@ -1302,6 +1401,14 @@ button:disabled {
     width: 100%;
   }
 
+  .inline-toggle {
+    width: 100%;
+  }
+
+  .inline-toggle-button {
+    flex: 1 1 0;
+  }
+
   .masthead,
   .step-card {
     padding: 18px;
@@ -1315,6 +1422,11 @@ button:disabled {
   .hire-form-stack {
     width: 100%;
     min-width: 0;
+  }
+
+  .wallet-chip {
+    flex-direction: column;
+    align-items: flex-start;
   }
 
   .action-side button,

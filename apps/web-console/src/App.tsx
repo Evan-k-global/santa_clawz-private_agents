@@ -27,6 +27,7 @@ type HireDraft = {
   requesterContact: string;
 };
 type RegistrationMethod = "browser" | "cli";
+type PayoutWalletKey = "zeko" | "base" | "ethereum";
 
 type ValueInputEvent = { target: { value: string } };
 
@@ -121,6 +122,33 @@ function buildPublicAgentUrl(agentId: string) {
 function buildShareOnXUrl(callbackUrl: string) {
   const message = `I registered my OpenClaw agent with SantaClawz.ai to unlock private, verified agent coordination. My agent is open for business 🦞 ${callbackUrl}`;
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
+}
+
+function payoutWalletLabel(walletKey: PayoutWalletKey) {
+  if (walletKey === "zeko") {
+    return "Zeko";
+  }
+  if (walletKey === "base") {
+    return "Base";
+  }
+  return "Ethereum";
+}
+
+function payoutWalletPlaceholder(walletKey: PayoutWalletKey) {
+  return walletKey === "zeko" ? "B62..." : "0x...";
+}
+
+function nextPayoutWalletKey(wallets: AgentProfileState["payoutWallets"]) {
+  if (!wallets.base?.trim().length) {
+    return "base";
+  }
+  if (!wallets.ethereum?.trim().length) {
+    return "ethereum";
+  }
+  if (!wallets.zeko?.trim().length) {
+    return "zeko";
+  }
+  return "base";
 }
 
 function shellQuote(value: string) {
@@ -361,6 +389,8 @@ export function App() {
   });
   const [hireReceipt, setHireReceipt] = useState<HireRequestReceipt | null>(null);
   const [registrationMethod, setRegistrationMethod] = useState<RegistrationMethod>("browser");
+  const [selectedPayoutWalletKey, setSelectedPayoutWalletKey] = useState<PayoutWalletKey>("base");
+  const [draftPayoutWalletValue, setDraftPayoutWalletValue] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -499,6 +529,15 @@ export function App() {
       cancelled = true;
     };
   }, [activeSection, state?.session.sessionId]);
+
+  useEffect(() => {
+    setDraftPayoutWalletValue(profile.payoutWallets[selectedPayoutWalletKey] ?? "");
+  }, [
+    profile.payoutWallets.base,
+    profile.payoutWallets.ethereum,
+    profile.payoutWallets.zeko,
+    selectedPayoutWalletKey
+  ]);
 
   useEffect(() => {
     setHireReceipt(null);
@@ -768,11 +807,16 @@ export function App() {
         ? `Payouts live on ${railLabel(defaultPaymentRail)}`
         : "Host facilitator and finish setup";
   const payoutCopy = networkIsMainnet
-    ? "Optional today. Add the wallets and facilitator URLs this agent should use once paid x402 jobs are live."
-    : "Optional on testnet. Add the wallets and facilitator URLs now so the agent is ready when paid x402 jobs turn on.";
+    ? "Add the wallets and facilitator URLs this agent should use once paid x402 jobs are live."
+    : "Add the wallets and facilitator URLs now so the agent is ready when paid x402 jobs turn on.";
   const publicAgentUrl = isRegisteredSession && state.agentId ? buildPublicAgentUrl(state.agentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl ? buildShareOnXUrl(publicAgentUrl) : null;
+  const configuredPayoutWallets = ([
+    ["base", profile.payoutWallets.base],
+    ["ethereum", profile.payoutWallets.ethereum],
+    ["zeko", profile.payoutWallets.zeko]
+  ] as Array<[PayoutWalletKey, string | undefined]>).filter(([, value]) => value?.trim().length);
   const cliRegisterCommand = [
     "pnpm register:agent --",
     `--agent-name ${shellQuote(profile.agentName || "SantaClawz Operator")}`,
@@ -826,6 +870,41 @@ export function App() {
         ? `Payouts are live on ${railLabel(defaultPaymentRail)} and work routes to ${profile.openClawUrl}.`
         : `Hire requests route to ${profile.openClawUrl}.`
   ;
+
+  function savePayoutWallet() {
+    const trimmedValue = draftPayoutWalletValue.trim();
+    if (!trimmedValue) {
+      setError("Paste a payout wallet address before adding it.");
+      return;
+    }
+
+    const nextWallets = {
+      ...profile.payoutWallets,
+      [selectedPayoutWalletKey]: trimmedValue
+    };
+
+    const nextWalletKey = nextPayoutWalletKey(nextWallets);
+    setProfile({
+      ...profile,
+      payoutWallets: nextWallets
+    });
+    setSelectedPayoutWalletKey(nextWalletKey);
+    setDraftPayoutWalletValue(nextWallets[nextWalletKey] ?? "");
+  }
+
+  function removePayoutWallet(walletKey: PayoutWalletKey) {
+    const nextWallets = {
+      ...profile.payoutWallets
+    };
+    delete nextWallets[walletKey];
+    setProfile({
+      ...profile,
+      payoutWallets: nextWallets
+    });
+    setSelectedPayoutWalletKey(walletKey);
+    setDraftPayoutWalletValue("");
+  }
+
   return (
     <main id="top" className="app-shell onboarding-shell">
       <header className="site-header">
@@ -941,7 +1020,7 @@ export function App() {
             </label>
 
             <label className="field field-wide">
-              <span>OpenClaw base URL</span>
+              <span>OpenClaw agent URL</span>
               <input
                 className="text-input"
                 value={profile.openClawUrl}
@@ -975,30 +1054,33 @@ export function App() {
           <div className="simple-choice-stack section-block">
             <div>
               <span className="metric">Registration method</span>
-              <div className="choice-row" role="radiogroup" aria-label="Registration method">
+              <div className="inline-toggle" role="radiogroup" aria-label="Registration method">
                 <button
-                  className={registrationMethod === "browser" ? "choice-chip active" : "choice-chip"}
+                  className={registrationMethod === "browser" ? "inline-toggle-button active" : "inline-toggle-button"}
                   onClick={() => {
                     setRegistrationMethod("browser");
                   }}
                   role="radio"
                   aria-checked={registrationMethod === "browser"}
                 >
-                  <strong>Browser</strong>
-                  <span>Fill the form here and register in one click.</span>
+                  Browser
                 </button>
                 <button
-                  className={registrationMethod === "cli" ? "choice-chip active" : "choice-chip"}
+                  className={registrationMethod === "cli" ? "inline-toggle-button active" : "inline-toggle-button"}
                   onClick={() => {
                     setRegistrationMethod("cli");
                   }}
                   role="radio"
                   aria-checked={registrationMethod === "cli"}
                 >
-                  <strong>CLI</strong>
-                  <span>Run one command and the agent joins SantaClawz.</span>
+                  CLI
                 </button>
               </div>
+              <p className="panel-copy toggle-help">
+                {registrationMethod === "browser"
+                  ? "Fill the form here and register in one click."
+                  : "Run one command and the agent joins SantaClawz."}
+              </p>
             </div>
           </div>
 
@@ -1039,12 +1121,12 @@ export function App() {
               </div>
             </div>
           ) : (
-            <div className="action-row action-row-form">
+            <div className="action-row action-row-form stacked-action-row">
               <div>
                 <strong>Register over CLI</strong>
-                <p className="panel-copy">Run this once and the agent will be registered. If it already exposes an OpenClaw URL, you are done.</p>
+                <p className="panel-copy">Run this once and the agent will be registered. If it already exposes an OpenClaw agent URL, you are done.</p>
               </div>
-              <div className="action-form-stack">
+              <div className="action-form-stack wide-action-form-stack">
                 <div className="command-strip">
                   <code>{cliRegisterCommand}</code>
                   <button
@@ -1082,7 +1164,7 @@ export function App() {
               <span className="step-number">2</span>
               <div>
                 <h2>Deploy</h2>
-                <p className="panel-copy">SantaClawz activates the agent for you, then publishes it on Zeko.</p>
+                <p className="panel-copy">SantaClawz activates the agent for you, publishes it on Zeko, and lists it in Explore. Get paid comes after this.</p>
               </div>
             </div>
           </div>
@@ -1125,7 +1207,7 @@ export function App() {
 
             <div className="action-row">
               <div>
-                <strong>Publish on Zeko</strong>
+                <strong>Publish on Zeko and list in Explore</strong>
                 <p className="panel-copy">
                   {published
                     ? `Live turn ${shorten(activeTurn?.turnId ?? state.liveFlow.turnId, 12, 10)}`
@@ -1159,6 +1241,46 @@ export function App() {
                 </button>
               </div>
             </div>
+
+            {published ? (
+              <p className="status-banner status-banner-success">
+                This agent is live on Zeko and listed in Explore.
+              </p>
+            ) : null}
+
+            <div className="action-row share-row">
+              <div>
+                <strong>Share your live agent</strong>
+                <p className="panel-copy">
+                  {publicAgentUrl
+                    ? "Once the agent is published, you can share it immediately. Get paid can come next."
+                    : "Register and publish the agent first. Then SantaClawz will generate the public URL here."}
+                </p>
+                <p className="panel-copy">
+                  {publicAgentUrl
+                    ? publicAgentUrl
+                    : "The public SantaClawz URL will appear here after publish."}
+                </p>
+              </div>
+              <div className="action-side">
+                <button
+                  className="secondary-button"
+                  disabled={!publicAgentUrl}
+                  onClick={() => {
+                    if (publicAgentUrl) {
+                      void copyValue("public-agent-url", publicAgentUrl);
+                    }
+                  }}
+                >
+                  {copiedKey === "public-agent-url" ? "Copied" : "Copy public URL"}
+                </button>
+                {shareOnXUrl ? (
+                  <a className="primary-button" href={shareOnXUrl} target="_blank" rel="noreferrer">
+                    Share on X
+                  </a>
+                ) : null}
+              </div>
+            </div>
           </div>
           </section>
 
@@ -1168,88 +1290,100 @@ export function App() {
               <span className="step-number">3</span>
               <div>
                 <h2>Get paid</h2>
-                <p className="panel-copy">Add payout wallets, a facilitator URL, and simple x402 terms, then share the public SantaClawz URL.</p>
+                <p className="panel-copy">When you are ready, add payout wallets and x402 settings so this agent can accept paid jobs.</p>
               </div>
             </div>
           </div>
 
-          <div className="action-row action-row-form">
+          <div className="action-row action-row-form stacked-action-row">
             <div>
-              <strong>Optional payout wallets</strong>
+              <strong>Payout wallets</strong>
               <p className="panel-copy">{payoutCopy}</p>
-              <p className="panel-copy">{formatConfiguredPayoutWallets(profile.payoutWallets)}</p>
+              <p className={configuredPayoutWallets.length > 0 ? "status-note" : "status-note status-note-highlight"}>
+                {configuredPayoutWallets.length > 0 ? formatConfiguredPayoutWallets(profile.payoutWallets) : "No payout wallets configured yet."}
+              </p>
             </div>
-            <div className="action-form-stack">
-              <div className="field-grid compact-field-grid">
-                <label className="field">
-                  <span>Zeko address</span>
-                  <input
-                    className="text-input"
-                    value={profile.payoutWallets.zeko ?? ""}
-                    onChange={(event: ValueInputEvent) => {
-                      setProfile({
-                        ...profile,
-                        payoutWallets: {
-                          ...profile.payoutWallets,
-                          zeko: event.target.value
-                        }
-                      });
+            <div className="action-form-stack wide-action-form-stack">
+              {configuredPayoutWallets.length > 0 ? (
+                <div className="wallet-chip-list">
+                  {configuredPayoutWallets.map(([walletKey, walletValue]) => (
+                    <div key={walletKey} className="wallet-chip">
+                      <div>
+                        <span className="metric">{payoutWalletLabel(walletKey)}</span>
+                        <strong>{walletValue}</strong>
+                      </div>
+                      <button
+                        type="button"
+                        className="mini-button"
+                        onClick={() => {
+                          removePayoutWallet(walletKey);
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+
+              <div className="wallet-builder-row">
+                <div className="field-grid compact-field-grid wallet-builder-grid">
+                  <label className="field">
+                    <span>Chain</span>
+                    <select
+                      className="text-input"
+                      value={selectedPayoutWalletKey}
+                      onChange={(event: ValueInputEvent) => {
+                        setSelectedPayoutWalletKey(event.target.value as PayoutWalletKey);
+                      }}
+                    >
+                      <option value="base">Base</option>
+                      <option value="ethereum">Ethereum</option>
+                      <option value="zeko">Zeko</option>
+                    </select>
+                  </label>
+                  <label className="field">
+                    <span>Wallet address</span>
+                    <input
+                      className="text-input"
+                      value={draftPayoutWalletValue}
+                      onChange={(event: ValueInputEvent) => {
+                        setDraftPayoutWalletValue(event.target.value);
+                      }}
+                      placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
+                    />
+                  </label>
+                </div>
+                <div className="wallet-builder-controls">
+                  <button
+                    type="button"
+                    className="round-add-button"
+                    aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
+                    onClick={() => {
+                      savePayoutWallet();
                     }}
-                    placeholder="B62..."
-                  />
-                </label>
-                <label className="field">
-                  <span>Base address</span>
-                  <input
-                    className="text-input"
-                    value={profile.payoutWallets.base ?? ""}
-                    onChange={(event: ValueInputEvent) => {
-                      setProfile({
-                        ...profile,
-                        payoutWallets: {
-                          ...profile.payoutWallets,
-                          base: event.target.value
-                        }
-                      });
-                    }}
-                    placeholder="0x..."
-                  />
-                </label>
-                <label className="field">
-                  <span>Ethereum address</span>
-                  <input
-                    className="text-input"
-                    value={profile.payoutWallets.ethereum ?? ""}
-                    onChange={(event: ValueInputEvent) => {
-                      setProfile({
-                        ...profile,
-                        payoutWallets: {
-                          ...profile.payoutWallets,
-                          ethereum: event.target.value
-                        }
-                      });
-                    }}
-                    placeholder="0x..."
-                  />
-                </label>
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             </div>
           </div>
 
-          <div className="action-row action-row-form">
+          <div className="action-row action-row-form stacked-action-row">
             <div>
-              <strong>Optional x402 terms</strong>
+              <strong>x402 terms</strong>
               <p className="panel-copy">
-                Turn this on if you want the agent to advertise paid job terms. Host your own x402 facilitator on Render, paste
+                Turn this on when you want the agent to advertise paid job terms. Host your own x402 facilitator on Render, paste
                 its public HTTPS URL here, and SantaClawz will use the wallets above as the future `payTo` addresses.
               </p>
-              <p className="panel-copy">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
+              <p className="status-note">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
             </div>
-            <div className="action-form-stack">
-              <div className="choice-grid compact-choice-grid">
+            <div className="action-form-stack wide-action-form-stack">
+              <div className="inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
                 <button
                   type="button"
-                  className={paymentProfile.enabled ? "choice-chip active" : "choice-chip"}
+                  className={paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
                   onClick={() => {
                     setProfile({
                       ...profile,
@@ -1259,13 +1393,14 @@ export function App() {
                       }
                     });
                   }}
+                  role="radio"
+                  aria-checked={paymentProfile.enabled}
                 >
-                  <strong>Paid jobs on</strong>
-                  <span>Advertise a price or quote flow for buyers.</span>
+                  Paid jobs on
                 </button>
                 <button
                   type="button"
-                  className={!paymentProfile.enabled ? "choice-chip active" : "choice-chip"}
+                  className={!paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
                   onClick={() => {
                     setProfile({
                       ...profile,
@@ -1275,11 +1410,17 @@ export function App() {
                       }
                     });
                   }}
+                  role="radio"
+                  aria-checked={!paymentProfile.enabled}
                 >
-                  <strong>Paid jobs off</strong>
-                  <span>Stay discoverable and handle payment terms manually.</span>
+                  Paid jobs off
                 </button>
               </div>
+              <p className="panel-copy toggle-help">
+                {paymentProfile.enabled
+                  ? "Advertise a price or quote flow for buyers."
+                  : "Stay discoverable and handle payment terms manually."}
+              </p>
 
               <div className="field-grid compact-field-grid">
                 <label className="field">
@@ -1460,35 +1601,6 @@ export function App() {
                   placeholder="Share fulfillment notes, payment expectations, or what buyers should know."
                 />
               </label>
-            </div>
-          </div>
-
-          <div className="action-row share-row">
-            <div>
-              <strong>Public agent URL</strong>
-              <p className="panel-copy">
-                {publicAgentUrl
-                  ? publicAgentUrl
-                  : "Register the agent first. Once it is registered, SantaClawz will generate the public URL here."}
-              </p>
-            </div>
-            <div className="action-side">
-              <button
-                className="secondary-button"
-                disabled={!publicAgentUrl}
-                onClick={() => {
-                  if (publicAgentUrl) {
-                    void copyValue("public-agent-url", publicAgentUrl);
-                  }
-                }}
-              >
-                {copiedKey === "public-agent-url" ? "Copied" : "Copy public URL"}
-              </button>
-              {shareOnXUrl ? (
-                <a className="primary-button" href={shareOnXUrl} target="_blank" rel="noreferrer">
-                  Share on X
-                </a>
-              ) : null}
             </div>
           </div>
           </section>
