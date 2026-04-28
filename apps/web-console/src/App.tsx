@@ -119,8 +119,8 @@ function buildPublicAgentUrl(agentId: string) {
   return `https://santaclawz.ai/explore/${encodeURIComponent(agentId)}`;
 }
 
-function buildShareOnXUrl(callbackUrl: string) {
-  const message = `I registered my OpenClaw agent with SantaClawz.ai to unlock private, verified agent coordination. My agent is open for business 🦞 ${callbackUrl}`;
+function buildShareOnXUrl(callbackUrl: string, agentId: string) {
+  const message = `I registered my OpenClaw agent with SantaClawz.ai. Agent ID: ${agentId}. Private, verifiable, and open for business 🦞 ${callbackUrl}`;
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
 }
 
@@ -247,7 +247,7 @@ function paymentProfileSummary(
   paymentProfile: AgentProfileState["paymentProfile"]
 ) {
   if (!paymentProfile.enabled) {
-    return "Paid jobs are currently off. SantaClawz will still register and publish the agent.";
+    return "Paid jobs are off right now.";
   }
   const defaultRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0];
   const facilitatorUrl = defaultRail ? facilitatorUrlForRail(paymentProfile, defaultRail) : undefined;
@@ -263,7 +263,7 @@ function paymentProfileSummary(
   if (!facilitatorUrl?.trim()) {
     return `${summary}. Host the facilitator for this rail and paste its HTTPS URL here to turn payouts live.`;
   }
-  return paymentProfileReady ? `${summary}. This agent is ready for live payouts.` : `${summary}. Add the matching payout wallet or price details to finish payment setup.`;
+  return paymentProfileReady ? `${summary}. This agent is ready for live payouts.` : `${summary}. Add the matching payout wallet, facilitator URL, and price details to finish payout setup.`;
 }
 
 function effectivePaymentProfile(profile: AgentProfileState): AgentProfileState["paymentProfile"] {
@@ -773,11 +773,13 @@ export function App() {
   const activeTurn = state.liveFlowTargets.turns.find((target) => target.sessionId === sessionId);
   const hasSponsoredBalance = hasPositiveMina(state.wallet.sponsoredRemainingMina);
   const recoveryReady = state.wallet.recovery.status === "sealed";
-  const published = Boolean(activeTurn?.turnId) || state.liveFlow.status === "succeeded";
+  const isRegisteredSession = state.session.sessionId.startsWith("session_agent_");
+  const registeredAgentId = isRegisteredSession ? state.agentId : null;
+  const published = Boolean(registeredAgentId) && (Boolean(activeTurn?.turnId) || state.liveFlow.status === "succeeded");
   const connectReady =
     profile.agentName.trim().length > 0 && profile.openClawUrl.trim().length > 0 && profile.headline.trim().length > 0;
-  const isRegisteredSession = state.session.sessionId.startsWith("session_agent_");
-  const canPublish = connectReady && hasSponsoredBalance && recoveryReady;
+  const canPreparePublish = isRegisteredSession && connectReady;
+  const canPublish = isRegisteredSession && connectReady && hasSponsoredBalance && recoveryReady;
   const networkIsMainnet = isMainnetDeployment(state.deployment);
   const paymentsEnabled = state.paymentsEnabled;
   const paymentProfileReady = state.paymentProfileReady;
@@ -799,9 +801,9 @@ export function App() {
   const payoutCopy = networkIsMainnet
     ? "Add the wallets and facilitator URLs this agent should use once paid x402 jobs are live."
     : "Add the wallets and facilitator URLs now so the agent is ready when paid x402 jobs turn on.";
-  const publicAgentUrl = isRegisteredSession && state.agentId ? buildPublicAgentUrl(state.agentId) : null;
+  const publicAgentUrl = registeredAgentId ? buildPublicAgentUrl(registeredAgentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
-  const shareOnXUrl = publicAgentUrl ? buildShareOnXUrl(publicAgentUrl) : null;
+  const shareOnXUrl = publicAgentUrl && registeredAgentId ? buildShareOnXUrl(publicAgentUrl, registeredAgentId) : null;
   const configuredPayoutWallets = ([
     ["base", profile.payoutWallets.base],
     ["ethereum", profile.payoutWallets.ethereum],
@@ -1041,9 +1043,18 @@ export function App() {
 
           </div>
 
-          <div className="simple-choice-stack section-block">
-            <div>
-              <span className="metric">Registration method</span>
+          <div className="action-row action-row-form stacked-action-row">
+            <div className="section-head compact-head">
+              <div>
+                <strong>Register this agent</strong>
+                <p className="panel-copy">
+                  {registrationMethod === "browser"
+                    ? isRegisteredSession
+                      ? `Registered to ${state.agentId}`
+                      : "Use this when you want SantaClawz to create the registration record for you."
+                    : "Run this once and the agent will be registered. If it already exposes an OpenClaw agent URL, you are done."}
+                </p>
+              </div>
               <div className="inline-toggle" role="radiogroup" aria-label="Registration method">
                 <button
                   className={registrationMethod === "browser" ? "inline-toggle-button active" : "inline-toggle-button"}
@@ -1066,56 +1077,33 @@ export function App() {
                   CLI
                 </button>
               </div>
-              <p className="panel-copy toggle-help">
-                {registrationMethod === "browser"
-                  ? "Fill the form here and register in one click."
-                  : "Run one command and the agent joins SantaClawz."}
-              </p>
             </div>
-          </div>
 
-          {registrationMethod === "browser" ? (
-            <div className="action-row action-row-form">
-              <div>
-                <strong>Register in browser</strong>
-                <p className="panel-copy">
-                  {isRegisteredSession
-                    ? `Registered to ${state.agentId}`
-                    : "Use this when you want SantaClawz to create the registration record for you."}
-                </p>
+            {registrationMethod === "browser" ? (
+              <div className="action-side">
+                <button
+                  className="primary-button"
+                  disabled={pendingAction === "register-agent" || !connectReady || isRegisteredSession}
+                  onClick={() => {
+                    void runAction("register-agent", () =>
+                      registerAgent({
+                        agentName: profileForSave.agentName,
+                        representedPrincipal: profileForSave.representedPrincipal,
+                        headline: profileForSave.headline,
+                        openClawUrl: profileForSave.openClawUrl,
+                        ...(Object.keys(profileForSave.payoutWallets).length > 0
+                          ? { payoutWallets: profileForSave.payoutWallets }
+                          : {}),
+                        paymentProfile: profileForSave.paymentProfile,
+                        preferredProvingLocation: profileForSave.preferredProvingLocation
+                      })
+                    );
+                  }}
+                >
+                  {pendingAction === "register-agent" ? "Registering..." : isRegisteredSession ? "Registered" : "Register agent"}
+                </button>
               </div>
-              <div className="action-form-stack">
-                <div className="action-side">
-                  <button
-                    className="primary-button"
-                    disabled={pendingAction === "register-agent" || !connectReady || isRegisteredSession}
-                    onClick={() => {
-                      void runAction("register-agent", () =>
-                        registerAgent({
-                          agentName: profileForSave.agentName,
-                          representedPrincipal: profileForSave.representedPrincipal,
-                          headline: profileForSave.headline,
-                          openClawUrl: profileForSave.openClawUrl,
-                          ...(Object.keys(profileForSave.payoutWallets).length > 0
-                            ? { payoutWallets: profileForSave.payoutWallets }
-                            : {}),
-                          paymentProfile: profileForSave.paymentProfile,
-                          preferredProvingLocation: profileForSave.preferredProvingLocation
-                        })
-                      );
-                    }}
-                  >
-                    {pendingAction === "register-agent" ? "Registering..." : isRegisteredSession ? "Registered" : "Register agent"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="action-row action-row-form stacked-action-row">
-              <div>
-                <strong>Register over CLI</strong>
-                <p className="panel-copy">Run this once and the agent will be registered. If it already exposes an OpenClaw agent URL, you are done.</p>
-              </div>
+            ) : (
               <div className="action-form-stack wide-action-form-stack">
                 <div className="command-strip">
                   <code>{cliRegisterCommand}</code>
@@ -1129,23 +1117,27 @@ export function App() {
                   </button>
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
-          <details className="advanced-panel">
-            <summary>Need the OpenClaw adapter?</summary>
-            <div className="command-strip">
-              <code>pnpm add openclaw @clawz/openclaw-adapter</code>
-              <button
-                className="copy-button"
-                onClick={() => {
-                  void copyValue("install-command", "pnpm add openclaw @clawz/openclaw-adapter");
-                }}
-              >
-                {copiedKey === "install-command" ? "Copied" : "Copy"}
-              </button>
+            <div className="adapter-help">
+              <span className="metric">Need the OpenClaw adapter?</span>
+              <p className="panel-copy">
+                Only if your agent does not already expose a compatible OpenClaw agent URL. The adapter helps an existing agent
+                publish the right SantaClawz-facing endpoint shape.
+              </p>
+              <div className="command-strip">
+                <code>pnpm add openclaw @clawz/openclaw-adapter</code>
+                <button
+                  className="copy-button"
+                  onClick={() => {
+                    void copyValue("install-command", "pnpm add openclaw @clawz/openclaw-adapter");
+                  }}
+                >
+                  {copiedKey === "install-command" ? "Copied" : "Copy"}
+                </button>
+              </div>
             </div>
-          </details>
+          </div>
           </section>
 
           <section className="panel step-card">
@@ -1162,17 +1154,17 @@ export function App() {
           <div className="action-list">
             <div className="action-row">
               <div>
-                <strong>Activate with SantaClawz</strong>
+                <strong>Prepare sponsored publish</strong>
                 <p className="panel-copy">
-                  {networkIsMainnet
-                    ? "SantaClawz handles the first activation step. Add a payout wallet later if you want this agent to accept paid jobs."
-                    : "SantaClawz handles the first activation step so you can get straight to publishing."}
+                  {!isRegisteredSession
+                    ? "Register the agent first. This step prepares sponsor balance and recovery so publish can succeed."
+                    : "SantaClawz funds sponsor balance and seals recovery so publish can succeed."}
                 </p>
               </div>
               <div className="action-side">
                 <button
                   className="primary-button"
-                  disabled={pendingAction === "activate-agent" || !connectReady || (hasSponsoredBalance && recoveryReady)}
+                  disabled={pendingAction === "activate-agent" || !canPreparePublish || (hasSponsoredBalance && recoveryReady)}
                   onClick={() => {
                     void runAction("activate-agent", async () => {
                       let nextState = state;
@@ -1187,10 +1179,12 @@ export function App() {
                   }}
                 >
                   {pendingAction === "activate-agent"
-                    ? "Activating..."
-                    : hasSponsoredBalance && recoveryReady
-                      ? "Activated"
-                      : "Activate agent"}
+                    ? "Preparing..."
+                    : !isRegisteredSession
+                      ? "Register first"
+                      : hasSponsoredBalance && recoveryReady
+                        ? "Prepared"
+                        : "Prepare publish"}
                 </button>
               </div>
             </div>
@@ -1201,11 +1195,13 @@ export function App() {
                 <p className="panel-copy">
                   {published
                     ? `Live turn ${shorten(activeTurn?.turnId ?? state.liveFlow.turnId, 12, 10)}`
-                    : canPublish
+                    : !isRegisteredSession
+                      ? "Register the agent first."
+                      : canPublish
                       ? "Your agent is ready to publish."
                       : !connectReady
                         ? "Complete the agent profile first."
-                        : "Activate the agent first."}
+                        : "Prepare publish first."}
                 </p>
               </div>
               <div className="action-side">
@@ -1285,11 +1281,12 @@ export function App() {
             </div>
           </div>
 
+          <div className="payment-step-list">
           <div className="action-row action-row-form stacked-action-row">
             <div>
               <strong>Payout wallets</strong>
               <p className="panel-copy">{payoutCopy}</p>
-              <p className={configuredPayoutWallets.length > 0 ? "status-note" : "status-note status-note-highlight"}>
+              <p className={configuredPayoutWallets.length > 0 ? "status-note status-note-compact" : "status-note status-note-highlight status-note-compact"}>
                 {configuredPayoutWallets.length > 0 ? formatConfiguredPayoutWallets(profile.payoutWallets) : "No payout wallets configured yet."}
               </p>
             </div>
@@ -1343,18 +1340,18 @@ export function App() {
                       placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
                     />
                   </label>
-                </div>
-                <div className="wallet-builder-controls">
-                  <button
-                    type="button"
-                    className="round-add-button"
-                    aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
-                    onClick={() => {
-                      savePayoutWallet();
-                    }}
-                  >
-                    +
-                  </button>
+                  <div className="wallet-builder-controls">
+                    <button
+                      type="button"
+                      className="round-add-button"
+                      aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
+                      onClick={() => {
+                        savePayoutWallet();
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -1364,10 +1361,11 @@ export function App() {
             <div>
               <strong>x402 terms</strong>
               <p className="panel-copy">
-                Turn this on when you want the agent to advertise paid job terms. Host your own x402 facilitator on Render, paste
-                its public HTTPS URL here, and SantaClawz will use the wallets above as the future `payTo` addresses.
+                Turn this on when you want the agent to advertise paid job terms. To make payouts live, host your own x402
+                facilitator and paste its public HTTPS URL here. SantaClawz will use the wallets above as the future `payTo`
+                addresses.
               </p>
-              <p className="status-note">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
+              <p className="status-note status-note-compact">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
             </div>
             <div className="action-form-stack wide-action-form-stack">
               <div className="inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
@@ -1427,7 +1425,7 @@ export function App() {
                         }
                       });
                     }}
-                    placeholder="https://your-base-facilitator.onrender.com"
+                    placeholder="https://payments.your-agent-domain.com"
                   />
                 </label>
                 <label className="field">
@@ -1444,13 +1442,13 @@ export function App() {
                         }
                       });
                     }}
-                    placeholder="https://your-ethereum-facilitator.onrender.com"
+                    placeholder="https://ethereum-payments.your-agent-domain.com"
                   />
                 </label>
               </div>
 
               <details className="advanced-panel">
-                <summary>Need to host a facilitator?</summary>
+                <summary>Host your facilitator</summary>
                 <p className="panel-copy">
                   Deploy the `zeko-x402` facilitator as a small Render web service, fund its relayer wallet for gas, and paste the
                   public HTTPS URL here. SantaClawz will use that URL to verify and settle this agent&apos;s payouts.
@@ -1529,6 +1527,9 @@ export function App() {
                   </select>
                 </label>
               </div>
+              <p className="panel-copy toggle-help">
+                SantaClawz advertises the preferred rail first. You can change it later without re-registering the agent.
+              </p>
 
               {paymentProfile.pricingMode === "fixed-exact" ? (
                 <div className="field-grid compact-field-grid">
@@ -1592,6 +1593,7 @@ export function App() {
                 />
               </label>
             </div>
+          </div>
           </div>
           </section>
         </section>

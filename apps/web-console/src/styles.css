@@ -375,6 +375,12 @@ pre,
   gap: 14px;
 }
 
+.payment-step-list {
+  display: grid;
+  gap: 22px;
+  margin-top: 18px;
+}
+
 .share-row {
   margin-top: 18px;
 }
@@ -409,11 +415,15 @@ pre,
 
 .status-note {
   margin-top: 12px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   border-radius: 16px;
   border: 1px solid rgba(18, 35, 54, 0.08);
   background: rgba(255, 255, 255, 0.66);
   color: var(--ink);
+}
+
+.status-note-compact {
+  margin-top: 10px;
 }
 
 .status-note-highlight {
@@ -442,18 +452,16 @@ pre,
   overflow-wrap: anywhere;
 }
 
-.wallet-builder-row {
-  display: grid;
-  gap: 14px;
-}
-
 .wallet-builder-grid {
   margin-top: 0;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
+  align-items: end;
 }
 
 .wallet-builder-controls {
   display: flex;
-  justify-content: flex-start;
+  justify-content: flex-end;
+  align-items: end;
 }
 
 .round-add-button {
@@ -950,7 +958,12 @@ h3 {
 }
 
 .toggle-help {
-  margin-top: 12px;
+  margin-top: 8px;
+}
+
+.adapter-help {
+  display: grid;
+  gap: 10px;
 }
 
 .choice-grid {
