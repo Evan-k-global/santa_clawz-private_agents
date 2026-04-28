@@ -69,6 +69,15 @@ export interface AgentTrustQuestionAnswer {
     payeeKey: string;
     sponsoredBudgetMina: string;
     sponsoredRemainingMina: string;
+    x402Enabled: boolean;
+    supportedRails?: NonNullable<AgentPaymentClaim["x402"]>["supportedRails"];
+    defaultRail?: NonNullable<AgentPaymentClaim["x402"]>["defaultRail"];
+    pricingMode?: NonNullable<AgentPaymentClaim["x402"]>["pricingMode"];
+    settlementTrigger?: NonNullable<AgentPaymentClaim["x402"]>["settlementTrigger"];
+    fixedAmountUsd?: NonNullable<AgentPaymentClaim["x402"]>["fixedAmountUsd"];
+    maxAmountUsd?: NonNullable<AgentPaymentClaim["x402"]>["maxAmountUsd"];
+    quoteUrl?: NonNullable<AgentPaymentClaim["x402"]>["quoteUrl"];
+    payTo?: NonNullable<AgentPaymentClaim["x402"]>["payTo"];
   };
   privacy: {
     preset: AgentPrivacyClaim["preset"];
@@ -364,7 +373,16 @@ export function summarizeAgentProofBundle(bundle: ClawzAgentProofBundle): AgentT
       spendModel: bundle.payment.spendModel,
       payeeKey: bundle.payment.payeeKey,
       sponsoredBudgetMina: bundle.payment.sponsoredBudgetMina,
-      sponsoredRemainingMina: bundle.payment.sponsoredRemainingMina
+      sponsoredRemainingMina: bundle.payment.sponsoredRemainingMina,
+      x402Enabled: Boolean(bundle.payment.x402?.enabled),
+      ...(bundle.payment.x402?.supportedRails ? { supportedRails: bundle.payment.x402.supportedRails } : {}),
+      ...(bundle.payment.x402?.defaultRail ? { defaultRail: bundle.payment.x402.defaultRail } : {}),
+      ...(bundle.payment.x402?.pricingMode ? { pricingMode: bundle.payment.x402.pricingMode } : {}),
+      ...(bundle.payment.x402?.settlementTrigger ? { settlementTrigger: bundle.payment.x402.settlementTrigger } : {}),
+      ...(bundle.payment.x402?.fixedAmountUsd ? { fixedAmountUsd: bundle.payment.x402.fixedAmountUsd } : {}),
+      ...(bundle.payment.x402?.maxAmountUsd ? { maxAmountUsd: bundle.payment.x402.maxAmountUsd } : {}),
+      ...(bundle.payment.x402?.quoteUrl ? { quoteUrl: bundle.payment.x402.quoteUrl } : {}),
+      ...(bundle.payment.x402?.payTo ? { payTo: bundle.payment.x402.payTo } : {})
     },
     privacy: {
       preset: bundle.privacy.preset,

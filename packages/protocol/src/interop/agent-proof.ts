@@ -3,7 +3,14 @@ import type { CapabilityManifest } from "../manifests/capability-manifest.js";
 import type { ArtifactVisibility, PrivacyPreset, ProgrammablePrivacyPolicy } from "../privacy/types.js";
 import type { ToolReceipt } from "../receipts/tool-receipt.js";
 import type { RetentionPolicy } from "../retention/types.js";
-import type { GovernancePolicy, TrustModeId, ZekoDeploymentMode } from "../runtime/console-state.js";
+import type {
+  AgentPaymentRail,
+  AgentPricingMode,
+  AgentSettlementTrigger,
+  GovernancePolicy,
+  TrustModeId,
+  ZekoDeploymentMode
+} from "../runtime/console-state.js";
 import type { StableJsonValue } from "../serialization/stable-json.js";
 
 export interface InteropEvidenceObject {
@@ -99,6 +106,18 @@ export interface AgentPaymentClaim {
     spentMina?: string;
     refundedMina?: string;
     occurredAtIso: string;
+  };
+  x402?: {
+    enabled: boolean;
+    supportedRails: AgentPaymentRail[];
+    defaultRail?: AgentPaymentRail;
+    pricingMode: AgentPricingMode;
+    settlementTrigger: AgentSettlementTrigger;
+    fixedAmountUsd?: string;
+    maxAmountUsd?: string;
+    quoteUrl?: string;
+    paymentNotes?: string;
+    payTo?: Partial<Record<AgentPaymentRail, string>>;
   };
   claimDigest: CanonicalDigest;
 }

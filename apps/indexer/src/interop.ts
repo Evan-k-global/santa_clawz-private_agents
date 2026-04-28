@@ -65,6 +65,19 @@ function addHours(iso: string, hours: number): string {
   return new Date(new Date(iso).getTime() + hours * 60 * 60 * 1000).toISOString();
 }
 
+function payoutWalletForRail(
+  profile: ConsoleStateResponse["profile"],
+  rail: NonNullable<ConsoleStateResponse["profile"]["paymentProfile"]["defaultRail"]>
+) {
+  if (rail === "base-usdc") {
+    return profile.payoutWallets.base;
+  }
+  if (rail === "ethereum-usdc") {
+    return profile.payoutWallets.ethereum;
+  }
+  return profile.payoutWallets.zeko;
+}
+
 function buildProgrammablePrivacyPolicy(
   consoleState: ConsoleStateResponse,
   supportedLocations: PrivacyProvingLocation[],
@@ -441,6 +454,11 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
     ...authorityWithoutDigest,
     claimDigest: canonicalDigest(authorityWithoutDigest)
   };
+  const x402PayTo = Object.fromEntries(
+    input.consoleState.profile.paymentProfile.supportedRails
+      .map((rail) => [rail, payoutWalletForRail(input.consoleState.profile, rail)] as const)
+      .filter((entry): entry is [typeof entry[0], string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+  );
 
   const paymentWithoutDigest = {
     settlementAsset: "MINA" as const,
@@ -473,6 +491,32 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
               ? { refundedMina: (latestTurnSettlement.payload as Record<string, unknown>).refundedMina as string }
               : {}),
             occurredAtIso: latestTurnSettlement.occurredAtIso
+          }
+        }
+      : {}),
+    ...(input.consoleState.profile.paymentProfile.enabled
+      ? {
+          x402: {
+            enabled: input.consoleState.profile.paymentProfile.enabled,
+            supportedRails: input.consoleState.profile.paymentProfile.supportedRails,
+            ...(input.consoleState.profile.paymentProfile.defaultRail
+              ? { defaultRail: input.consoleState.profile.paymentProfile.defaultRail }
+              : {}),
+            pricingMode: input.consoleState.profile.paymentProfile.pricingMode,
+            settlementTrigger: input.consoleState.profile.paymentProfile.settlementTrigger,
+            ...(input.consoleState.profile.paymentProfile.fixedAmountUsd
+              ? { fixedAmountUsd: input.consoleState.profile.paymentProfile.fixedAmountUsd }
+              : {}),
+            ...(input.consoleState.profile.paymentProfile.maxAmountUsd
+              ? { maxAmountUsd: input.consoleState.profile.paymentProfile.maxAmountUsd }
+              : {}),
+            ...(input.consoleState.profile.paymentProfile.quoteUrl
+              ? { quoteUrl: input.consoleState.profile.paymentProfile.quoteUrl }
+              : {}),
+            ...(input.consoleState.profile.paymentProfile.paymentNotes
+              ? { paymentNotes: input.consoleState.profile.paymentProfile.paymentNotes }
+              : {}),
+            ...(Object.keys(x402PayTo).length > 0 ? { payTo: x402PayTo } : {})
           }
         }
       : {})

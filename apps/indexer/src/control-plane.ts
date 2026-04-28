@@ -213,10 +213,16 @@ interface RegisterAgentOptions {
   headline: string;
   openClawUrl: string;
   payoutWallets?: AgentProfileState["payoutWallets"];
+  paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
   payoutAddress?: string;
   trustModeId?: TrustModeId;
   preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
 }
+
+type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile">> & {
+  paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
+  payoutAddress?: unknown;
+};
 
 interface SubmitHireRequestOptions {
   agentId: string;
@@ -461,6 +467,13 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
     headline: "Private, verifiable agent work on Zeko.",
     openClawUrl: "",
     payoutWallets: {},
+    paymentProfile: {
+      enabled: false,
+      supportedRails: ["base-usdc"],
+      defaultRail: "base-usdc",
+      pricingMode: "fixed-exact",
+      settlementTrigger: "on-proof"
+    },
     preferredProvingLocation: trustMode.defaultProvingLocation
   };
 }
@@ -508,6 +521,18 @@ function sanitizePayoutWalletValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 180) : undefined;
 }
 
+function sanitizeUsdAmount(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 40) : undefined;
+}
+
+function sanitizeUrl(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 280) : undefined;
+}
+
+function sanitizePaymentNotes(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 280) : undefined;
+}
+
 function sanitizePayoutWallets(
   input: Partial<AgentProfileState["payoutWallets"]> | undefined,
   fallback: AgentProfileState["payoutWallets"],
@@ -531,12 +556,90 @@ function hasPayoutAddress(profile: AgentProfileState): boolean {
   return Object.values(profile.payoutWallets).some((value) => typeof value === "string" && value.trim().length > 0);
 }
 
+function sanitizePaymentProfile(
+  input: Partial<AgentProfileState["paymentProfile"]> | undefined,
+  fallback: AgentProfileState["paymentProfile"]
+): AgentProfileState["paymentProfile"] {
+  const supportedRails = Array.from(
+    new Set(
+      (Array.isArray(input?.supportedRails) ? input.supportedRails : fallback.supportedRails).filter(
+        (rail): rail is AgentProfileState["paymentProfile"]["supportedRails"][number] =>
+          rail === "base-usdc" || rail === "ethereum-usdc" || rail === "zeko-native"
+      )
+    )
+  );
+  const normalizedRails: AgentProfileState["paymentProfile"]["supportedRails"] =
+    supportedRails.length > 0 ? supportedRails : ["base-usdc"];
+  const defaultRail =
+    (input?.defaultRail && normalizedRails.includes(input.defaultRail) ? input.defaultRail : undefined) ??
+    (fallback.defaultRail && normalizedRails.includes(fallback.defaultRail) ? fallback.defaultRail : undefined) ??
+    normalizedRails[0];
+  const pricingMode =
+    input?.pricingMode === "fixed-exact" ||
+    input?.pricingMode === "capped-exact" ||
+    input?.pricingMode === "quote-required" ||
+    input?.pricingMode === "agent-negotiated"
+      ? input.pricingMode
+      : fallback.pricingMode;
+  const settlementTrigger =
+    input?.settlementTrigger === "upfront" || input?.settlementTrigger === "on-proof"
+      ? input.settlementTrigger
+      : fallback.settlementTrigger;
+
+  return {
+    enabled: typeof input?.enabled === "boolean" ? input.enabled : fallback.enabled,
+    supportedRails: normalizedRails,
+    ...(defaultRail ? { defaultRail } : {}),
+    pricingMode,
+    ...(sanitizeUsdAmount(input?.fixedAmountUsd) ?? sanitizeUsdAmount(fallback.fixedAmountUsd)
+      ? { fixedAmountUsd: sanitizeUsdAmount(input?.fixedAmountUsd) ?? sanitizeUsdAmount(fallback.fixedAmountUsd)! }
+      : {}),
+    ...(sanitizeUsdAmount(input?.maxAmountUsd) ?? sanitizeUsdAmount(fallback.maxAmountUsd)
+      ? { maxAmountUsd: sanitizeUsdAmount(input?.maxAmountUsd) ?? sanitizeUsdAmount(fallback.maxAmountUsd)! }
+      : {}),
+    ...(sanitizeUrl(input?.quoteUrl) ?? sanitizeUrl(fallback.quoteUrl)
+      ? { quoteUrl: sanitizeUrl(input?.quoteUrl) ?? sanitizeUrl(fallback.quoteUrl)! }
+      : {}),
+    settlementTrigger,
+    ...(sanitizePaymentNotes(input?.paymentNotes) ?? sanitizePaymentNotes(fallback.paymentNotes)
+      ? { paymentNotes: sanitizePaymentNotes(input?.paymentNotes) ?? sanitizePaymentNotes(fallback.paymentNotes)! }
+      : {})
+  };
+}
+
+function payoutWalletForRail(profile: AgentProfileState, rail: AgentProfileState["paymentProfile"]["supportedRails"][number]): string | undefined {
+  if (rail === "base-usdc") {
+    return profile.payoutWallets.base;
+  }
+  if (rail === "ethereum-usdc") {
+    return profile.payoutWallets.ethereum;
+  }
+  return profile.payoutWallets.zeko;
+}
+
+function hasReadyPaymentProfile(profile: AgentProfileState): boolean {
+  if (!profile.paymentProfile.enabled) {
+    return false;
+  }
+  const selectedRail = profile.paymentProfile.defaultRail ?? profile.paymentProfile.supportedRails[0];
+  if (!selectedRail || !payoutWalletForRail(profile, selectedRail)) {
+    return false;
+  }
+  if (profile.paymentProfile.pricingMode === "fixed-exact") {
+    return typeof profile.paymentProfile.fixedAmountUsd === "string" && profile.paymentProfile.fixedAmountUsd.trim().length > 0;
+  }
+  if (profile.paymentProfile.pricingMode === "capped-exact") {
+    return typeof profile.paymentProfile.maxAmountUsd === "string" && profile.paymentProfile.maxAmountUsd.trim().length > 0;
+  }
+  return true;
+}
+
 function computePaidJobsEnabled(
   profile: AgentProfileState,
   published: boolean,
   deployment: Pick<ZekoDeploymentState, "networkId" | "mode">
 ): boolean {
-  return published && (!isMainnetNetwork(deployment) || hasPayoutAddress(profile));
+  return published && hasReadyPaymentProfile(profile) && (!isMainnetNetwork(deployment) || hasPayoutAddress(profile));
 }
 
 export class ClawzControlPlane {
@@ -771,7 +874,7 @@ export class ClawzControlPlane {
 
   private sanitizeProfileInput(
     trustModeId: TrustModeId,
-    input: Partial<AgentProfileState>,
+    input: AgentProfileInput,
     fallback: AgentProfileState
   ): AgentProfileState {
     const trustMode = TRUST_MODE_PRESETS.find((mode) => mode.id === trustModeId) ?? TRUST_MODE_PRESETS[0]!;
@@ -790,6 +893,7 @@ export class ClawzControlPlane {
       headline: typeof input.headline === "string" ? input.headline.trim().slice(0, 280) : fallback.headline,
       openClawUrl: typeof input.openClawUrl === "string" ? input.openClawUrl.trim().slice(0, 280) : fallback.openClawUrl,
       payoutWallets: sanitizePayoutWallets(input.payoutWallets, fallback.payoutWallets, legacyPayoutAddress),
+      paymentProfile: sanitizePaymentProfile(input.paymentProfile, fallback.paymentProfile),
       preferredProvingLocation
     };
   }
@@ -2039,11 +2143,15 @@ export class ClawzControlPlane {
     const profile = this.profileForSession(state, focus.sessionId, focus.trustModeId);
     const agentId = this.agentIdForSession(state, focus.sessionId, focus.trustModeId);
     const published = liveFlowTargets.turns.some((target) => target.sessionId === focus.sessionId);
+    const paymentsEnabled = profile.paymentProfile.enabled;
+    const paymentProfileReady = hasReadyPaymentProfile(profile);
     const payoutAddressConfigured = hasPayoutAddress(profile);
     const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
 
     return {
       agentId,
+      paymentsEnabled,
+      paymentProfileReady,
       payoutAddressConfigured,
       paidJobsEnabled,
       wallet: {
@@ -2108,7 +2216,12 @@ export class ClawzControlPlane {
           trustModeLabel: trustMode.label,
           proofLevel: trustMode.proofLevel,
           preferredProvingLocation: profile.preferredProvingLocation,
+          paymentsEnabled: profile.paymentProfile.enabled,
+          ...(profile.paymentProfile.defaultRail ? { paymentRail: profile.paymentProfile.defaultRail } : {}),
+          pricingMode: profile.paymentProfile.pricingMode,
+          settlementTrigger: profile.paymentProfile.settlementTrigger,
           payoutAddressConfigured: hasPayoutAddress(profile),
+          paymentProfileReady: hasReadyPaymentProfile(profile),
           paidJobsEnabled: computePaidJobsEnabled(profile, published, deployment),
           published,
           ...(lastUpdatedAtIso ? { lastUpdatedAtIso } : {})
@@ -2167,6 +2280,7 @@ export class ClawzControlPlane {
         headline: options.headline,
         openClawUrl: options.openClawUrl,
         ...(options.payoutWallets ? { payoutWallets: options.payoutWallets } : {}),
+        ...(options.paymentProfile ? { paymentProfile: options.paymentProfile } : {}),
         ...(options.payoutAddress ? { payoutAddress: options.payoutAddress } : {}),
         ...(options.representedPrincipal ? { representedPrincipal: options.representedPrincipal } : {}),
         ...(options.preferredProvingLocation ? { preferredProvingLocation: options.preferredProvingLocation } : {})
@@ -2233,20 +2347,16 @@ export class ClawzControlPlane {
     const trustModeId = this.resolveSessionTrustMode(events, sessionId, state.activeMode);
     const profile = this.profileForSession(state, sessionId, trustModeId);
     const published = liveFlowTargets.turns.some((target) => target.sessionId === sessionId);
-    const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
-
     if (!published) {
       throw new Error("This agent needs to publish on Zeko before it can accept hire requests.");
     }
     if (!profile.openClawUrl.trim()) {
       throw new Error("This agent has no OpenClaw callback URL configured yet.");
     }
-    if (isMainnetNetwork(deployment) && !paidJobsEnabled) {
-      throw new Error("This mainnet agent still needs a payout wallet before it can accept paid jobs.");
-    }
     if (options.taskPrompt.trim().length === 0 || options.requesterContact.trim().length === 0) {
       throw new Error("taskPrompt and requesterContact are required.");
     }
+    const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
 
     const submittedAtIso = new Date().toISOString();
     const requestId = `hire_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -2307,7 +2417,7 @@ export class ClawzControlPlane {
     return this.getConsoleState({ sessionId: focus.sessionId });
   }
 
-  async updateAgentProfile(sessionId: string | undefined, input: Partial<AgentProfileState>): Promise<ConsoleStateResponse> {
+  async updateAgentProfile(sessionId: string | undefined, input: AgentProfileInput): Promise<ConsoleStateResponse> {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
@@ -2336,6 +2446,8 @@ export class ClawzControlPlane {
 
   async sponsorWallet(options: SponsorWalletOptions = {}): Promise<ConsoleStateResponse> {
     const amountMina = options.amountMina ?? "0.10";
+    const requestedPurpose = options.purpose ?? "top-up";
+    const explicitSponsorRequest = options.amountMina !== undefined || requestedPurpose === "top-up";
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
@@ -2355,7 +2467,7 @@ export class ClawzControlPlane {
     }
 
     const remainingBudget = Number.parseFloat(state.wallet.sponsoredRemainingMina || "0");
-    if (Number.isFinite(remainingBudget) && remainingBudget >= 0.2) {
+    if (Number.isFinite(remainingBudget) && remainingBudget >= 0.2 && !explicitSponsorRequest) {
       throw new Error("Shadow wallet already has enough sponsored balance for the next publish.");
     }
 
@@ -2365,7 +2477,7 @@ export class ClawzControlPlane {
       jobId: `sponsor_${slug}`,
       sessionId: focus.sessionId,
       amountMina,
-      purpose: options.purpose ?? "top-up",
+      purpose: requestedPurpose,
       status: "queued",
       requestedAtIso,
       note: "Queued for SantaClawz sponsor processing."

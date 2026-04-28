@@ -246,12 +246,29 @@ export interface AgentPayoutWallets {
   ethereum?: string;
 }
 
+export type AgentPaymentRail = "base-usdc" | "ethereum-usdc" | "zeko-native";
+export type AgentPricingMode = "fixed-exact" | "capped-exact" | "quote-required" | "agent-negotiated";
+export type AgentSettlementTrigger = "upfront" | "on-proof";
+
+export interface AgentPaymentProfile {
+  enabled: boolean;
+  supportedRails: AgentPaymentRail[];
+  defaultRail?: AgentPaymentRail;
+  pricingMode: AgentPricingMode;
+  fixedAmountUsd?: string;
+  maxAmountUsd?: string;
+  quoteUrl?: string;
+  settlementTrigger: AgentSettlementTrigger;
+  paymentNotes?: string;
+}
+
 export interface AgentProfileState {
   agentName: string;
   representedPrincipal: string;
   headline: string;
   openClawUrl: string;
   payoutWallets: AgentPayoutWallets;
+  paymentProfile: AgentPaymentProfile;
   preferredProvingLocation: PrivacyProvingLocation;
 }
 
@@ -267,7 +284,12 @@ export interface AgentRegistryEntry {
   trustModeLabel: string;
   proofLevel: "signed" | "rooted" | "proof-backed";
   preferredProvingLocation: PrivacyProvingLocation;
+  paymentsEnabled: boolean;
+  paymentRail?: AgentPaymentRail;
+  pricingMode: AgentPricingMode;
+  settlementTrigger: AgentSettlementTrigger;
   payoutAddressConfigured: boolean;
+  paymentProfileReady: boolean;
   paidJobsEnabled: boolean;
   published: boolean;
   lastUpdatedAtIso?: string;
@@ -286,6 +308,8 @@ export interface HireRequestReceipt {
 
 export interface ConsoleStateResponse {
   agentId: string;
+  paymentsEnabled: boolean;
+  paymentProfileReady: boolean;
   payoutAddressConfigured: boolean;
   paidJobsEnabled: boolean;
   wallet: ShadowWalletState;
@@ -300,6 +324,54 @@ export interface ConsoleStateResponse {
   liveFlow: LiveSessionTurnFlowState;
   sponsorQueue: SponsorQueueState;
   profile: AgentProfileState;
+}
+
+export type AgentX402SettlementRail = "evm" | "zeko";
+export type AgentX402ExecutionMode = "settle-first" | "reserve-release";
+
+export interface AgentX402RailPlan {
+  rail: AgentPaymentRail;
+  settlementRail: AgentX402SettlementRail;
+  networkId: string;
+  assetSymbol: string;
+  assetDecimals: number;
+  assetStandard: "erc20" | "native";
+  assetAddress?: string;
+  builderHint: string;
+  facilitatorMode: string;
+  settlementModel: string;
+  executionMode: AgentX402ExecutionMode;
+  payTo?: string;
+  beneficiaryAddress?: string;
+  settlementContractAddress?: string;
+  facilitatorUrl?: string;
+  amountUsd?: string;
+  maxAmountUsd?: string;
+  ready: boolean;
+  missing: string[];
+  notes: string[];
+}
+
+export interface AgentX402Plan {
+  serviceId: string;
+  agentId: string;
+  sessionId: string;
+  published: boolean;
+  paymentsEnabled: boolean;
+  paymentProfileReady: boolean;
+  payoutAddressConfigured: boolean;
+  pricingMode: AgentPricingMode;
+  settlementTrigger: AgentSettlementTrigger;
+  defaultRail?: AgentPaymentRail;
+  quoteUrl?: string;
+  paymentNotes?: string;
+  proofBundleUrl: string;
+  verifyProofUrl: string;
+  catalogPreviewUrl: string;
+  resourcePreviewUrl: string;
+  verifyPaymentUrl: string;
+  settlePaymentUrl: string;
+  rails: AgentX402RailPlan[];
 }
 
 export const TRUST_MODE_PRESETS: TrustModeCard[] = [

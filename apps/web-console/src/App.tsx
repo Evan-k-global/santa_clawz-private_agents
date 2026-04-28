@@ -32,7 +32,7 @@ type ValueInputEvent = { target: { value: string } };
 
 const MASTHEAD_COPY =
   "SantaClawz enables OpenClaw agents to operate autonomously in the real world on private, verifiable coordination rails, delivering your agent data packages without revealing their contents.";
-const MASTHEAD_STEPS = "1) Connect agent, 2) Deploy, 3) Share";
+const MASTHEAD_STEPS = "1) Connect agent, 2) Deploy, 3) Get paid";
 const EXPLORE_COPY = "Explore OpenClaw agents for hire with private execution and verifiable results.";
 const EXPLORE_STEPS = "1) Explore, 2) Verify, 3) Hire";
 
@@ -132,10 +132,13 @@ function formatRegistryHireStatus(agent: AgentRegistryEntry) {
   if (!agent.published) {
     return "Publish first";
   }
-  if (agent.payoutAddressConfigured) {
-    return isMainnetNetworkId(agent.networkId) ? "Payout wallet on file" : "Payment-ready metadata on file";
+  if (!agent.paymentsEnabled) {
+    return "Custom terms";
   }
-  return "No payout wallet on file yet";
+  if (agent.paymentProfileReady) {
+    return `x402-ready on ${agent.paymentRail ? railLabel(agent.paymentRail) : "configured rail"}`;
+  }
+  return "Finish payment setup";
 }
 
 function formatConfiguredPayoutWallets(wallets: AgentProfileState["payoutWallets"]) {
@@ -145,6 +148,71 @@ function formatConfiguredPayoutWallets(wallets: AgentProfileState["payoutWallets
     ...(wallets.ethereum ? [`Ethereum: ${wallets.ethereum}`] : [])
   ];
   return labels.length > 0 ? labels.join(" • ") : "No payout wallets configured yet.";
+}
+
+function derivedSupportedRails(wallets: AgentProfileState["payoutWallets"]) {
+  const rails = [
+    ...(wallets.base?.trim().length ? (["base-usdc"] as const) : []),
+    ...(wallets.ethereum?.trim().length ? (["ethereum-usdc"] as const) : []),
+    ...(wallets.zeko?.trim().length ? (["zeko-native"] as const) : [])
+  ];
+  return rails.length > 0 ? rails : (["base-usdc"] as const);
+}
+
+function railLabel(rail: AgentProfileState["paymentProfile"]["supportedRails"][number]) {
+  if (rail === "base-usdc") {
+    return "Base USDC";
+  }
+  if (rail === "ethereum-usdc") {
+    return "Ethereum USDC";
+  }
+  return "Zeko native";
+}
+
+function pricingModeLabel(mode: AgentProfileState["paymentProfile"]["pricingMode"]) {
+  if (mode === "fixed-exact") {
+    return "Fixed price";
+  }
+  if (mode === "capped-exact") {
+    return "Capped price";
+  }
+  if (mode === "quote-required") {
+    return "Quote required";
+  }
+  return "Negotiated by agent";
+}
+
+function paymentProfileSummary(
+  paymentProfileReady: boolean,
+  paymentProfile: AgentProfileState["paymentProfile"]
+) {
+  if (!paymentProfile.enabled) {
+    return "Paid jobs are currently off. SantaClawz will still register and publish the agent.";
+  }
+  const defaultRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0];
+  const priceDetail =
+    paymentProfile.pricingMode === "fixed-exact" && paymentProfile.fixedAmountUsd?.trim().length
+      ? ` at $${paymentProfile.fixedAmountUsd.trim()}`
+      : paymentProfile.pricingMode === "capped-exact" && paymentProfile.maxAmountUsd?.trim().length
+        ? ` up to $${paymentProfile.maxAmountUsd.trim()}`
+        : "";
+  const summary = `${pricingModeLabel(paymentProfile.pricingMode)}${priceDetail} on ${
+    defaultRail ? railLabel(defaultRail) : "selected rail"
+  }`;
+  return paymentProfileReady ? `${summary}. This agent is ready for paid x402 jobs.` : `${summary}. Add the matching payout wallet or pricing details to finish payment setup.`;
+}
+
+function effectivePaymentProfile(profile: AgentProfileState): AgentProfileState["paymentProfile"] {
+  const supportedRails = [...derivedSupportedRails(profile.payoutWallets)];
+  const requestedDefaultRail = profile.paymentProfile.defaultRail;
+  const defaultRail = requestedDefaultRail && supportedRails.includes(requestedDefaultRail) ? requestedDefaultRail : supportedRails[0];
+
+  return {
+    ...profile.paymentProfile,
+    supportedRails,
+    ...(defaultRail ? { defaultRail } : {}),
+    settlementTrigger: "upfront"
+  };
 }
 
 function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): AgentProfileDraft {
@@ -165,9 +233,48 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
         ? { base: input.payoutWallets.base }
         : legacyPayoutAddress.trim().length > 0
           ? { base: legacyPayoutAddress }
-          : {}),
+        : {}),
       ...(typeof input?.payoutWallets?.ethereum === "string" && input.payoutWallets.ethereum.trim().length > 0
         ? { ethereum: input.payoutWallets.ethereum }
+        : {})
+    },
+    paymentProfile: {
+      enabled: typeof input?.paymentProfile?.enabled === "boolean" ? input.paymentProfile.enabled : false,
+      supportedRails:
+        Array.isArray(input?.paymentProfile?.supportedRails) && input.paymentProfile.supportedRails.length > 0
+          ? input.paymentProfile.supportedRails.filter(
+              (rail): rail is AgentProfileState["paymentProfile"]["supportedRails"][number] =>
+                rail === "base-usdc" || rail === "ethereum-usdc" || rail === "zeko-native"
+            )
+          : ["base-usdc"],
+      defaultRail:
+        input?.paymentProfile?.defaultRail === "base-usdc" ||
+        input?.paymentProfile?.defaultRail === "ethereum-usdc" ||
+        input?.paymentProfile?.defaultRail === "zeko-native"
+          ? input.paymentProfile.defaultRail
+          : "base-usdc",
+      pricingMode:
+        input?.paymentProfile?.pricingMode === "fixed-exact" ||
+        input?.paymentProfile?.pricingMode === "capped-exact" ||
+        input?.paymentProfile?.pricingMode === "quote-required" ||
+        input?.paymentProfile?.pricingMode === "agent-negotiated"
+          ? input.paymentProfile.pricingMode
+          : "fixed-exact",
+      ...(typeof input?.paymentProfile?.fixedAmountUsd === "string" && input.paymentProfile.fixedAmountUsd.trim().length > 0
+        ? { fixedAmountUsd: input.paymentProfile.fixedAmountUsd }
+        : {}),
+      ...(typeof input?.paymentProfile?.maxAmountUsd === "string" && input.paymentProfile.maxAmountUsd.trim().length > 0
+        ? { maxAmountUsd: input.paymentProfile.maxAmountUsd }
+        : {}),
+      ...(typeof input?.paymentProfile?.quoteUrl === "string" && input.paymentProfile.quoteUrl.trim().length > 0
+        ? { quoteUrl: input.paymentProfile.quoteUrl }
+        : {}),
+      settlementTrigger:
+        input?.paymentProfile?.settlementTrigger === "upfront" || input?.paymentProfile?.settlementTrigger === "on-proof"
+          ? input.paymentProfile.settlementTrigger
+          : "upfront",
+      ...(typeof input?.paymentProfile?.paymentNotes === "string" && input.paymentProfile.paymentNotes.trim().length > 0
+        ? { paymentNotes: input.paymentProfile.paymentNotes }
         : {})
     },
     preferredProvingLocation:
@@ -295,12 +402,17 @@ export function App() {
       return;
     }
 
-    if (JSON.stringify(state.profile) === JSON.stringify(profile)) {
+    const profileForSave = {
+      ...profile,
+      paymentProfile: effectivePaymentProfile(profile)
+    };
+
+    if (JSON.stringify(state.profile) === JSON.stringify(profileForSave)) {
       return;
     }
 
     const timeoutId = window.setTimeout(() => {
-      void updateAgentProfile(profile, profileSessionId)
+      void updateAgentProfile(profileForSave, profileSessionId)
         .then((nextState) => {
           setState(nextState);
         })
@@ -587,18 +699,26 @@ export function App() {
   const isRegisteredSession = state.session.sessionId.startsWith("session_agent_");
   const canPublish = connectReady && hasSponsoredBalance && recoveryReady;
   const networkIsMainnet = isMainnetDeployment(state.deployment);
+  const paymentsEnabled = state.paymentsEnabled;
+  const paymentProfileReady = state.paymentProfileReady;
   const payoutConfigured = state.payoutAddressConfigured;
   const paidJobsEnabled = state.paidJobsEnabled;
+  const paymentProfile = effectivePaymentProfile(profile);
+  const profileForSave = {
+    ...profile,
+    paymentProfile
+  };
+  const defaultPaymentRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0] ?? "base-usdc";
   const paidWorkStatusLabel = !published
     ? "Publish first"
-    : payoutConfigured
-      ? networkIsMainnet
-        ? "Payout wallet on file"
-        : "Payment-ready metadata on file"
-      : "No payout wallet on file yet";
+    : !paymentsEnabled
+      ? "Custom terms / no x402 yet"
+      : paymentProfileReady
+        ? `x402-ready on ${railLabel(defaultPaymentRail)}`
+        : "Finish x402 setup";
   const payoutCopy = networkIsMainnet
-    ? "Optional, but recommended. Add any payout wallet you want on file before real payments arrive."
-    : "Optional on testnet. Add these now if you want this agent ready for future payment rails.";
+    ? "Optional today. Add the wallets this agent should use once paid x402 jobs are live."
+    : "Optional on testnet. Add them now so the agent is ready when paid x402 jobs turn on.";
   const publicAgentUrl = isRegisteredSession && state.agentId ? buildPublicAgentUrl(state.agentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl ? buildShareOnXUrl(publicAgentUrl) : null;
@@ -618,20 +738,37 @@ export function App() {
       : []),
     ...(profile.payoutWallets.ethereum?.trim().length
       ? [`--ethereum-payout-address ${shellQuote(profile.payoutWallets.ethereum)}`]
+      : []),
+    ...(paymentProfile.enabled ? ["--payments-enabled"] : []),
+    ...(paymentProfile.defaultRail ? [`--default-rail ${shellQuote(paymentProfile.defaultRail)}`] : []),
+    `--pricing-mode ${shellQuote(paymentProfile.pricingMode)}`,
+    ...(paymentProfile.fixedAmountUsd?.trim().length
+      ? [`--fixed-price-usd ${shellQuote(paymentProfile.fixedAmountUsd)}`]
+      : []),
+    ...(paymentProfile.maxAmountUsd?.trim().length
+      ? [`--max-price-usd ${shellQuote(paymentProfile.maxAmountUsd)}`]
+      : []),
+    ...(paymentProfile.quoteUrl?.trim().length
+      ? [`--quote-url ${shellQuote(paymentProfile.quoteUrl)}`]
+      : []),
+    ...(paymentProfile.paymentNotes?.trim().length
+      ? [`--payment-notes ${shellQuote(paymentProfile.paymentNotes)}`]
       : [])
   ].join(" ");
   const canSubmitHire =
     Boolean(sharedAgentId) &&
     published &&
     profile.openClawUrl.trim().length > 0 &&
-    (!networkIsMainnet || paidJobsEnabled) &&
     hireDraft.taskPrompt.trim().length > 0 &&
     hireDraft.requesterContact.trim().length > 0;
   const hireStatusCopy = !published
     ? "This agent still needs to publish on Zeko before it can accept work."
-    : networkIsMainnet && !paidJobsEnabled
-      ? "This mainnet agent still needs a payout wallet before it can accept paid jobs."
-      : `Hire requests route to ${profile.openClawUrl}.`;
+    : paymentsEnabled && !paymentProfileReady
+      ? "This agent has an x402 payment profile started, but it still needs its selected rail or price details completed."
+      : paymentsEnabled && paidJobsEnabled
+        ? `This agent is x402-ready on ${railLabel(defaultPaymentRail)} and routes work to ${profile.openClawUrl}.`
+        : `Hire requests route to ${profile.openClawUrl}.`
+  ;
   return (
     <main id="top" className="app-shell onboarding-shell">
       <header className="site-header">
@@ -826,12 +963,15 @@ export function App() {
                     onClick={() => {
                       void runAction("register-agent", () =>
                         registerAgent({
-                          agentName: profile.agentName,
-                          representedPrincipal: profile.representedPrincipal,
-                          headline: profile.headline,
-                          openClawUrl: profile.openClawUrl,
-                          ...(Object.keys(profile.payoutWallets).length > 0 ? { payoutWallets: profile.payoutWallets } : {}),
-                          preferredProvingLocation: profile.preferredProvingLocation
+                          agentName: profileForSave.agentName,
+                          representedPrincipal: profileForSave.representedPrincipal,
+                          headline: profileForSave.headline,
+                          openClawUrl: profileForSave.openClawUrl,
+                          ...(Object.keys(profileForSave.payoutWallets).length > 0
+                            ? { payoutWallets: profileForSave.payoutWallets }
+                            : {}),
+                          paymentProfile: profileForSave.paymentProfile,
+                          preferredProvingLocation: profileForSave.preferredProvingLocation
                         })
                       );
                     }}
@@ -970,8 +1110,8 @@ export function App() {
             <div className="step-title">
               <span className="step-number">3</span>
               <div>
-                <h2>Share</h2>
-                <p className="panel-copy">Get the public SantaClawz URL once the agent is actually registered.</p>
+                <h2>Get paid</h2>
+                <p className="panel-copy">Add payout wallets and simple x402 terms, then share the public SantaClawz URL.</p>
               </div>
             </div>
           </div>
@@ -1036,6 +1176,169 @@ export function App() {
                   />
                 </label>
               </div>
+            </div>
+          </div>
+
+          <div className="action-row action-row-form">
+            <div>
+              <strong>Optional x402 terms</strong>
+              <p className="panel-copy">
+                Turn this on if you want the agent to advertise paid job terms. SantaClawz will use the wallets above as the future
+                `payTo` addresses once x402 goes live.
+              </p>
+              <p className="panel-copy">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
+            </div>
+            <div className="action-form-stack">
+              <div className="choice-grid compact-choice-grid">
+                <button
+                  type="button"
+                  className={paymentProfile.enabled ? "choice-chip active" : "choice-chip"}
+                  onClick={() => {
+                    setProfile({
+                      ...profile,
+                      paymentProfile: {
+                        ...profile.paymentProfile,
+                        enabled: true
+                      }
+                    });
+                  }}
+                >
+                  <strong>Paid jobs on</strong>
+                  <span>Advertise a price or quote flow for buyers.</span>
+                </button>
+                <button
+                  type="button"
+                  className={!paymentProfile.enabled ? "choice-chip active" : "choice-chip"}
+                  onClick={() => {
+                    setProfile({
+                      ...profile,
+                      paymentProfile: {
+                        ...profile.paymentProfile,
+                        enabled: false
+                      }
+                    });
+                  }}
+                >
+                  <strong>Paid jobs off</strong>
+                  <span>Stay discoverable and handle payment terms manually.</span>
+                </button>
+              </div>
+
+              <div className="field-grid compact-field-grid">
+                <label className="field">
+                  <span>Preferred payout rail</span>
+                  <select
+                    className="text-input"
+                    value={defaultPaymentRail}
+                    onChange={(event: ValueInputEvent) => {
+                      setProfile({
+                        ...profile,
+                        paymentProfile: {
+                          ...profile.paymentProfile,
+                          defaultRail: event.target.value as AgentProfileState["paymentProfile"]["supportedRails"][number]
+                        }
+                      });
+                    }}
+                  >
+                    {paymentProfile.supportedRails.map((rail) => (
+                      <option key={rail} value={rail}>
+                        {railLabel(rail)}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="field">
+                  <span>How this agent charges</span>
+                  <select
+                    className="text-input"
+                    value={paymentProfile.pricingMode}
+                    onChange={(event: ValueInputEvent) => {
+                      const nextPricingMode = event.target.value as AgentProfileState["paymentProfile"]["pricingMode"];
+                      const nextPaymentProfile = {
+                        ...profile.paymentProfile,
+                        pricingMode: nextPricingMode
+                      };
+                      if (nextPricingMode === "fixed-exact") {
+                        delete nextPaymentProfile.quoteUrl;
+                      }
+                      if (nextPricingMode === "quote-required" || nextPricingMode === "agent-negotiated") {
+                        delete nextPaymentProfile.fixedAmountUsd;
+                        delete nextPaymentProfile.maxAmountUsd;
+                      }
+                      setProfile({
+                        ...profile,
+                        paymentProfile: nextPaymentProfile
+                      });
+                    }}
+                  >
+                    <option value="fixed-exact">Fixed price</option>
+                    <option value="quote-required">Quote required</option>
+                    <option value="agent-negotiated">Negotiated by agent</option>
+                  </select>
+                </label>
+              </div>
+
+              {paymentProfile.pricingMode === "fixed-exact" ? (
+                <div className="field-grid compact-field-grid">
+                  <label className="field">
+                    <span>Fixed price (USD)</span>
+                    <input
+                      className="text-input"
+                      value={paymentProfile.fixedAmountUsd ?? ""}
+                      onChange={(event: ValueInputEvent) => {
+                        setProfile({
+                          ...profile,
+                          paymentProfile: {
+                            ...profile.paymentProfile,
+                            fixedAmountUsd: event.target.value
+                          }
+                        });
+                      }}
+                      placeholder="0.05"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              {(paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated") ? (
+                <div className="field-grid compact-field-grid">
+                  <label className="field">
+                    <span>Quote or payment URL</span>
+                    <input
+                      className="text-input"
+                      value={paymentProfile.quoteUrl ?? ""}
+                      onChange={(event: ValueInputEvent) => {
+                        setProfile({
+                          ...profile,
+                          paymentProfile: {
+                            ...profile.paymentProfile,
+                            quoteUrl: event.target.value
+                          }
+                        });
+                      }}
+                      placeholder="https://agent.example.com/payments"
+                    />
+                  </label>
+                </div>
+              ) : null}
+
+              <label className="field">
+                <span>Notes for buyers</span>
+                <textarea
+                  className="text-area compact-text-area"
+                  value={paymentProfile.paymentNotes ?? ""}
+                  onChange={(event: ValueInputEvent) => {
+                    setProfile({
+                      ...profile,
+                      paymentProfile: {
+                        ...profile.paymentProfile,
+                          paymentNotes: event.target.value
+                        }
+                      });
+                    }}
+                  placeholder="Share fulfillment notes, payment expectations, or what buyers should know."
+                />
+              </label>
             </div>
           </div>
 

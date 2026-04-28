@@ -2,6 +2,9 @@ const DEFAULT_API_BASE = process.env.CLAWZ_API_BASE?.trim() || "https://api.sant
 const DEFAULT_SITE_BASE = process.env.CLAWZ_SITE_BASE?.trim() || "https://santaclawz.ai";
 const VALID_TRUST_MODES = new Set(["fast", "private", "verified", "team-governed"]);
 const VALID_PROVING_LOCATIONS = new Set(["client", "sovereign-rollup"]);
+const VALID_PAYMENT_RAILS = new Set(["base-usdc", "ethereum-usdc", "zeko-native"]);
+const VALID_PRICING_MODES = new Set(["fixed-exact", "capped-exact", "quote-required", "agent-negotiated"]);
+const VALID_SETTLEMENT_TRIGGERS = new Set(["upfront", "on-proof"]);
 
 function printUsage() {
   console.error(`Usage:
@@ -13,11 +16,22 @@ function printUsage() {
     [--zeko-payout-address "B62..."] \\
     [--base-payout-address "0x..."] \\
     [--ethereum-payout-address "0x..."] \\
+    [--payments-enabled] \\
+    [--default-rail "base-usdc"] \\
+    [--pricing-mode fixed-exact] \\
+    [--fixed-price-usd "0.05"] \\
+    [--quote-url "https://agent.example.com/payments"] \\
+    [--payment-notes "Custom quotes available for larger jobs."] \\
     [--trust-mode private] \\
     [--proving-location client] \\
     [--api-base https://api.santaclawz.ai] \\
     [--site-base https://santaclawz.ai] \\
     [--json]
+
+Advanced:
+    [--supported-rails "base-usdc,ethereum-usdc"] \\
+    [--max-price-usd "0.25"] \\
+    [--settlement-trigger on-proof]
 `);
 }
 
@@ -73,6 +87,32 @@ const payoutWallets = {
     ? { ethereum: args["ethereum-payout-address"].trim() }
     : {})
 };
+const derivedSupportedRails = [
+  ...(payoutWallets.base ? ["base-usdc"] : []),
+  ...(payoutWallets.ethereum ? ["ethereum-usdc"] : []),
+  ...(payoutWallets.zeko ? ["zeko-native"] : [])
+];
+const supportedRails =
+  typeof args["supported-rails"] === "string"
+    ? args["supported-rails"]
+        .split(",")
+        .map((value) => value.trim())
+        .filter((value) => value.length > 0)
+    : derivedSupportedRails.length > 0
+      ? derivedSupportedRails
+      : ["base-usdc"];
+const paymentProfile = {
+  enabled: Boolean(args["payments-enabled"]),
+  supportedRails,
+  ...(typeof args["default-rail"] === "string" ? { defaultRail: args["default-rail"].trim() } : {}),
+  pricingMode: typeof args["pricing-mode"] === "string" ? args["pricing-mode"].trim() : "fixed-exact",
+  ...(typeof args["fixed-price-usd"] === "string" ? { fixedAmountUsd: args["fixed-price-usd"].trim() } : {}),
+  ...(typeof args["max-price-usd"] === "string" ? { maxAmountUsd: args["max-price-usd"].trim() } : {}),
+  ...(typeof args["quote-url"] === "string" ? { quoteUrl: args["quote-url"].trim() } : {}),
+  settlementTrigger:
+    typeof args["settlement-trigger"] === "string" ? args["settlement-trigger"].trim() : "upfront",
+  ...(typeof args["payment-notes"] === "string" ? { paymentNotes: args["payment-notes"].trim() } : {})
+};
 const trustModeId = typeof args["trust-mode"] === "string" ? args["trust-mode"].trim() : "private";
 const preferredProvingLocation =
   typeof args["proving-location"] === "string" ? args["proving-location"].trim() : undefined;
@@ -92,6 +132,25 @@ if (preferredProvingLocation && !VALID_PROVING_LOCATIONS.has(preferredProvingLoc
   throw new Error(`Unsupported proving location: ${preferredProvingLocation}`);
 }
 
+if (supportedRails.some((rail) => !VALID_PAYMENT_RAILS.has(rail))) {
+  throw new Error(`Unsupported payment rail. Supported rails: ${Array.from(VALID_PAYMENT_RAILS).join(", ")}`);
+}
+
+if (
+  typeof paymentProfile.defaultRail === "string" &&
+  (!VALID_PAYMENT_RAILS.has(paymentProfile.defaultRail) || !supportedRails.includes(paymentProfile.defaultRail))
+) {
+  throw new Error("default-rail must be one of the supported rails.");
+}
+
+if (!VALID_PRICING_MODES.has(paymentProfile.pricingMode)) {
+  throw new Error(`Unsupported pricing mode: ${paymentProfile.pricingMode}`);
+}
+
+if (!VALID_SETTLEMENT_TRIGGERS.has(paymentProfile.settlementTrigger)) {
+  throw new Error(`Unsupported settlement trigger: ${paymentProfile.settlementTrigger}`);
+}
+
 const response = await fetch(`${apiBase}/api/console/register`, {
   method: "POST",
   headers: {
@@ -102,6 +161,7 @@ const response = await fetch(`${apiBase}/api/console/register`, {
     headline,
     openClawUrl,
     ...(Object.keys(payoutWallets).length > 0 ? { payoutWallets } : {}),
+    paymentProfile,
     ...(representedPrincipal ? { representedPrincipal } : {}),
     trustModeId,
     ...(preferredProvingLocation ? { preferredProvingLocation } : {})
@@ -130,6 +190,8 @@ const result = {
   trustModeId: state.wallet?.trustModeId,
   provingLocation: state.profile?.preferredProvingLocation,
   payoutAddressConfigured: state.payoutAddressConfigured,
+  paymentsEnabled: state.paymentsEnabled,
+  paymentProfileReady: state.paymentProfileReady,
   paidJobsEnabled: state.paidJobsEnabled,
   publicAgentUrl: `${siteBase}/explore/${encodeURIComponent(agentId)}`,
   discoveryUrl: `${apiBase}/.well-known/agent-interop.json?sessionId=${encodeURIComponent(sessionId)}`,
@@ -148,5 +210,7 @@ if (args.json) {
   console.log(`Discovery URL: ${result.discoveryUrl}`);
   console.log(`Verify URL: ${result.verifyUrl}`);
   console.log(`Payout wallets configured: ${result.payoutAddressConfigured ? "yes" : "no"}`);
+  console.log(`Payments enabled: ${result.paymentsEnabled ? "yes" : "no"}`);
+  console.log(`Payment profile ready: ${result.paymentProfileReady ? "yes" : "no"}`);
   console.log(`Paid jobs enabled: ${result.paidJobsEnabled ? "yes" : "no"}`);
 }

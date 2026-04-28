@@ -22,6 +22,17 @@ import {
   resolveSecurityConfig,
   securityMiddleware
 } from "./security.js";
+import {
+  buildAgentX402Catalog,
+  buildAgentX402CatalogPreview,
+  buildAgentX402Headers,
+  parseAgentX402PaymentPayload,
+  buildAgentX402RuntimeContext,
+  buildAgentX402PaymentRequiredPreview,
+  buildAgentX402Plan,
+  settleAgentX402Payment,
+  verifyAgentX402Payment
+} from "./x402-adapter.js";
 
 const app = express();
 const securityConfig = resolveSecurityConfig();
@@ -84,6 +95,7 @@ type RegisterAgentRequestBody = {
   openClawUrl?: unknown;
   payoutAddress?: unknown;
   payoutWallets?: unknown;
+  paymentProfile?: unknown;
   trustModeId?: unknown;
   preferredProvingLocation?: unknown;
 };
@@ -94,6 +106,7 @@ type ProfileRequestBody = {
   openClawUrl?: unknown;
   payoutAddress?: unknown;
   payoutWallets?: unknown;
+  paymentProfile?: unknown;
   preferredProvingLocation?: unknown;
   sessionId?: unknown;
 };
@@ -143,6 +156,40 @@ function parsePayoutWallets(value: unknown): AgentProfileState["payoutWallets"] 
   };
 }
 
+function parsePaymentProfile(value: unknown): Partial<AgentProfileState["paymentProfile"]> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof value.enabled === "boolean" ? { enabled: value.enabled } : {}),
+    ...(Array.isArray(value.supportedRails)
+      ? {
+          supportedRails: value.supportedRails.filter(
+            (rail): rail is AgentProfileState["paymentProfile"]["supportedRails"][number] =>
+              rail === "base-usdc" || rail === "ethereum-usdc" || rail === "zeko-native"
+          )
+        }
+      : {}),
+    ...(value.defaultRail === "base-usdc" || value.defaultRail === "ethereum-usdc" || value.defaultRail === "zeko-native"
+      ? { defaultRail: value.defaultRail }
+      : {}),
+    ...(value.pricingMode === "fixed-exact" ||
+    value.pricingMode === "capped-exact" ||
+    value.pricingMode === "quote-required" ||
+    value.pricingMode === "agent-negotiated"
+      ? { pricingMode: value.pricingMode }
+      : {}),
+    ...(typeof value.fixedAmountUsd === "string" ? { fixedAmountUsd: value.fixedAmountUsd } : {}),
+    ...(typeof value.maxAmountUsd === "string" ? { maxAmountUsd: value.maxAmountUsd } : {}),
+    ...(typeof value.quoteUrl === "string" ? { quoteUrl: value.quoteUrl } : {}),
+    ...(value.settlementTrigger === "upfront" || value.settlementTrigger === "on-proof"
+      ? { settlementTrigger: value.settlementTrigger }
+      : {}),
+    ...(typeof value.paymentNotes === "string" ? { paymentNotes: value.paymentNotes } : {})
+  };
+}
+
 function parseTrustModeRequest(body: unknown): TrustModeRequestBody {
   return isRecord(body)
     ? {
@@ -161,6 +208,7 @@ function parseRegisterAgentRequest(body: unknown): RegisterAgentRequestBody {
         openClawUrl: body.openClawUrl,
         payoutAddress: body.payoutAddress,
         payoutWallets: body.payoutWallets,
+        paymentProfile: body.paymentProfile,
         trustModeId: body.trustModeId,
         preferredProvingLocation: body.preferredProvingLocation
       }
@@ -176,6 +224,7 @@ function parseProfileRequest(body: unknown): ProfileRequestBody {
           openClawUrl: body.openClawUrl,
           payoutAddress: body.payoutAddress,
           payoutWallets: body.payoutWallets,
+          paymentProfile: body.paymentProfile,
           preferredProvingLocation: body.preferredProvingLocation,
           sessionId: body.sessionId
         }
@@ -294,6 +343,38 @@ async function buildInteropSnapshotFromQuery(baseUrl: string, query: unknown) {
     events,
     sessionView
   };
+}
+
+async function buildX402PlanFromOptions(
+  baseUrl: string,
+  options: {
+    sessionId?: string;
+    agentId?: string;
+  } = {}
+) {
+  const consoleState = await controlPlane.getConsoleState(options);
+  return {
+    consoleState,
+    plan: buildAgentX402Plan({
+      baseUrl,
+      consoleState
+    })
+  };
+}
+
+function setHeaders(response: IndexerResponse, headers: Record<string, string>) {
+  for (const [name, value] of Object.entries(headers)) {
+    response.set(name, value);
+  }
+}
+
+async function buildX402PlanFromQuery(request: IndexerRequest) {
+  const sessionId = queryString(request.query, "sessionId");
+  const agentId = queryString(request.query, "agentId");
+  return buildX402PlanFromOptions(getBaseUrl(request), {
+    ...(sessionId ? { sessionId } : {}),
+    ...(agentId ? { agentId } : {})
+  });
 }
 
 function normalizeBaseUrl(value: string): string {
@@ -538,6 +619,24 @@ const handleDiscoveryDocument = route(async (request, response) => {
 
 app.get("/.well-known/clawz-agent.json", handleDiscoveryDocument);
 app.get("/.well-known/agent-interop.json", handleDiscoveryDocument);
+app.get("/.well-known/x402.json", route(async (request, response) => {
+  try {
+    const { consoleState, plan } = await buildX402PlanFromQuery(request);
+    const runtime = buildAgentX402RuntimeContext({
+      baseUrl: getBaseUrl(request),
+      plan,
+      serviceNetworkId: consoleState.deployment.networkId
+    });
+    response.json(runtime ? buildAgentX402Catalog(runtime) : buildAgentX402CatalogPreview({
+      serviceNetworkId: consoleState.deployment.networkId,
+      plan
+    }));
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to build x402 catalog preview."
+    });
+  }
+}));
 
 app.get("/api/events", route(async (request, response) => {
   const sessionId = queryString(request.query, "sessionId");
@@ -588,6 +687,177 @@ app.get("/api/console/state", route(async (request, response) => {
 
 app.get("/api/agents", route(async (_request, response) => {
   response.json(await controlPlane.listRegisteredAgents());
+}));
+
+app.get("/api/x402/plan", route(async (request, response) => {
+  try {
+    const { plan } = await buildX402PlanFromQuery(request);
+    response.json(plan);
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to build x402 plan."
+    });
+  }
+}));
+
+app.get("/api/agents/:agentId/x402-plan", route(async (request, response) => {
+  try {
+    const agentId = request.params.agentId;
+    if (!agentId) {
+      response.status(400).json({ error: "agentId is required." });
+      return;
+    }
+
+    const { plan } = await buildX402PlanFromOptions(getBaseUrl(request), { agentId });
+    response.json(plan);
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to build agent x402 plan."
+    });
+  }
+}));
+
+app.get("/api/x402/proof", route(async (request, response) => {
+  try {
+    const snapshot = await buildInteropSnapshot(request);
+    const plan = buildAgentX402Plan({
+      baseUrl: snapshot.baseUrl,
+      consoleState: snapshot.consoleState
+    });
+    const runtime = buildAgentX402RuntimeContext({
+      baseUrl: snapshot.baseUrl,
+      plan,
+      serviceNetworkId: snapshot.consoleState.deployment.networkId
+    });
+
+    if (!runtime) {
+      response.status(402).json(buildAgentX402PaymentRequiredPreview({
+        serviceNetworkId: snapshot.consoleState.deployment.networkId,
+        plan
+      }));
+      return;
+    }
+
+    const paymentHeaderValue = request.header("payment-signature");
+    const paymentPayload = parseAgentX402PaymentPayload({
+      ...(paymentHeaderValue ? { headerValue: paymentHeaderValue } : {}),
+      body: request.body ?? null
+    });
+
+    if (!paymentPayload) {
+      setHeaders(
+        response,
+        buildAgentX402Headers({
+          paymentRequired: runtime.paymentRequired
+        })
+      );
+      response.status(402).json(runtime.paymentRequired);
+      return;
+    }
+
+    const settlement = await settleAgentX402Payment({
+      runtime,
+      paymentPayload
+    });
+    setHeaders(response, settlement.headers);
+    response.json({
+      ok: true,
+      paid: true,
+      payment: settlement.paymentResponse,
+      bundle: buildAgentProofBundle({
+        baseUrl: snapshot.baseUrl,
+        consoleState: snapshot.consoleState,
+        sessionView: snapshot.sessionView,
+        events: snapshot.events,
+        sessionId: snapshot.sessionId,
+        ...(snapshot.turnId ? { turnId: snapshot.turnId } : {})
+      })
+    });
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to build x402 payment resource."
+    });
+  }
+}));
+
+app.post("/api/x402/verify", route(async (_request, response) => {
+  try {
+    const { consoleState, plan } = await buildX402PlanFromQuery(_request);
+    const runtime = buildAgentX402RuntimeContext({
+      baseUrl: getBaseUrl(_request),
+      plan,
+      serviceNetworkId: consoleState.deployment.networkId
+    });
+    if (!runtime) {
+      response.status(501).json({
+        ok: false,
+        previewOnly: true,
+        error: "No live exact-price x402 rail is configured for this agent yet."
+      });
+      return;
+    }
+
+    const paymentHeaderValue = _request.header("payment-signature");
+    const paymentPayload = parseAgentX402PaymentPayload({
+      ...(paymentHeaderValue ? { headerValue: paymentHeaderValue } : {}),
+      body: _request.body ?? null
+    });
+    if (!paymentPayload) {
+      response.status(400).json({ error: "PAYMENT-SIGNATURE header or paymentPayload body is required." });
+      return;
+    }
+
+    const verification = await verifyAgentX402Payment({
+      runtime,
+      paymentPayload
+    });
+    setHeaders(response, verification.headers);
+    response.status(verification.ok ? 200 : 402).json(verification);
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to verify x402 payment."
+    });
+  }
+}));
+
+app.post("/api/x402/settle", route(async (_request, response) => {
+  try {
+    const { consoleState, plan } = await buildX402PlanFromQuery(_request);
+    const runtime = buildAgentX402RuntimeContext({
+      baseUrl: getBaseUrl(_request),
+      plan,
+      serviceNetworkId: consoleState.deployment.networkId
+    });
+    if (!runtime) {
+      response.status(501).json({
+        ok: false,
+        previewOnly: true,
+        error: "No live exact-price x402 rail is configured for this agent yet."
+      });
+      return;
+    }
+
+    const paymentHeaderValue = _request.header("payment-signature");
+    const paymentPayload = parseAgentX402PaymentPayload({
+      ...(paymentHeaderValue ? { headerValue: paymentHeaderValue } : {}),
+      body: _request.body ?? null
+    });
+    if (!paymentPayload) {
+      response.status(400).json({ error: "PAYMENT-SIGNATURE header or paymentPayload body is required." });
+      return;
+    }
+
+    const settlement = await settleAgentX402Payment({
+      runtime,
+      paymentPayload
+    });
+    setHeaders(response, settlement.headers);
+    response.json(settlement);
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to settle x402 payment."
+    });
+  }
 }));
 
 app.get("/api/zeko/deployment", route(async (_request, response) => {
@@ -821,6 +1091,7 @@ app.post("/api/console/trust-mode", route(async (request, response) => {
 app.post("/api/console/register", route(async (request, response) => {
   const body = parseRegisterAgentRequest(request.body ?? null);
   const payoutWallets = parsePayoutWallets(body.payoutWallets);
+  const paymentProfile = parsePaymentProfile(body.paymentProfile);
   const trustModeId =
     body.trustModeId === "fast" ||
     body.trustModeId === "private" ||
@@ -828,7 +1099,7 @@ app.post("/api/console/register", route(async (request, response) => {
     body.trustModeId === "team-governed"
       ? body.trustModeId
       : undefined;
-  const preferredProvingLocation =
+  const preferredProvingLocation: AgentProfileState["preferredProvingLocation"] | undefined =
     body.preferredProvingLocation === "client" ||
     body.preferredProvingLocation === "server" ||
     body.preferredProvingLocation === "sovereign-rollup"
@@ -843,6 +1114,7 @@ app.post("/api/console/register", route(async (request, response) => {
         openClawUrl: typeof body.openClawUrl === "string" ? body.openClawUrl : "",
         ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
         ...(payoutWallets ? { payoutWallets } : {}),
+        ...(paymentProfile ? { paymentProfile } : {}),
         ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
         ...(trustModeId ? { trustModeId } : {}),
         ...(preferredProvingLocation ? { preferredProvingLocation } : {})
@@ -859,12 +1131,20 @@ app.post("/api/console/profile", route(async (request, response) => {
   const body = parseProfileRequest(request.body ?? null);
   const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
   const payoutWallets = parsePayoutWallets(body.payoutWallets);
-  const profile: Partial<AgentProfileState> = {
+  const paymentProfile = parsePaymentProfile(body.paymentProfile);
+  const preferredProvingLocation =
+    body.preferredProvingLocation === "client" ||
+    body.preferredProvingLocation === "server" ||
+    body.preferredProvingLocation === "sovereign-rollup"
+      ? body.preferredProvingLocation
+      : undefined;
+  const profile: Parameters<typeof controlPlane.updateAgentProfile>[1] = {
     ...(typeof body.agentName === "string" ? { agentName: body.agentName } : {}),
     ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
     ...(typeof body.headline === "string" ? { headline: body.headline } : {}),
     ...(typeof body.openClawUrl === "string" ? { openClawUrl: body.openClawUrl } : {}),
     ...(payoutWallets ? { payoutWallets } : {}),
+    ...(paymentProfile ? { paymentProfile } : {}),
     ...(typeof body.payoutAddress === "string"
       ? {
           payoutWallets: {
@@ -873,11 +1153,7 @@ app.post("/api/console/profile", route(async (request, response) => {
           }
         }
       : {}),
-    ...(body.preferredProvingLocation === "client" ||
-    body.preferredProvingLocation === "server" ||
-    body.preferredProvingLocation === "sovereign-rollup"
-      ? { preferredProvingLocation: body.preferredProvingLocation }
-      : {})
+    ...(preferredProvingLocation ? { preferredProvingLocation } : {})
   };
   response.json(await controlPlane.updateAgentProfile(sessionId, profile));
 }));

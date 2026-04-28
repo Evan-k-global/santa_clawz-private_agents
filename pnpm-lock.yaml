@@ -45,6 +45,9 @@ importers:
       express:
         specifier: ^4.21.2
         version: 4.22.1
+      zeko-x402:
+        specifier: link:../../../zeko-x402
+        version: link:../../../zeko-x402
     devDependencies:
       '@types/express':
         specifier: ^5.0.0

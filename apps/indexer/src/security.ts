@@ -141,10 +141,18 @@ function isPublicOnboardingPath(pathname: string, method: string, config: Securi
   }
 
   return (
-    (method === "GET" && (pathname === "/api/console/state" || pathname === "/api/wallet/sponsor/queue")) ||
+    (method === "GET" &&
+      (pathname === "/api/console/state" ||
+        pathname === "/api/wallet/sponsor/queue" ||
+        pathname === "/api/x402/plan" ||
+        pathname === "/api/x402/proof" ||
+        pathname === "/.well-known/x402.json" ||
+        /^\/api\/agents\/[^/]+\/x402-plan$/.test(pathname))) ||
     (method === "POST" &&
       (pathname === "/api/console/register" ||
         (/^\/api\/agents\/[^/]+\/hire$/.test(pathname)) ||
+        pathname === "/api/x402/verify" ||
+        pathname === "/api/x402/settle" ||
         pathname === "/api/console/trust-mode" ||
         pathname === "/api/console/profile" ||
         pathname === "/api/wallet/sponsor" ||
