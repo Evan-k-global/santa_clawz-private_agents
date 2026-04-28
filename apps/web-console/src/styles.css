@@ -380,9 +380,68 @@ pre,
   gap: 18px;
 }
 
+.register-divider {
+  height: 1px;
+  margin: 22px -22px 0;
+  background: rgba(18, 35, 54, 0.08);
+}
+
+.register-flow-card {
+  display: grid;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.register-flow-head,
+.payment-subcard-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: start;
+}
+
+.register-flow-head strong,
+.payment-subcard strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.register-browser-stack,
+.register-cli-stack {
+  display: grid;
+  gap: 12px;
+}
+
+.register-method-copy,
+.compact-detail-copy {
+  max-width: 60rem;
+}
+
+.register-browser-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.compact-inline-toggle {
+  flex-shrink: 0;
+}
+
+.compact-inline-toggle .inline-toggle-button {
+  min-width: 88px;
+  padding: 9px 14px;
+}
+
+.compact-command-strip {
+  margin-top: 0;
+}
+
+.compact-advanced-panel {
+  margin-top: 2px;
+}
+
 .payment-step-list {
   display: grid;
-  gap: 18px;
+  gap: 22px;
   margin-top: 14px;
 }
 
@@ -398,6 +457,11 @@ pre,
 
 .share-row {
   margin-top: 18px;
+}
+
+.share-actions .primary-button,
+.share-actions .secondary-button {
+  white-space: nowrap;
 }
 
 .share-row .panel-copy,
@@ -467,7 +531,7 @@ pre,
 
 .wallet-chip-list {
   display: grid;
-  gap: 12px;
+  gap: 10px;
 }
 
 .wallet-chip {
@@ -475,9 +539,9 @@ pre,
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 11px 14px;
   border: 1px solid var(--line);
-  border-radius: 18px;
+  border-radius: 16px;
   background: rgba(255, 255, 255, 0.72);
 }
 
@@ -485,8 +549,32 @@ pre,
   overflow-wrap: anywhere;
 }
 
-.wallet-builder-grid {
+.payment-subcard {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 20px;
+  background: rgba(246, 250, 253, 0.72);
+}
+
+.payment-subcard-spaced {
   margin-top: 2px;
+}
+
+.payment-subcard-body,
+.payment-subcard-copy {
+  display: grid;
+  gap: 8px;
+}
+
+.wallet-status-note,
+.payment-inline-status {
+  margin-top: 0;
+}
+
+.wallet-builder-grid {
+  margin-top: 0;
   grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
   align-items: end;
 }
@@ -498,8 +586,8 @@ pre,
 }
 
 .round-add-button {
-  width: 44px;
-  height: 44px;
+  width: 42px;
+  height: 42px;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--accent), var(--accent-bright));
   color: white;
@@ -1175,6 +1263,7 @@ h3 {
   gap: 12px;
   align-items: center;
   margin-top: 2px;
+  padding-top: 4px;
 }
 
 .facilitator-actions {
@@ -1405,6 +1494,8 @@ button:disabled {
   .masthead-label-row,
   .step-head,
   .step-title,
+  .register-flow-head,
+  .payment-subcard-head,
   .action-row,
   .action-side,
   .exception-inline-card,
@@ -1496,6 +1587,11 @@ button:disabled {
   .action-side button,
   .action-side a {
     width: 100%;
+  }
+
+  .payment-save-row {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .masthead h1 {

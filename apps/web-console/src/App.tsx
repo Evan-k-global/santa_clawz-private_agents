@@ -808,6 +808,18 @@ export function App() {
       : paymentProfileReady
         ? `Payouts live on ${railLabel(defaultPaymentRail)}`
         : "Host facilitator and finish setup";
+  const paymentToggleStatus = paymentProfile.enabled
+    ? paymentProfileReady
+      ? "Ready to accept paid jobs"
+      : "Finish setup to go live"
+    : "Not accepting paid jobs";
+  const paymentSaveLabel = pendingAction === "save-payment-profile"
+    ? "Saving..."
+    : paymentProfileReady
+      ? "Update paid jobs"
+      : paymentsEnabled
+        ? "Save get paid setup"
+        : "Save payout setup";
   const publicAgentUrl = registeredAgentId ? buildPublicAgentUrl(registeredAgentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl && registeredAgentId ? buildShareOnXUrl(publicAgentUrl, registeredAgentId) : null;
@@ -1084,19 +1096,21 @@ export function App() {
 
           </div>
 
-          <div className="action-row action-row-form stacked-action-row register-agent-card">
-            <div className="section-head compact-head">
+          <div className="register-divider" />
+
+          <div className="register-flow-card">
+            <div className="register-flow-head">
               <div>
                 <strong>Register this agent</strong>
                 <p className="panel-copy">
                   {registrationMethod === "browser"
                     ? isRegisteredSession
                       ? `Registered to ${state.agentId}`
-                      : "Use this when you want SantaClawz to create the registration record for you."
-                    : "Run this once and the agent will be registered. If it already exposes an OpenClaw agent URL, you are done."}
+                      : "Create the SantaClawz registration record here, then deploy and share it."
+                    : "Run one command and the agent joins SantaClawz. Use this if it already exposes a compatible OpenClaw agent URL."}
                 </p>
               </div>
-              <div className="inline-toggle" role="radiogroup" aria-label="Registration method">
+              <div className="inline-toggle compact-inline-toggle" role="radiogroup" aria-label="Registration method">
                 <button
                   className={registrationMethod === "browser" ? "inline-toggle-button active" : "inline-toggle-button"}
                   onClick={() => {
@@ -1121,9 +1135,14 @@ export function App() {
             </div>
 
             {registrationMethod === "browser" ? (
-              <div className="action-side">
+              <div className="register-browser-stack">
+                <p className="panel-copy register-method-copy">
+                  {isRegisteredSession
+                    ? "This browser already owns the registration record for this agent."
+                    : "SantaClawz will register the agent using the profile details above."}
+                </p>
                 <button
-                  className="primary-button"
+                  className="primary-button register-browser-button"
                   disabled={pendingAction === "register-agent" || !connectReady || isRegisteredSession}
                   onClick={() => {
                     void runAction("register-agent", () =>
@@ -1145,8 +1164,11 @@ export function App() {
                 </button>
               </div>
             ) : (
-              <div className="action-form-stack wide-action-form-stack">
-                <div className="command-strip">
+              <div className="register-cli-stack">
+                <p className="panel-copy register-method-copy">
+                  Run this once and the agent will be registered.
+                </p>
+                <div className="command-strip compact-command-strip">
                   <code>{cliRegisterCommand}</code>
                   <button
                     className="copy-button"
@@ -1160,13 +1182,13 @@ export function App() {
               </div>
             )}
 
-            <div className="adapter-help">
-              <span className="metric">Need the OpenClaw adapter?</span>
-              <p className="panel-copy">
+            <details className="advanced-panel compact-advanced-panel">
+              <summary>Need the OpenClaw adapter?</summary>
+              <p className="panel-copy compact-detail-copy">
                 Only if your agent does not already expose a compatible OpenClaw agent URL. The adapter helps an existing agent
                 publish the right SantaClawz-facing endpoint shape.
               </p>
-              <div className="command-strip">
+              <div className="command-strip compact-command-strip">
                 <code>pnpm add openclaw @clawz/openclaw-adapter</code>
                 <button
                   className="copy-button"
@@ -1177,7 +1199,7 @@ export function App() {
                   {copiedKey === "install-command" ? "Copied" : "Copy"}
                 </button>
               </div>
-            </div>
+            </details>
 
             {isRegisteredSession ? (
               <div className="ownership-panel">
@@ -1339,7 +1361,7 @@ export function App() {
                     : "The public SantaClawz URL will appear here after publish."}
                 </p>
               </div>
-              <div className="action-side">
+              <div className="action-side share-actions">
                 <button
                   className="secondary-button"
                   disabled={!publicAgentUrl}
@@ -1393,15 +1415,15 @@ export function App() {
           </p>
 
           <div className="payment-step-list">
-          <div className="action-row action-row-form stacked-action-row">
-            <div>
+          <div className="payment-subcard">
+            <div className="payment-subcard-copy">
               <strong>Payout wallets</strong>
               <p className="panel-copy">Add where you want to receive payments.</p>
-              <p className={configuredPayoutWallets.length > 0 ? "status-note status-note-compact" : "status-note status-note-highlight status-note-compact"}>
+              <p className={configuredPayoutWallets.length > 0 ? "status-note status-note-compact wallet-status-note" : "status-note status-note-highlight status-note-compact wallet-status-note"}>
                 {configuredPayoutWallets.length > 0 ? "Wallets ready for payouts." : "No payout wallets configured yet."}
               </p>
             </div>
-            <div className="action-form-stack wide-action-form-stack">
+            <div className="payment-subcard-body">
               {configuredPayoutWallets.length > 0 ? (
                 <div className="wallet-chip-list">
                   {configuredPayoutWallets.map(([walletKey, walletValue]) => (
@@ -1424,61 +1446,57 @@ export function App() {
                 </div>
               ) : null}
 
-              <div className="wallet-builder-row">
-                <div className="field-grid compact-field-grid wallet-builder-grid">
-                  <label className="field">
-                    <span>Chain</span>
-                    <select
-                      className="text-input"
-                      value={selectedPayoutWalletKey}
-                      onChange={(event: ValueInputEvent) => {
-                        setSelectedPayoutWalletKey(event.target.value as PayoutWalletKey);
-                      }}
-                    >
-                      <option value="base">Base</option>
-                      <option value="ethereum">Ethereum</option>
-                      <option value="zeko">Zeko</option>
-                    </select>
-                  </label>
-                  <label className="field">
-                    <span>Wallet address</span>
-                    <input
-                      className="text-input"
-                      value={draftPayoutWalletValue}
-                      onChange={(event: ValueInputEvent) => {
-                        setDraftPayoutWalletValue(event.target.value);
-                      }}
-                      placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
-                    />
-                  </label>
-                  <div className="wallet-builder-controls">
-                    <button
-                      type="button"
-                      className="round-add-button"
-                      aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
-                      onClick={() => {
-                        savePayoutWallet();
-                      }}
-                    >
-                      +
-                    </button>
-                  </div>
+              <div className="field-grid compact-field-grid wallet-builder-grid">
+                <label className="field">
+                  <span>Chain</span>
+                  <select
+                    className="text-input"
+                    value={selectedPayoutWalletKey}
+                    onChange={(event: ValueInputEvent) => {
+                      setSelectedPayoutWalletKey(event.target.value as PayoutWalletKey);
+                    }}
+                  >
+                    <option value="base">Base</option>
+                    <option value="ethereum">Ethereum</option>
+                    <option value="zeko">Zeko</option>
+                  </select>
+                </label>
+                <label className="field">
+                  <span>Wallet address</span>
+                  <input
+                    className="text-input"
+                    value={draftPayoutWalletValue}
+                    onChange={(event: ValueInputEvent) => {
+                      setDraftPayoutWalletValue(event.target.value);
+                    }}
+                    placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
+                  />
+                </label>
+                <div className="wallet-builder-controls">
+                  <button
+                    type="button"
+                    className="round-add-button"
+                    aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
+                    onClick={() => {
+                      savePayoutWallet();
+                    }}
+                  >
+                    +
+                  </button>
                 </div>
               </div>
             </div>
           </div>
 
-          <div className="action-row action-row-form stacked-action-row">
-            <div>
+          <div className="payment-subcard payment-subcard-spaced">
+            <div className="payment-subcard-head">
+              <div className="payment-subcard-copy">
               <strong>Accept paid jobs</strong>
               <p className="panel-copy">
-                Turn this on when you want the agent to charge buyers. SantaClawz will use the payout wallets above as the
-                future payment destinations.
+                Turn this on when you want the agent to charge buyers. SantaClawz will use the payout wallets above as the future payment destinations.
               </p>
-              <p className="status-note status-note-compact">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
-            </div>
-            <div className="action-form-stack wide-action-form-stack">
-              <div className="inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
+              </div>
+              <div className="inline-toggle compact-inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
                 <button
                   type="button"
                   className={paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
@@ -1514,9 +1532,13 @@ export function App() {
                   Off
                 </button>
               </div>
-              <p className="panel-copy toggle-help">
-                Status: {paymentProfile.enabled ? (paymentProfileReady ? "Ready to accept paid jobs" : "Finish setup to go live") : "Not accepting paid jobs"}
-              </p>
+            </div>
+            <p className="status-note status-note-compact payment-inline-status">
+              Status: {paymentToggleStatus}
+            </p>
+
+            <div className="payment-subcard-body">
+              <p className="status-note status-note-compact">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
 
               {paymentProfile.enabled ? (
                 <>
@@ -1559,7 +1581,7 @@ export function App() {
 
                   <div className="facilitator-inline">
                     <p className="panel-copy">
-                      Bring your own x402 payment processor. SantaClawz will use these URLs and the payout wallets above to route paid jobs.
+                      Bring your own x402 payment processor. Paste the public payment URL for each rail you want to turn on.
                     </p>
                     <div className="facilitator-actions">
                       <a
@@ -1699,32 +1721,28 @@ export function App() {
                       />
                     </label>
                   </details>
-
-                  <div className="payment-save-row">
-                    <p className="panel-copy">
-                      {isRegisteredSession
-                        ? paymentProfileReady
-                          ? "Your agent is ready to earn."
-                          : "Save once the payout setup looks right."
-                        : "Register the agent first, then save payout settings."}
-                    </p>
-                    <button
-                      type="button"
-                      className="primary-button"
-                      disabled={pendingAction === "save-payment-profile" || !isRegisteredSession || !hasAdminAccess}
-                      onClick={() => {
-                        void runAction("save-payment-profile", () => updateAgentProfile(profileForSave, sessionId));
-                      }}
-                    >
-                      {pendingAction === "save-payment-profile"
-                        ? "Saving..."
-                        : paymentProfileReady
-                          ? "Update payout setup"
-                          : "Save payout setup"}
-                    </button>
-                  </div>
                 </>
               ) : null}
+
+              <div className="payment-save-row">
+                <p className="panel-copy">
+                  {isRegisteredSession
+                    ? paymentProfileReady
+                      ? "Your agent is ready to earn."
+                      : "Save once the payout setup looks right."
+                    : "Register the agent first, then save payout settings."}
+                </p>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={pendingAction === "save-payment-profile" || !isRegisteredSession || !hasAdminAccess}
+                  onClick={() => {
+                    void runAction("save-payment-profile", () => updateAgentProfile(profileForSave, sessionId));
+                  }}
+                >
+                  {paymentSaveLabel}
+                </button>
+              </div>
             </div>
           </div>
           </div>
