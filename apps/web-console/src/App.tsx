@@ -203,12 +203,7 @@ function formatConfiguredPayoutWallets(wallets: AgentProfileState["payoutWallets
 }
 
 function derivedSupportedRails(wallets: AgentProfileState["payoutWallets"]) {
-  const rails = [
-    ...(wallets.base?.trim().length ? (["base-usdc"] as const) : []),
-    ...(wallets.ethereum?.trim().length ? (["ethereum-usdc"] as const) : []),
-    ...(wallets.zeko?.trim().length ? (["zeko-native"] as const) : [])
-  ];
-  return rails.length > 0 ? rails : (["base-usdc"] as const);
+  return ["base-usdc", "ethereum-usdc"] as const;
 }
 
 function railLabel(rail: AgentProfileState["paymentProfile"]["supportedRails"][number]) {
@@ -265,9 +260,6 @@ function paymentProfileSummary(
   const summary = `${pricingModeLabel(paymentProfile.pricingMode)}${priceDetail} on ${
     defaultRail ? railLabel(defaultRail) : "selected rail"
   }`;
-  if (defaultRail === "zeko-native") {
-    return `${summary}. Zeko-native payouts are still a future path, so use Base or Ethereum for live payouts today.`;
-  }
   if (!facilitatorUrl?.trim()) {
     return `${summary}. Host the facilitator for this rail and paste its HTTPS URL here to turn payouts live.`;
   }
@@ -275,14 +267,13 @@ function paymentProfileSummary(
 }
 
 function effectivePaymentProfile(profile: AgentProfileState): AgentProfileState["paymentProfile"] {
-  const supportedRails = [...derivedSupportedRails(profile.payoutWallets)];
-  const requestedDefaultRail = profile.paymentProfile.defaultRail;
-  const defaultRail = requestedDefaultRail && supportedRails.includes(requestedDefaultRail) ? requestedDefaultRail : supportedRails[0];
+  const supportedRails: AgentProfileState["paymentProfile"]["supportedRails"] = [...derivedSupportedRails(profile.payoutWallets)];
+  const defaultRail = profile.paymentProfile.defaultRail === "ethereum-usdc" ? "ethereum-usdc" : "base-usdc";
 
   return {
     ...profile.paymentProfile,
     supportedRails,
-    ...(defaultRail ? { defaultRail } : {}),
+    defaultRail,
     settlementTrigger: "upfront"
   };
 }
@@ -316,13 +307,12 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
         Array.isArray(input?.paymentProfile?.supportedRails) && input.paymentProfile.supportedRails.length > 0
           ? input.paymentProfile.supportedRails.filter(
               (rail): rail is AgentProfileState["paymentProfile"]["supportedRails"][number] =>
-                rail === "base-usdc" || rail === "ethereum-usdc" || rail === "zeko-native"
+                rail === "base-usdc" || rail === "ethereum-usdc"
             )
-          : ["base-usdc"],
+          : ["base-usdc", "ethereum-usdc"],
       defaultRail:
         input?.paymentProfile?.defaultRail === "base-usdc" ||
-        input?.paymentProfile?.defaultRail === "ethereum-usdc" ||
-        input?.paymentProfile?.defaultRail === "zeko-native"
+        input?.paymentProfile?.defaultRail === "ethereum-usdc"
           ? input.paymentProfile.defaultRail
           : "base-usdc",
       pricingMode:

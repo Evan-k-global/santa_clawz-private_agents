@@ -92,9 +92,8 @@ const payoutWallets = {
     : {})
 };
 const derivedSupportedRails = [
-  ...(payoutWallets.base ? ["base-usdc"] : []),
-  ...(payoutWallets.ethereum ? ["ethereum-usdc"] : []),
-  ...(payoutWallets.zeko ? ["zeko-native"] : [])
+  "base-usdc",
+  "ethereum-usdc"
 ];
 const supportedRails =
   typeof args["supported-rails"] === "string"
