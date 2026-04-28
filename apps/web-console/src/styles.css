@@ -382,8 +382,18 @@ pre,
 
 .payment-step-list {
   display: grid;
-  gap: 22px;
-  margin-top: 18px;
+  gap: 18px;
+  margin-top: 14px;
+}
+
+.payment-step-status {
+  margin-top: 14px;
+}
+
+.payment-step-status-ready {
+  border-color: rgba(23, 102, 75, 0.16);
+  background: rgba(29, 158, 117, 0.08);
+  color: #17664b;
 }
 
 .share-row {
@@ -1164,13 +1174,22 @@ h3 {
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .facilitator-actions {
   display: flex;
   flex-wrap: wrap;
   gap: 12px;
+}
+
+.facilitator-inline {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border: 1px solid rgba(18, 35, 54, 0.08);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.58);
 }
 
 .endpoint-item {
