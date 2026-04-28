@@ -136,9 +136,9 @@ function formatRegistryHireStatus(agent: AgentRegistryEntry) {
     return "Custom terms";
   }
   if (agent.paymentProfileReady) {
-    return `x402-ready on ${agent.paymentRail ? railLabel(agent.paymentRail) : "configured rail"}`;
+    return `Payouts live on ${agent.paymentRail ? railLabel(agent.paymentRail) : "configured rail"}`;
   }
-  return "Finish payment setup";
+  return "Host facilitator and finish setup";
 }
 
 function formatConfiguredPayoutWallets(wallets: AgentProfileState["payoutWallets"]) {
@@ -169,6 +169,19 @@ function railLabel(rail: AgentProfileState["paymentProfile"]["supportedRails"][n
   return "Zeko native";
 }
 
+function facilitatorUrlForRail(
+  paymentProfile: AgentProfileState["paymentProfile"],
+  rail: AgentProfileState["paymentProfile"]["supportedRails"][number]
+) {
+  if (rail === "base-usdc") {
+    return paymentProfile.baseFacilitatorUrl;
+  }
+  if (rail === "ethereum-usdc") {
+    return paymentProfile.ethereumFacilitatorUrl;
+  }
+  return undefined;
+}
+
 function pricingModeLabel(mode: AgentProfileState["paymentProfile"]["pricingMode"]) {
   if (mode === "fixed-exact") {
     return "Fixed price";
@@ -190,6 +203,7 @@ function paymentProfileSummary(
     return "Paid jobs are currently off. SantaClawz will still register and publish the agent.";
   }
   const defaultRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0];
+  const facilitatorUrl = defaultRail ? facilitatorUrlForRail(paymentProfile, defaultRail) : undefined;
   const priceDetail =
     paymentProfile.pricingMode === "fixed-exact" && paymentProfile.fixedAmountUsd?.trim().length
       ? ` at $${paymentProfile.fixedAmountUsd.trim()}`
@@ -199,7 +213,13 @@ function paymentProfileSummary(
   const summary = `${pricingModeLabel(paymentProfile.pricingMode)}${priceDetail} on ${
     defaultRail ? railLabel(defaultRail) : "selected rail"
   }`;
-  return paymentProfileReady ? `${summary}. This agent is ready for paid x402 jobs.` : `${summary}. Add the matching payout wallet or pricing details to finish payment setup.`;
+  if (defaultRail === "zeko-native") {
+    return `${summary}. Zeko-native payouts are still a future path, so use Base or Ethereum for live payouts today.`;
+  }
+  if (!facilitatorUrl?.trim()) {
+    return `${summary}. Host the facilitator for this rail and paste its HTTPS URL here to turn payouts live.`;
+  }
+  return paymentProfileReady ? `${summary}. This agent is ready for live payouts.` : `${summary}. Add the matching payout wallet or price details to finish payment setup.`;
 }
 
 function effectivePaymentProfile(profile: AgentProfileState): AgentProfileState["paymentProfile"] {
@@ -273,6 +293,13 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
         input?.paymentProfile?.settlementTrigger === "upfront" || input?.paymentProfile?.settlementTrigger === "on-proof"
           ? input.paymentProfile.settlementTrigger
           : "upfront",
+      ...(typeof input?.paymentProfile?.baseFacilitatorUrl === "string" && input.paymentProfile.baseFacilitatorUrl.trim().length > 0
+        ? { baseFacilitatorUrl: input.paymentProfile.baseFacilitatorUrl }
+        : {}),
+      ...(typeof input?.paymentProfile?.ethereumFacilitatorUrl === "string" &&
+      input.paymentProfile.ethereumFacilitatorUrl.trim().length > 0
+        ? { ethereumFacilitatorUrl: input.paymentProfile.ethereumFacilitatorUrl }
+        : {}),
       ...(typeof input?.paymentProfile?.paymentNotes === "string" && input.paymentProfile.paymentNotes.trim().length > 0
         ? { paymentNotes: input.paymentProfile.paymentNotes }
         : {})
@@ -712,13 +739,13 @@ export function App() {
   const paidWorkStatusLabel = !published
     ? "Publish first"
     : !paymentsEnabled
-      ? "Custom terms / no x402 yet"
+      ? "Custom terms"
       : paymentProfileReady
-        ? `x402-ready on ${railLabel(defaultPaymentRail)}`
-        : "Finish x402 setup";
+        ? `Payouts live on ${railLabel(defaultPaymentRail)}`
+        : "Host facilitator and finish setup";
   const payoutCopy = networkIsMainnet
-    ? "Optional today. Add the wallets this agent should use once paid x402 jobs are live."
-    : "Optional on testnet. Add them now so the agent is ready when paid x402 jobs turn on.";
+    ? "Optional today. Add the wallets and facilitator URLs this agent should use once paid x402 jobs are live."
+    : "Optional on testnet. Add the wallets and facilitator URLs now so the agent is ready when paid x402 jobs turn on.";
   const publicAgentUrl = isRegisteredSession && state.agentId ? buildPublicAgentUrl(state.agentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl ? buildShareOnXUrl(publicAgentUrl) : null;
@@ -740,6 +767,12 @@ export function App() {
       ? [`--ethereum-payout-address ${shellQuote(profile.payoutWallets.ethereum)}`]
       : []),
     ...(paymentProfile.enabled ? ["--payments-enabled"] : []),
+    ...(paymentProfile.baseFacilitatorUrl?.trim().length
+      ? [`--base-facilitator-url ${shellQuote(paymentProfile.baseFacilitatorUrl)}`]
+      : []),
+    ...(paymentProfile.ethereumFacilitatorUrl?.trim().length
+      ? [`--ethereum-facilitator-url ${shellQuote(paymentProfile.ethereumFacilitatorUrl)}`]
+      : []),
     ...(paymentProfile.defaultRail ? [`--default-rail ${shellQuote(paymentProfile.defaultRail)}`] : []),
     `--pricing-mode ${shellQuote(paymentProfile.pricingMode)}`,
     ...(paymentProfile.fixedAmountUsd?.trim().length
@@ -764,9 +797,9 @@ export function App() {
   const hireStatusCopy = !published
     ? "This agent still needs to publish on Zeko before it can accept work."
     : paymentsEnabled && !paymentProfileReady
-      ? "This agent has an x402 payment profile started, but it still needs its selected rail or price details completed."
+      ? "This agent has started payout setup, but it still needs its facilitator, selected rail, or price details completed."
       : paymentsEnabled && paidJobsEnabled
-        ? `This agent is x402-ready on ${railLabel(defaultPaymentRail)} and routes work to ${profile.openClawUrl}.`
+        ? `Payouts are live on ${railLabel(defaultPaymentRail)} and work routes to ${profile.openClawUrl}.`
         : `Hire requests route to ${profile.openClawUrl}.`
   ;
   return (
@@ -1111,7 +1144,7 @@ export function App() {
               <span className="step-number">3</span>
               <div>
                 <h2>Get paid</h2>
-                <p className="panel-copy">Add payout wallets and simple x402 terms, then share the public SantaClawz URL.</p>
+                <p className="panel-copy">Add payout wallets, a facilitator URL, and simple x402 terms, then share the public SantaClawz URL.</p>
               </div>
             </div>
           </div>
@@ -1183,8 +1216,8 @@ export function App() {
             <div>
               <strong>Optional x402 terms</strong>
               <p className="panel-copy">
-                Turn this on if you want the agent to advertise paid job terms. SantaClawz will use the wallets above as the future
-                `payTo` addresses once x402 goes live.
+                Turn this on if you want the agent to advertise paid job terms. Host your own x402 facilitator on Render, paste
+                its public HTTPS URL here, and SantaClawz will use the wallets above as the future `payTo` addresses.
               </p>
               <p className="panel-copy">{paymentProfileSummary(paymentProfileReady, paymentProfile)}</p>
             </div>
@@ -1223,6 +1256,51 @@ export function App() {
                   <span>Stay discoverable and handle payment terms manually.</span>
                 </button>
               </div>
+
+              <div className="field-grid compact-field-grid">
+                <label className="field">
+                  <span>Base facilitator URL</span>
+                  <input
+                    className="text-input"
+                    value={paymentProfile.baseFacilitatorUrl ?? ""}
+                    onChange={(event: ValueInputEvent) => {
+                      setProfile({
+                        ...profile,
+                        paymentProfile: {
+                          ...profile.paymentProfile,
+                          baseFacilitatorUrl: event.target.value
+                        }
+                      });
+                    }}
+                    placeholder="https://your-base-facilitator.onrender.com"
+                  />
+                </label>
+                <label className="field">
+                  <span>Ethereum facilitator URL</span>
+                  <input
+                    className="text-input"
+                    value={paymentProfile.ethereumFacilitatorUrl ?? ""}
+                    onChange={(event: ValueInputEvent) => {
+                      setProfile({
+                        ...profile,
+                        paymentProfile: {
+                          ...profile.paymentProfile,
+                          ethereumFacilitatorUrl: event.target.value
+                        }
+                      });
+                    }}
+                    placeholder="https://your-ethereum-facilitator.onrender.com"
+                  />
+                </label>
+              </div>
+
+              <details className="advanced-panel">
+                <summary>Need to host a facilitator?</summary>
+                <p className="panel-copy">
+                  Deploy the `zeko-x402` facilitator as a small Render web service, fund its relayer wallet for gas, and paste the
+                  public HTTPS URL here. SantaClawz will use that URL to verify and settle this agent&apos;s payouts.
+                </p>
+              </details>
 
               <div className="field-grid compact-field-grid">
                 <label className="field">
@@ -1387,7 +1465,7 @@ export function App() {
                 <article className="explore-card explore-card-featured">
                   <div className="explore-card-head">
                     <strong>{profile.agentName}</strong>
-                    <span className="subtle-pill">{published ? "Published" : "Registered"}</span>
+                    <span className="subtle-pill">{paidJobsEnabled ? "Payouts live" : published ? "Published" : "Registered"}</span>
                   </div>
                 <p className="panel-copy">{profile.headline}</p>
                 <p className="panel-copy">{paidWorkStatusLabel}</p>
@@ -1524,7 +1602,7 @@ export function App() {
               <article key={agent.agentId} className="explore-card">
                 <div className="explore-card-head">
                   <strong>{agent.agentName}</strong>
-                  <span className="subtle-pill">{agent.published ? "Published" : "Registered"}</span>
+                  <span className="subtle-pill">{agent.paidJobsEnabled ? "Payouts live" : agent.published ? "Published" : "Registered"}</span>
                 </div>
                 <p className="panel-copy">{agent.headline}</p>
                 <p className="panel-copy">{formatRegistryHireStatus(agent)}</p>

@@ -77,6 +77,7 @@ export interface AgentTrustQuestionAnswer {
     fixedAmountUsd?: NonNullable<AgentPaymentClaim["x402"]>["fixedAmountUsd"];
     maxAmountUsd?: NonNullable<AgentPaymentClaim["x402"]>["maxAmountUsd"];
     quoteUrl?: NonNullable<AgentPaymentClaim["x402"]>["quoteUrl"];
+    facilitatorUrlByRail?: NonNullable<AgentPaymentClaim["x402"]>["facilitatorUrlByRail"];
     payTo?: NonNullable<AgentPaymentClaim["x402"]>["payTo"];
   };
   privacy: {

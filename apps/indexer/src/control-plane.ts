@@ -472,7 +472,7 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
       supportedRails: ["base-usdc"],
       defaultRail: "base-usdc",
       pricingMode: "fixed-exact",
-      settlementTrigger: "on-proof"
+      settlementTrigger: "upfront"
     },
     preferredProvingLocation: trustMode.defaultProvingLocation
   };
@@ -556,6 +556,19 @@ function hasPayoutAddress(profile: AgentProfileState): boolean {
   return Object.values(profile.payoutWallets).some((value) => typeof value === "string" && value.trim().length > 0);
 }
 
+function facilitatorUrlForRail(
+  profile: AgentProfileState,
+  rail: AgentProfileState["paymentProfile"]["supportedRails"][number]
+): string | undefined {
+  if (rail === "base-usdc") {
+    return sanitizeUrl(profile.paymentProfile.baseFacilitatorUrl);
+  }
+  if (rail === "ethereum-usdc") {
+    return sanitizeUrl(profile.paymentProfile.ethereumFacilitatorUrl);
+  }
+  return undefined;
+}
+
 function sanitizePaymentProfile(
   input: Partial<AgentProfileState["paymentProfile"]> | undefined,
   fallback: AgentProfileState["paymentProfile"]
@@ -601,6 +614,18 @@ function sanitizePaymentProfile(
       ? { quoteUrl: sanitizeUrl(input?.quoteUrl) ?? sanitizeUrl(fallback.quoteUrl)! }
       : {}),
     settlementTrigger,
+    ...(sanitizeUrl(input?.baseFacilitatorUrl) ?? sanitizeUrl(fallback.baseFacilitatorUrl)
+      ? {
+          baseFacilitatorUrl:
+            sanitizeUrl(input?.baseFacilitatorUrl) ?? sanitizeUrl(fallback.baseFacilitatorUrl)!
+        }
+      : {}),
+    ...(sanitizeUrl(input?.ethereumFacilitatorUrl) ?? sanitizeUrl(fallback.ethereumFacilitatorUrl)
+      ? {
+          ethereumFacilitatorUrl:
+            sanitizeUrl(input?.ethereumFacilitatorUrl) ?? sanitizeUrl(fallback.ethereumFacilitatorUrl)!
+        }
+      : {}),
     ...(sanitizePaymentNotes(input?.paymentNotes) ?? sanitizePaymentNotes(fallback.paymentNotes)
       ? { paymentNotes: sanitizePaymentNotes(input?.paymentNotes) ?? sanitizePaymentNotes(fallback.paymentNotes)! }
       : {})
@@ -623,6 +648,12 @@ function hasReadyPaymentProfile(profile: AgentProfileState): boolean {
   }
   const selectedRail = profile.paymentProfile.defaultRail ?? profile.paymentProfile.supportedRails[0];
   if (!selectedRail || !payoutWalletForRail(profile, selectedRail)) {
+    return false;
+  }
+  if (selectedRail === "zeko-native") {
+    return false;
+  }
+  if (!facilitatorUrlForRail(profile, selectedRail)) {
     return false;
   }
   if (profile.paymentProfile.pricingMode === "fixed-exact") {

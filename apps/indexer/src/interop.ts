@@ -78,6 +78,19 @@ function payoutWalletForRail(
   return profile.payoutWallets.zeko;
 }
 
+function facilitatorUrlForRail(
+  profile: ConsoleStateResponse["profile"],
+  rail: NonNullable<ConsoleStateResponse["profile"]["paymentProfile"]["defaultRail"]>
+) {
+  if (rail === "base-usdc") {
+    return profile.paymentProfile.baseFacilitatorUrl;
+  }
+  if (rail === "ethereum-usdc") {
+    return profile.paymentProfile.ethereumFacilitatorUrl;
+  }
+  return undefined;
+}
+
 function buildProgrammablePrivacyPolicy(
   consoleState: ConsoleStateResponse,
   supportedLocations: PrivacyProvingLocation[],
@@ -459,6 +472,11 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
       .map((rail) => [rail, payoutWalletForRail(input.consoleState.profile, rail)] as const)
       .filter((entry): entry is [typeof entry[0], string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
   );
+  const x402FacilitatorUrlByRail = Object.fromEntries(
+    input.consoleState.profile.paymentProfile.supportedRails
+      .map((rail) => [rail, facilitatorUrlForRail(input.consoleState.profile, rail)] as const)
+      .filter((entry): entry is [typeof entry[0], string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
+  );
 
   const paymentWithoutDigest = {
     settlementAsset: "MINA" as const,
@@ -512,6 +530,9 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
               : {}),
             ...(input.consoleState.profile.paymentProfile.quoteUrl
               ? { quoteUrl: input.consoleState.profile.paymentProfile.quoteUrl }
+              : {}),
+            ...(Object.keys(x402FacilitatorUrlByRail).length > 0
+              ? { facilitatorUrlByRail: x402FacilitatorUrlByRail }
               : {}),
             ...(input.consoleState.profile.paymentProfile.paymentNotes
               ? { paymentNotes: input.consoleState.profile.paymentProfile.paymentNotes }

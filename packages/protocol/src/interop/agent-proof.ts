@@ -116,6 +116,7 @@ export interface AgentPaymentClaim {
     fixedAmountUsd?: string;
     maxAmountUsd?: string;
     quoteUrl?: string;
+    facilitatorUrlByRail?: Partial<Record<AgentPaymentRail, string>>;
     paymentNotes?: string;
     payTo?: Partial<Record<AgentPaymentRail, string>>;
   };

@@ -259,6 +259,8 @@ export interface AgentPaymentProfile {
   maxAmountUsd?: string;
   quoteUrl?: string;
   settlementTrigger: AgentSettlementTrigger;
+  baseFacilitatorUrl?: string;
+  ethereumFacilitatorUrl?: string;
   paymentNotes?: string;
 }
 

@@ -143,7 +143,9 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const payTo = profile.payoutWallets.base?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
   const settleOnProof = settlementTrigger === "on-proof";
-  const facilitatorUrl = process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
+  const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
+  const facilitatorUrl =
+    operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
   const escrowContract = process.env.CLAWZ_X402_BASE_ESCROW_CONTRACT?.trim();
 
   if (!payTo) {
@@ -152,16 +154,23 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
 
   const pricing = pushPricingReadiness(profile, missing, notes);
 
+  if (!operatorFacilitatorUrl) {
+    missing.push("Add a Base facilitator URL for this agent.");
+  }
+
   if (settleOnProof && !escrowContract) {
     missing.push("Set CLAWZ_X402_BASE_ESCROW_CONTRACT for Base reserve-release.");
   }
 
-  if (!facilitatorUrl && !settleOnProof) {
-    notes.push("Base exact-price flows can use the default CDP facilitator or a self-hosted x402 endpoint.");
+  if (operatorFacilitatorUrl && !settleOnProof) {
+    notes.push("Base exact-price flows use the operator-hosted x402 facilitator for this agent.");
   }
 
-  if (!facilitatorUrl && settleOnProof) {
+  if (facilitatorUrl && settleOnProof) {
     notes.push("Base reserve-release is expected to use a self-hosted or dedicated facilitator path.");
+  }
+  if (!operatorFacilitatorUrl && facilitatorUrl) {
+    notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
   }
 
   return {
@@ -192,7 +201,9 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const notes: string[] = [];
   const payTo = profile.payoutWallets.ethereum?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
-  const facilitatorUrl = process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
+  const operatorFacilitatorUrl = profile.paymentProfile.ethereumFacilitatorUrl?.trim();
+  const facilitatorUrl =
+    operatorFacilitatorUrl || process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
 
   if (!payTo) {
     missing.push("Add an Ethereum payout wallet.");
@@ -200,12 +211,19 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
 
   const pricing = pushPricingReadiness(profile, missing, notes);
 
+  if (!operatorFacilitatorUrl) {
+    missing.push("Add an Ethereum facilitator URL for this agent.");
+  }
+
   if (settlementTrigger === "on-proof") {
     missing.push("Reserve-release is currently Base-first in zeko-x402; Ethereum stays a compatibility rail for now.");
   }
 
-  if (!facilitatorUrl) {
-    notes.push("Ethereum mainnet generally expects a custom hosted facilitator or SantaClawz self-hosted relayer path.");
+  if (operatorFacilitatorUrl) {
+    notes.push("Ethereum mainnet uses the operator-hosted facilitator for this rail.");
+  }
+  if (!operatorFacilitatorUrl && facilitatorUrl) {
+    notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
   }
 
   return {

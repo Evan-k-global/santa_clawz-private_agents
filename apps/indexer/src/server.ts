@@ -186,6 +186,10 @@ function parsePaymentProfile(value: unknown): Partial<AgentProfileState["payment
     ...(value.settlementTrigger === "upfront" || value.settlementTrigger === "on-proof"
       ? { settlementTrigger: value.settlementTrigger }
       : {}),
+    ...(typeof value.baseFacilitatorUrl === "string" ? { baseFacilitatorUrl: value.baseFacilitatorUrl } : {}),
+    ...(typeof value.ethereumFacilitatorUrl === "string"
+      ? { ethereumFacilitatorUrl: value.ethereumFacilitatorUrl }
+      : {}),
     ...(typeof value.paymentNotes === "string" ? { paymentNotes: value.paymentNotes } : {})
   };
 }

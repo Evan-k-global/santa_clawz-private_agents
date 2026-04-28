@@ -17,6 +17,8 @@ function printUsage() {
     [--base-payout-address "0x..."] \\
     [--ethereum-payout-address "0x..."] \\
     [--payments-enabled] \\
+    [--base-facilitator-url "https://your-base-facilitator.onrender.com"] \\
+    [--ethereum-facilitator-url "https://your-ethereum-facilitator.onrender.com"] \\
     [--default-rail "base-usdc"] \\
     [--pricing-mode fixed-exact] \\
     [--fixed-price-usd "0.05"] \\
@@ -104,6 +106,12 @@ const supportedRails =
 const paymentProfile = {
   enabled: Boolean(args["payments-enabled"]),
   supportedRails,
+  ...(typeof args["base-facilitator-url"] === "string"
+    ? { baseFacilitatorUrl: args["base-facilitator-url"].trim() }
+    : {}),
+  ...(typeof args["ethereum-facilitator-url"] === "string"
+    ? { ethereumFacilitatorUrl: args["ethereum-facilitator-url"].trim() }
+    : {}),
   ...(typeof args["default-rail"] === "string" ? { defaultRail: args["default-rail"].trim() } : {}),
   pricingMode: typeof args["pricing-mode"] === "string" ? args["pricing-mode"].trim() : "fixed-exact",
   ...(typeof args["fixed-price-usd"] === "string" ? { fixedAmountUsd: args["fixed-price-usd"].trim() } : {}),
@@ -212,5 +220,5 @@ if (args.json) {
   console.log(`Payout wallets configured: ${result.payoutAddressConfigured ? "yes" : "no"}`);
   console.log(`Payments enabled: ${result.paymentsEnabled ? "yes" : "no"}`);
   console.log(`Payment profile ready: ${result.paymentProfileReady ? "yes" : "no"}`);
-  console.log(`Paid jobs enabled: ${result.paidJobsEnabled ? "yes" : "no"}`);
+  console.log(`Payouts live: ${result.paidJobsEnabled ? "yes" : "no"}`);
 }
