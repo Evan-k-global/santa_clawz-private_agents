@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { existsSync } from "fs";
 import { chmod, mkdir, readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -82,6 +82,13 @@ interface ConsolePersistenceState {
   privacyExceptions: PrivacyExceptionQueueItem[];
   agentIdsBySession: Record<string, string>;
   profilesBySession: Record<string, AgentProfileState>;
+  adminKeysBySession: Record<string, SessionAdminAccessRecord>;
+}
+
+interface SessionAdminAccessRecord {
+  keyHash: string;
+  keyHint: string;
+  issuedAtIso: string;
 }
 
 interface DeploymentManifestFile {
@@ -203,6 +210,7 @@ interface LiveFlowRunOptions {
 
 interface SponsorWalletOptions {
   amountMina?: string;
+  adminKey?: string;
   sessionId?: string;
   purpose?: SponsorQueueJob["purpose"];
 }
@@ -232,8 +240,10 @@ interface SubmitHireRequestOptions {
 }
 
 interface ConsoleStateOptions {
+  adminKey?: string;
   sessionId?: string;
   agentId?: string;
+  exposeIssuedAdminKey?: string;
 }
 
 interface EventListOptions {
@@ -442,7 +452,8 @@ function buildDefaultState(nowIso: string): ConsolePersistenceState {
     },
     profilesBySession: {
       [DEFAULT_SESSION_ID]: buildDefaultProfile("private")
-    }
+    },
+    adminKeysBySession: {}
   };
 }
 
@@ -457,6 +468,74 @@ function slugify(value: string): string {
 
 function buildStableAgentId(agentName: string, sessionId: string): string {
   return `${slugify(agentName)}--${sessionId}`;
+}
+
+function buildAdminKey() {
+  return `sck_${randomUUID().replace(/-/g, "")}${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+function adminKeyHash(value: string) {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+function adminKeyHint(value: string) {
+  return `${value.slice(0, 8)}...${value.slice(-6)}`;
+}
+
+function timingSafeEqualHex(left: string, right: string) {
+  const leftBuffer = Buffer.from(left, "hex");
+  const rightBuffer = Buffer.from(right, "hex");
+  if (leftBuffer.length !== rightBuffer.length) {
+    return false;
+  }
+  return timingSafeEqual(leftBuffer, rightBuffer);
+}
+
+function looksLikeEvmAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+}
+
+function looksLikeZekoAddress(value: string) {
+  return /^B62[a-zA-Z0-9]{20,}$/.test(value.trim());
+}
+
+function isPrivateHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "localhost" ||
+    normalized === "127.0.0.1" ||
+    normalized === "::1" ||
+    normalized.endsWith(".local") ||
+    normalized.startsWith("10.") ||
+    normalized.startsWith("192.168.") ||
+    /^172\.(1[6-9]|2\d|3[0-1])\./.test(normalized)
+  );
+}
+
+function isPlaceholderHostname(hostname: string) {
+  const normalized = hostname.toLowerCase();
+  return (
+    normalized === "example.com" ||
+    normalized === "example.org" ||
+    normalized === "example.net" ||
+    normalized.endsWith(".example.com") ||
+    normalized.endsWith(".example.org") ||
+    normalized.endsWith(".example.net") ||
+    normalized.includes("your-openclaw-agent") ||
+    normalized.includes("your-agent-domain")
+  );
+}
+
+function normalizeComparableUrl(rawUrl: string) {
+  const parsed = new URL(rawUrl);
+  const protocol = parsed.protocol.toLowerCase();
+  const hostname = parsed.hostname.toLowerCase();
+  const port =
+    (protocol === "https:" && parsed.port === "443") || (protocol === "http:" && parsed.port === "80")
+      ? ""
+      : parsed.port;
+  const pathname = parsed.pathname.replace(/\/+$/, "") || "/";
+  return `${protocol}//${hostname}${port ? `:${port}` : ""}${pathname}${parsed.search}`;
 }
 
 function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
@@ -755,14 +834,16 @@ export class ClawzControlPlane {
             ? state.profilesBySession
             : {
                 [state.currentSessionId]: buildDefaultProfile(state.activeMode)
-              }
+              },
+        adminKeysBySession: state.adminKeysBySession ?? {}
       };
       if (
         state.schemaVersion !== 1 ||
         !state.agentIdsBySession ||
         Object.keys(state.agentIdsBySession).length === 0 ||
         !state.profilesBySession ||
-        Object.keys(state.profilesBySession).length === 0
+        Object.keys(state.profilesBySession).length === 0 ||
+        !state.adminKeysBySession
       ) {
         await this.saveState(migratedState);
       }
@@ -901,6 +982,157 @@ export class ClawzControlPlane {
 
   private resolveSessionIdFromAgentId(state: ConsolePersistenceState, agentId: string): string | undefined {
     return Object.entries(state.agentIdsBySession).find(([, value]) => value === agentId)?.[0];
+  }
+
+  private buildAdminAccessState(
+    state: ConsolePersistenceState,
+    sessionId: string,
+    adminKey?: string,
+    issuedAdminKey?: string
+  ): ConsoleStateResponse["adminAccess"] {
+    const record = state.adminKeysBySession[sessionId];
+    const normalizedAdminKey = typeof adminKey === "string" ? adminKey.trim() : "";
+    const hasAdminAccess =
+      !record ||
+      (normalizedAdminKey.length > 0 && timingSafeEqualHex(record.keyHash, adminKeyHash(normalizedAdminKey)));
+
+    return {
+      requiresAdminKey: Boolean(record),
+      hasAdminAccess,
+      ...(record?.keyHint ? { keyHint: record.keyHint } : {}),
+      ...(issuedAdminKey ? { issuedAdminKey } : {})
+    };
+  }
+
+  private assertAdminAccess(state: ConsolePersistenceState, sessionId: string, adminKey?: string) {
+    const record = state.adminKeysBySession[sessionId];
+    if (!record) {
+      return;
+    }
+
+    const normalizedAdminKey = typeof adminKey === "string" ? adminKey.trim() : "";
+    if (normalizedAdminKey.length === 0) {
+      throw new Error("Admin key required to manage this registered agent.");
+    }
+    if (!timingSafeEqualHex(record.keyHash, adminKeyHash(normalizedAdminKey))) {
+      throw new Error("Admin key was rejected for this agent.");
+    }
+  }
+
+  private async assertAgentProfileIsValid(
+    state: ConsolePersistenceState,
+    profile: AgentProfileState,
+    sessionIdToIgnore?: string
+  ) {
+    const normalizedOpenClawUrl = this.validateOpenClawUrl(profile.openClawUrl);
+    for (const [knownSessionId, knownProfile] of Object.entries(state.profilesBySession)) {
+      if (knownSessionId === sessionIdToIgnore || knownProfile.openClawUrl.trim().length === 0) {
+        continue;
+      }
+      let normalizedKnownUrl: string;
+      try {
+        normalizedKnownUrl = normalizeComparableUrl(knownProfile.openClawUrl);
+      } catch (error) {
+        continue;
+      }
+      if (normalizedKnownUrl === normalizedOpenClawUrl) {
+        throw new Error("That OpenClaw agent URL is already registered with SantaClawz.");
+      }
+    }
+
+    if (profile.payoutWallets.base && !looksLikeEvmAddress(profile.payoutWallets.base)) {
+      throw new Error("Base payout wallet must be a valid EVM address.");
+    }
+    if (profile.payoutWallets.ethereum && !looksLikeEvmAddress(profile.payoutWallets.ethereum)) {
+      throw new Error("Ethereum payout wallet must be a valid EVM address.");
+    }
+    if (profile.payoutWallets.zeko && !looksLikeZekoAddress(profile.payoutWallets.zeko)) {
+      throw new Error("Zeko payout wallet must look like a valid Mina address.");
+    }
+
+    if (profile.paymentProfile.baseFacilitatorUrl) {
+      this.validatePublicHttpsUrl(profile.paymentProfile.baseFacilitatorUrl, "Base facilitator URL");
+    }
+    if (profile.paymentProfile.ethereumFacilitatorUrl) {
+      this.validatePublicHttpsUrl(profile.paymentProfile.ethereumFacilitatorUrl, "Ethereum facilitator URL");
+    }
+  }
+
+  private validatePublicHttpsUrl(rawUrl: string, label: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch (error) {
+      throw new Error(`${label} must be a valid URL.`);
+    }
+
+    if (parsed.protocol !== "https:") {
+      throw new Error(`${label} must use https.`);
+    }
+    if (isPrivateHostname(parsed.hostname)) {
+      throw new Error(`${label} must be publicly reachable.`);
+    }
+  }
+
+  private validateOpenClawUrl(rawUrl: string) {
+    let parsed: URL;
+    try {
+      parsed = new URL(rawUrl);
+    } catch (error) {
+      throw new Error("OpenClaw agent URL must be a valid URL.");
+    }
+
+    const isProductionValidation = process.env.NODE_ENV === "production";
+    const usesSecureProtocol = parsed.protocol === "https:";
+    const isLocalHttp = parsed.protocol === "http:" && isPrivateHostname(parsed.hostname) && !isProductionValidation;
+
+    if (!usesSecureProtocol && !isLocalHttp) {
+      throw new Error("OpenClaw agent URL must use https in public deployments.");
+    }
+    if (isProductionValidation && isPrivateHostname(parsed.hostname)) {
+      throw new Error("OpenClaw agent URL must be publicly reachable.");
+    }
+    if (isPlaceholderHostname(parsed.hostname)) {
+      throw new Error("OpenClaw agent URL still looks like placeholder copy.");
+    }
+
+    return normalizeComparableUrl(parsed.toString());
+  }
+
+  private async validateOpenClawAgentHealth(rawUrl: string) {
+    if (process.env.CLAWZ_VALIDATE_AGENT_URLS === "false" || process.env.NODE_ENV !== "production") {
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+    }, 5000);
+
+    try {
+      const response = await fetch(rawUrl, {
+        method: "GET",
+        headers: {
+          accept: "application/json,text/plain,*/*"
+        },
+        redirect: "follow",
+        signal: controller.signal
+      });
+
+      if (
+        !response.ok &&
+        response.status !== 401 &&
+        response.status !== 403 &&
+        response.status !== 405
+      ) {
+        throw new Error(`received ${response.status}`);
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "network request failed";
+      throw new Error(`OpenClaw agent URL did not respond cleanly (${message}).`);
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   private sanitizeProfileInput(
@@ -1925,7 +2157,7 @@ export class ClawzControlPlane {
     }
   }
 
-  async runLiveSessionTurnFlow(options: LiveFlowRunOptions = {}): Promise<ConsoleStateResponse> {
+  async runLiveSessionTurnFlow(options: LiveFlowRunOptions = {}, adminKey?: string): Promise<ConsoleStateResponse> {
     if (this.liveFlowRunPromise) {
       return this.liveFlowRunPromise;
     }
@@ -1939,6 +2171,8 @@ export class ClawzControlPlane {
       const existingStatus = await this.loadLiveFlowStatus();
       const liveFlowState = await this.getLiveFlowState();
       const resume = this.canResumeLiveFlow(existingStatus, options);
+      const requestedSessionId = options.sessionId ?? liveFlowState.sessionId ?? state.currentSessionId;
+      this.assertAdminAccess(state, requestedSessionId, adminKey);
       const jobTrustModeId =
         resume && existingStatus?.trustModeId
           ? existingStatus.trustModeId
@@ -1946,7 +2180,7 @@ export class ClawzControlPlane {
             ? state.activeMode
             : this.resolveSessionTrustMode(
                 events,
-                options.sessionId ?? liveFlowState.sessionId ?? state.currentSessionId,
+                requestedSessionId,
                 state.activeMode
               );
       const job = resume && existingStatus
@@ -2043,7 +2277,10 @@ export class ClawzControlPlane {
         );
         await this.saveState(focusedState);
 
-        return this.getConsoleState();
+        return this.getConsoleState({
+          sessionId: runningStatus.sessionId ?? refreshedState.currentSessionId,
+          ...(adminKey ? { adminKey } : {})
+        });
       } catch (error) {
         const partialReport = await this.loadLiveFlowReport();
         const completedStepLabels = (partialReport?.steps ?? [])
@@ -2178,6 +2415,12 @@ export class ClawzControlPlane {
     const paymentProfileReady = hasReadyPaymentProfile(profile);
     const payoutAddressConfigured = hasPayoutAddress(profile);
     const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
+    const adminAccess = this.buildAdminAccessState(
+      state,
+      focus.sessionId,
+      options.adminKey,
+      options.exposeIssuedAdminKey
+    );
 
     return {
       agentId,
@@ -2185,6 +2428,7 @@ export class ClawzControlPlane {
       paymentProfileReady,
       payoutAddressConfigured,
       paidJobsEnabled,
+      adminAccess,
       wallet: {
         ...state.wallet,
         trustModeId: focus.trustModeId
@@ -2322,8 +2566,11 @@ export class ClawzControlPlane {
     if (profile.agentName.trim().length === 0 || profile.headline.trim().length === 0 || profile.openClawUrl.trim().length === 0) {
       throw new Error("agentName, headline, and openClawUrl are required.");
     }
+    await this.assertAgentProfileIsValid(state, profile);
+    await this.validateOpenClawAgentHealth(profile.openClawUrl);
 
     const agentId = buildStableAgentId(profile.agentName, sessionId);
+    const adminKey = buildAdminKey();
     const nextState: ConsolePersistenceState = {
       ...this.applyFocusedSession(state, sessionId, trustModeId),
       agentIdsBySession: {
@@ -2333,6 +2580,14 @@ export class ClawzControlPlane {
       profilesBySession: {
         ...state.profilesBySession,
         [sessionId]: profile
+      },
+      adminKeysBySession: {
+        ...state.adminKeysBySession,
+        [sessionId]: {
+          keyHash: adminKeyHash(adminKey),
+          keyHint: adminKeyHint(adminKey),
+          issuedAtIso: registeredAtIso
+        }
       }
     };
 
@@ -2358,7 +2613,11 @@ export class ClawzControlPlane {
       registeredAtIso
     );
 
-    return this.getConsoleState({ sessionId });
+    return this.getConsoleState({
+      sessionId,
+      adminKey,
+      exposeIssuedAdminKey: adminKey
+    });
   }
 
   async submitHireRequest(options: SubmitHireRequestOptions): Promise<HireRequestReceipt> {
@@ -2422,11 +2681,12 @@ export class ClawzControlPlane {
     };
   }
 
-  async setTrustMode(modeId: TrustModeId, sessionId?: string): Promise<ConsoleStateResponse> {
+  async setTrustMode(modeId: TrustModeId, sessionId?: string, adminKey?: string): Promise<ConsoleStateResponse> {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
     const focus = this.resolveSessionFocus(state, events, this.buildLiveFlowTargets(events, liveFlow), liveFlow, sessionId);
+    this.assertAdminAccess(state, focus.sessionId, adminKey);
     const baseState = this.applyFocusedSession(state, focus.sessionId, modeId);
     const fallbackProfile = buildDefaultProfile(modeId);
     const currentProfile = this.profileForSession(state, focus.sessionId, modeId);
@@ -2445,14 +2705,19 @@ export class ClawzControlPlane {
       sessionId: focus.sessionId,
       trustMode: modeId
     });
-    return this.getConsoleState({ sessionId: focus.sessionId });
+    return this.getConsoleState({ sessionId: focus.sessionId, ...(adminKey ? { adminKey } : {}) });
   }
 
-  async updateAgentProfile(sessionId: string | undefined, input: AgentProfileInput): Promise<ConsoleStateResponse> {
+  async updateAgentProfile(
+    sessionId: string | undefined,
+    input: AgentProfileInput,
+    adminKey?: string
+  ): Promise<ConsoleStateResponse> {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
     const focus = this.resolveSessionFocus(state, events, this.buildLiveFlowTargets(events, liveFlow), liveFlow, sessionId);
+    this.assertAdminAccess(state, focus.sessionId, adminKey);
     const trustModeId = focus.trustModeId;
     const fallbackProfile = buildDefaultProfile(trustModeId);
     const currentProfile = this.profileForSession(state, focus.sessionId, trustModeId);
@@ -2460,6 +2725,10 @@ export class ClawzControlPlane {
       ...fallbackProfile,
       ...currentProfile
     });
+    await this.assertAgentProfileIsValid(state, nextProfile, focus.sessionId);
+    if (nextProfile.openClawUrl !== currentProfile.openClawUrl) {
+      await this.validateOpenClawAgentHealth(nextProfile.openClawUrl);
+    }
     const nextState: ConsolePersistenceState = {
       ...this.applyFocusedSession(state, focus.sessionId, trustModeId),
       profilesBySession: {
@@ -2472,7 +2741,7 @@ export class ClawzControlPlane {
       sessionId: focus.sessionId,
       profileUpdated: true
     });
-    return this.getConsoleState({ sessionId: focus.sessionId });
+    return this.getConsoleState({ sessionId: focus.sessionId, ...(adminKey ? { adminKey } : {}) });
   }
 
   async sponsorWallet(options: SponsorWalletOptions = {}): Promise<ConsoleStateResponse> {
@@ -2489,6 +2758,7 @@ export class ClawzControlPlane {
       liveFlow,
       options.sessionId
     );
+    this.assertAdminAccess(state, focus.sessionId, options.adminKey);
     const queue = await this.loadSponsorQueueFile();
     const existingPendingJob = queue.jobs.find(
       (job) => job.sessionId === focus.sessionId && (job.status === "queued" || job.status === "running")
@@ -2519,14 +2789,18 @@ export class ClawzControlPlane {
     });
     void this.runSponsorQueue();
 
-    return this.getConsoleState({ sessionId: focus.sessionId });
+    return this.getConsoleState({
+      sessionId: focus.sessionId,
+      ...(options.adminKey ? { adminKey: options.adminKey } : {})
+    });
   }
 
-  async prepareRecoveryKit(sessionId?: string): Promise<ConsoleStateResponse> {
+  async prepareRecoveryKit(sessionId?: string, adminKey?: string): Promise<ConsoleStateResponse> {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
     const focus = this.resolveSessionFocus(state, events, this.buildLiveFlowTargets(events, liveFlow), liveFlow, sessionId);
+    this.assertAdminAccess(state, focus.sessionId, adminKey);
     const preparedAtIso = new Date().toISOString();
     const manifest = await this.blobStore.sealJson({
       scope: {
@@ -2576,7 +2850,7 @@ export class ClawzControlPlane {
       payloadDigest: manifest.payloadDigest,
       visibility: manifest.visibility
     }, preparedAtIso);
-    return this.getConsoleState({ sessionId: focus.sessionId });
+    return this.getConsoleState({ sessionId: focus.sessionId, ...(adminKey ? { adminKey } : {}) });
   }
 
   async approvePrivacyException(

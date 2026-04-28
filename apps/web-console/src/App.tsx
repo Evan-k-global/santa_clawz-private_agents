@@ -11,10 +11,12 @@ import type {
 import {
   fetchAgentRegistry,
   fetchConsoleState,
+  getStoredAdminKey,
   getApiBase,
   prepareRecoveryKit,
   registerAgent,
   runLiveSessionTurnFlow,
+  storeAdminKey,
   sponsorWallet,
   submitHireRequest,
   updateAgentProfile
@@ -120,8 +122,16 @@ function buildPublicAgentUrl(agentId: string) {
 }
 
 function buildShareOnXUrl(callbackUrl: string, agentId: string) {
-  const message = `I registered my OpenClaw agent with SantaClawz.ai. Agent ID: ${agentId}. Private, verifiable, and open for business 🦞 ${callbackUrl}`;
+  const message = `I just launched my OpenClaw agent on SantaClawz.ai. Agent ID: ${agentId}. Private, verifiable, and open for business 🦞 ${callbackUrl}`;
   return `https://twitter.com/intent/tweet?text=${encodeURIComponent(message)}`;
+}
+
+function isLikelyEvmAddress(value: string) {
+  return /^0x[a-fA-F0-9]{40}$/.test(value.trim());
+}
+
+function isLikelyZekoAddress(value: string) {
+  return /^B62[a-zA-Z0-9]{20,}$/.test(value.trim());
 }
 
 function payoutWalletLabel(walletKey: PayoutWalletKey) {
@@ -381,6 +391,7 @@ export function App() {
   const [registrationMethod, setRegistrationMethod] = useState<RegistrationMethod>("browser");
   const [selectedPayoutWalletKey, setSelectedPayoutWalletKey] = useState<PayoutWalletKey>("base");
   const [draftPayoutWalletValue, setDraftPayoutWalletValue] = useState("");
+  const [adminKeyDraft, setAdminKeyDraft] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -528,6 +539,17 @@ export function App() {
     profile.payoutWallets.zeko,
     selectedPayoutWalletKey
   ]);
+
+  useEffect(() => {
+    if (!state) {
+      return;
+    }
+
+    const storedKey = getStoredAdminKey(state.session.sessionId, state.agentId);
+    if (storedKey && storedKey !== adminKeyDraft) {
+      setAdminKeyDraft(storedKey);
+    }
+  }, [adminKeyDraft, state]);
 
   useEffect(() => {
     setHireReceipt(null);
@@ -781,6 +803,7 @@ export function App() {
   const canPreparePublish = isRegisteredSession && connectReady;
   const canPublish = isRegisteredSession && connectReady && hasSponsoredBalance && recoveryReady;
   const networkIsMainnet = isMainnetDeployment(state.deployment);
+  const hasAdminAccess = state.adminAccess.hasAdminAccess;
   const paymentsEnabled = state.paymentsEnabled;
   const paymentProfileReady = state.paymentProfileReady;
   const payoutConfigured = state.payoutAddressConfigured;
@@ -804,6 +827,7 @@ export function App() {
   const publicAgentUrl = registeredAgentId ? buildPublicAgentUrl(registeredAgentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl && registeredAgentId ? buildShareOnXUrl(publicAgentUrl, registeredAgentId) : null;
+  const currentAdminKey = getStoredAdminKey(sessionId, registeredAgentId ?? state.agentId);
   const configuredPayoutWallets = ([
     ["base", profile.payoutWallets.base],
     ["ethereum", profile.payoutWallets.ethereum],
@@ -870,6 +894,15 @@ export function App() {
       return;
     }
 
+    if ((selectedPayoutWalletKey === "base" || selectedPayoutWalletKey === "ethereum") && !isLikelyEvmAddress(trimmedValue)) {
+      setError(`${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet must be a valid EVM address.`);
+      return;
+    }
+    if (selectedPayoutWalletKey === "zeko" && !isLikelyZekoAddress(trimmedValue)) {
+      setError("Zeko payout wallet must look like a valid Mina address.");
+      return;
+    }
+
     const nextWallets = {
       ...profile.payoutWallets,
       [selectedPayoutWalletKey]: trimmedValue
@@ -882,6 +915,7 @@ export function App() {
     });
     setSelectedPayoutWalletKey(nextWalletKey);
     setDraftPayoutWalletValue(nextWallets[nextWalletKey] ?? "");
+    setError(null);
   }
 
   function removePayoutWallet(walletKey: PayoutWalletKey) {
@@ -895,6 +929,29 @@ export function App() {
     });
     setSelectedPayoutWalletKey(walletKey);
     setDraftPayoutWalletValue("");
+  }
+
+  function unlockAdminAccess() {
+    const trimmedKey = adminKeyDraft.trim();
+    const targetAgentId = registeredAgentId ?? state?.agentId;
+    if (!trimmedKey) {
+      setError("Paste the agent admin key first.");
+      return;
+    }
+
+    storeAdminKey(trimmedKey, sessionId, targetAgentId);
+    setPendingAction("unlock-admin");
+    setError(null);
+    void fetchConsoleState(sessionId, targetAgentId)
+      .then((nextState) => {
+        setState(nextState);
+      })
+      .catch((nextError: Error) => {
+        setError(nextError.message);
+      })
+      .finally(() => {
+        setPendingAction(null);
+      });
   }
 
   return (
@@ -1043,7 +1100,7 @@ export function App() {
 
           </div>
 
-          <div className="action-row action-row-form stacked-action-row">
+          <div className="action-row action-row-form stacked-action-row register-agent-card">
             <div className="section-head compact-head">
               <div>
                 <strong>Register this agent</strong>
@@ -1137,6 +1194,56 @@ export function App() {
                 </button>
               </div>
             </div>
+
+            {isRegisteredSession ? (
+              <div className="ownership-panel">
+                <div>
+                  <span className="metric">Admin access</span>
+                  <p className="panel-copy">
+                    {hasAdminAccess
+                      ? "This browser can manage the agent. Keep the admin key if you want to update it from another device later."
+                      : `Paste the admin key to unlock agent settings. ${state.adminAccess.keyHint ? `Saved hint: ${state.adminAccess.keyHint}.` : ""}`}
+                  </p>
+                </div>
+                <div className="ownership-actions">
+                  {hasAdminAccess ? (
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={!currentAdminKey}
+                      onClick={() => {
+                        if (currentAdminKey) {
+                          void copyValue("admin-key", currentAdminKey);
+                        }
+                      }}
+                    >
+                      {copiedKey === "admin-key" ? "Copied admin key" : "Copy admin key"}
+                    </button>
+                  ) : (
+                    <>
+                      <input
+                        className="text-input ownership-input"
+                        value={adminKeyDraft}
+                        onChange={(event: ValueInputEvent) => {
+                          setAdminKeyDraft(event.target.value);
+                        }}
+                        placeholder="sck_..."
+                      />
+                      <button
+                        type="button"
+                        className="primary-button"
+                        disabled={pendingAction === "unlock-admin"}
+                        onClick={() => {
+                          unlockAdminAccess();
+                        }}
+                      >
+                        {pendingAction === "unlock-admin" ? "Unlocking..." : "Unlock agent"}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            ) : null}
           </div>
           </section>
 
@@ -1181,7 +1288,7 @@ export function App() {
                   {pendingAction === "activate-agent"
                     ? "Preparing..."
                     : !isRegisteredSession
-                      ? "Register first"
+                      ? "Finish step 1"
                       : hasSponsoredBalance && recoveryReady
                         ? "Prepared"
                         : "Prepare publish"}
@@ -1264,7 +1371,11 @@ export function App() {
                   <a className="primary-button" href={shareOnXUrl} target="_blank" rel="noreferrer">
                     Share on X
                   </a>
-                ) : null}
+                ) : (
+                  <button type="button" className="primary-button" disabled>
+                    Share on X
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -1592,6 +1703,24 @@ export function App() {
                   placeholder="Share fulfillment notes, payment expectations, or what buyers should know."
                 />
               </label>
+
+              <div className="payment-save-row">
+                <p className="panel-copy">
+                  {isRegisteredSession
+                    ? "Save the payout profile once you are happy with the wallet, rail, and pricing setup."
+                    : "Register the agent first, then save payout settings."}
+                </p>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={pendingAction === "save-payment-profile" || !isRegisteredSession || !hasAdminAccess}
+                  onClick={() => {
+                    void runAction("save-payment-profile", () => updateAgentProfile(profileForSave, sessionId));
+                  }}
+                >
+                  {pendingAction === "save-payment-profile" ? "Saving..." : "Save payout setup"}
+                </button>
+              </div>
             </div>
           </div>
           </div>

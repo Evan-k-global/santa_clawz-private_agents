@@ -375,6 +375,11 @@ pre,
   gap: 14px;
 }
 
+.register-agent-card {
+  margin-top: 12px;
+  gap: 18px;
+}
+
 .payment-step-list {
   display: grid;
   gap: 22px;
@@ -399,7 +404,7 @@ pre,
 
 .action-form-stack {
   display: grid;
-  gap: 12px;
+  gap: 10px;
   width: min(100%, 420px);
   min-width: min(100%, 360px);
 }
@@ -432,6 +437,24 @@ pre,
   color: var(--accent);
 }
 
+.ownership-panel {
+  display: grid;
+  gap: 12px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(18, 35, 54, 0.08);
+}
+
+.ownership-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.ownership-input {
+  width: min(100%, 320px);
+}
+
 .wallet-chip-list {
   display: grid;
   gap: 12px;
@@ -453,7 +476,7 @@ pre,
 }
 
 .wallet-builder-grid {
-  margin-top: 0;
+  margin-top: 2px;
   grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
   align-items: end;
 }
@@ -465,8 +488,8 @@ pre,
 }
 
 .round-add-button {
-  width: 48px;
-  height: 48px;
+  width: 44px;
+  height: 44px;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--accent), var(--accent-bright));
   color: white;
@@ -1136,6 +1159,14 @@ h3 {
   margin-top: 12px;
 }
 
+.payment-save-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-top: 4px;
+}
+
 .facilitator-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1190,6 +1221,7 @@ h3 {
   border-radius: 999px;
   cursor: pointer;
   text-decoration: none;
+  white-space: nowrap;
   transition:
     transform 180ms ease,
     box-shadow 180ms ease,

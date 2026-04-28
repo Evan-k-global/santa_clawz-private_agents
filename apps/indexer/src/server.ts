@@ -43,6 +43,7 @@ interface IndexerRequest<
   ReqQuery extends Record<string, unknown> = Record<string, unknown>
 > {
   body: ReqBody;
+  ip?: string;
   params: Params;
   query: ReqQuery;
   header(name: string): string | undefined;
@@ -85,6 +86,9 @@ app.use(apiAuthMiddleware(securityConfig));
 app.use(express.json());
 
 const controlPlane = await ClawzControlPlane.boot(process.env.CLAWZ_DATA_DIR?.trim() || undefined);
+const REGISTRATION_WINDOW_MS = 15 * 60 * 1000;
+const REGISTRATION_LIMIT = 5;
+const registrationAttempts = new Map<string, { count: number; resetAt: number }>();
 const LIVE_FLOW_KINDS = ["first-turn", "next-turn", "abort-turn", "refund-turn", "revoke-disclosure"] as const;
 type LiveFlowKind = (typeof LIVE_FLOW_KINDS)[number];
 type TrustModeRequestBody = { modeId?: unknown; sessionId?: unknown };
@@ -142,6 +146,48 @@ function queryString(query: unknown, key: string): string | undefined {
   }
 
   return typeof query[key] === "string" && query[key].trim().length > 0 ? query[key].trim() : undefined;
+}
+
+function adminKeyHeader(request: IndexerRequest) {
+  return optionalString(request.header("x-clawz-admin-key"));
+}
+
+function requestIdentity(request: IndexerRequest) {
+  const forwarded = request.header("x-forwarded-for");
+  if (forwarded) {
+    const first = forwarded.split(",")[0]?.trim();
+    if (first) {
+      return first;
+    }
+  }
+  const realIp = request.header("x-real-ip");
+  if (realIp) {
+    return realIp.trim();
+  }
+  return request.ip?.trim() || "unknown";
+}
+
+function enforceRegistrationRateLimit(request: IndexerRequest) {
+  const identity = requestIdentity(request);
+  const now = Date.now();
+  const existing = registrationAttempts.get(identity);
+  if (!existing || existing.resetAt <= now) {
+    registrationAttempts.set(identity, {
+      count: 1,
+      resetAt: now + REGISTRATION_WINDOW_MS
+    });
+    return;
+  }
+
+  if (existing.count >= REGISTRATION_LIMIT) {
+    const retryAfterSeconds = Math.max(1, Math.ceil((existing.resetAt - now) / 1000));
+    const error = new Error("Too many registration attempts. Try again in a few minutes.");
+    (error as Error & { retryAfterSeconds?: number }).retryAfterSeconds = retryAfterSeconds;
+    throw error;
+  }
+
+  existing.count += 1;
+  registrationAttempts.set(identity, existing);
 }
 
 function parsePayoutWallets(value: unknown): AgentProfileState["payoutWallets"] | undefined {
@@ -681,7 +727,16 @@ app.get("/api/console/state", route(async (request, response) => {
   try {
     const sessionId = queryString(request.query, "sessionId");
     const agentId = queryString(request.query, "agentId");
-    response.json(await controlPlane.getConsoleState(sessionId ? { sessionId } : agentId ? { agentId } : {}));
+    const adminKey = adminKeyHeader(request);
+    response.json(
+      await controlPlane.getConsoleState(
+        sessionId
+          ? { sessionId, ...(adminKey ? { adminKey } : {}) }
+          : agentId
+            ? { agentId, ...(adminKey ? { adminKey } : {}) }
+            : { ...(adminKey ? { adminKey } : {}) }
+      )
+    );
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to load console state."
@@ -870,7 +925,7 @@ app.get("/api/zeko/deployment", route(async (_request, response) => {
 
 app.post("/api/zeko/session-turn/run", route(async (request, response) => {
   try {
-    response.json(await controlPlane.runLiveSessionTurnFlow(parseLiveFlowRequest(request.body)));
+    response.json(await controlPlane.runLiveSessionTurnFlow(parseLiveFlowRequest(request.body), adminKeyHeader(request)));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to execute live Zeko session flow."
@@ -880,7 +935,7 @@ app.post("/api/zeko/session-turn/run", route(async (request, response) => {
 
 app.post("/api/zeko/flow/run", route(async (request, response) => {
   try {
-    response.json(await controlPlane.runLiveSessionTurnFlow(parseLiveFlowRequest(request.body)));
+    response.json(await controlPlane.runLiveSessionTurnFlow(parseLiveFlowRequest(request.body), adminKeyHeader(request)));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to execute live Zeko flow."
@@ -1084,7 +1139,7 @@ app.post("/api/console/trust-mode", route(async (request, response) => {
   }
 
   try {
-    response.json(await controlPlane.setTrustMode(nextMode as TrustModeId, sessionId));
+    response.json(await controlPlane.setTrustMode(nextMode as TrustModeId, sessionId, adminKeyHeader(request)));
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to update trust mode."
@@ -1111,6 +1166,7 @@ app.post("/api/console/register", route(async (request, response) => {
       : undefined;
 
   try {
+    enforceRegistrationRateLimit(request);
     response.json(
       await controlPlane.registerAgent({
         agentName: typeof body.agentName === "string" ? body.agentName : "",
@@ -1125,6 +1181,17 @@ app.post("/api/console/register", route(async (request, response) => {
       })
     );
   } catch (error) {
+    const retryAfterSeconds =
+      error instanceof Error && "retryAfterSeconds" in error
+        ? (error as Error & { retryAfterSeconds?: number }).retryAfterSeconds
+        : undefined;
+    if (retryAfterSeconds) {
+      response.set("retry-after", String(retryAfterSeconds));
+      response.status(429).json({
+        error: error instanceof Error ? error.message : "Too many registration attempts."
+      });
+      return;
+    }
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to register agent."
     });
@@ -1159,7 +1226,7 @@ app.post("/api/console/profile", route(async (request, response) => {
       : {}),
     ...(preferredProvingLocation ? { preferredProvingLocation } : {})
   };
-  response.json(await controlPlane.updateAgentProfile(sessionId, profile));
+  response.json(await controlPlane.updateAgentProfile(sessionId, profile, adminKeyHeader(request)));
 }));
 
 app.post("/api/agents/:agentId/hire", route(async (request, response) => {
@@ -1191,6 +1258,7 @@ app.post("/api/wallet/sponsor", route(async (request, response) => {
   const resolvedSessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
   response.json(
     await controlPlane.sponsorWallet({
+      ...(adminKeyHeader(request) ? { adminKey: adminKeyHeader(request)! } : {}),
       ...(typeof body.amountMina === "string" ? { amountMina: body.amountMina } : {}),
       ...(resolvedSessionId ? { sessionId: resolvedSessionId } : {}),
       ...(body.purpose === "onboarding" || body.purpose === "top-up" || body.purpose === "publish"
@@ -1207,7 +1275,10 @@ app.get("/api/wallet/sponsor/queue", route(async (request, response) => {
 app.post("/api/wallet/recovery/prepare", route(async (request, response) => {
   const body = parseRecoveryRequest(request.body ?? null);
   response.json(
-    await controlPlane.prepareRecoveryKit(optionalString(body.sessionId) ?? queryString(request.query, "sessionId"))
+    await controlPlane.prepareRecoveryKit(
+      optionalString(body.sessionId) ?? queryString(request.query, "sessionId"),
+      adminKeyHeader(request)
+    )
   );
 }));
 

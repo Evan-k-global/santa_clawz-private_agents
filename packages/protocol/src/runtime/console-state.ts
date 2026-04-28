@@ -308,12 +308,20 @@ export interface HireRequestReceipt {
   paidJobsEnabled: boolean;
 }
 
+export interface AdminAccessState {
+  requiresAdminKey: boolean;
+  hasAdminAccess: boolean;
+  keyHint?: string;
+  issuedAdminKey?: string;
+}
+
 export interface ConsoleStateResponse {
   agentId: string;
   paymentsEnabled: boolean;
   paymentProfileReady: boolean;
   payoutAddressConfigured: boolean;
   paidJobsEnabled: boolean;
+  adminAccess: AdminAccessState;
   wallet: ShadowWalletState;
   trustModes: TrustModeCard[];
   ghostRun: GhostRunPlan;

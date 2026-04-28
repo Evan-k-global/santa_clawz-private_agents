@@ -10,6 +10,8 @@ import type {
 const LOCAL_INDEXER_BASE = "http://127.0.0.1:4318";
 const DEFAULT_ZEKO_FAUCET_UI_URL = "https://faucet.zeko.io";
 const DEFAULT_ZEKO_FAUCET_CLAIM_API_URL = "https://api.faucet.zeko.io/claim";
+const ADMIN_KEY_SESSION_PREFIX = "clawz-admin-key:session:";
+const ADMIN_KEY_AGENT_PREFIX = "clawz-admin-key:agent:";
 type LiveFlowKind = "first-turn" | "next-turn" | "abort-turn" | "refund-turn" | "revoke-disclosure";
 
 function normalizeBaseUrl(value: string): string {
@@ -37,6 +39,11 @@ function resolveApiBase() {
 }
 
 const API_BASE = resolveApiBase();
+
+type AdminKeyContext = {
+  sessionId?: string;
+  agentId?: string;
+};
 
 export function getApiBase() {
   return API_BASE;
@@ -80,13 +87,97 @@ export interface RunLiveFlowOptions {
   refundAmountMina?: string;
 }
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
+function adminSessionStorageKey(sessionId: string) {
+  return `${ADMIN_KEY_SESSION_PREFIX}${sessionId}`;
+}
+
+function adminAgentStorageKey(agentId: string) {
+  return `${ADMIN_KEY_AGENT_PREFIX}${agentId}`;
+}
+
+function canUseStorage() {
+  return typeof window !== "undefined" && Boolean(window.localStorage);
+}
+
+export function getStoredAdminKey(sessionId?: string, agentId?: string) {
+  if (!canUseStorage()) {
+    return "";
+  }
+  if (agentId) {
+    const byAgent = window.localStorage.getItem(adminAgentStorageKey(agentId));
+    if (byAgent?.trim()) {
+      return byAgent.trim();
+    }
+  }
+  if (sessionId) {
+    const bySession = window.localStorage.getItem(adminSessionStorageKey(sessionId));
+    if (bySession?.trim()) {
+      return bySession.trim();
+    }
+  }
+  return "";
+}
+
+export function storeAdminKey(adminKey: string, sessionId?: string, agentId?: string) {
+  if (!canUseStorage()) {
+    return;
+  }
+  const normalized = adminKey.trim();
+  if (!normalized) {
+    return;
+  }
+  if (sessionId) {
+    window.localStorage.setItem(adminSessionStorageKey(sessionId), normalized);
+  }
+  if (agentId) {
+    window.localStorage.setItem(adminAgentStorageKey(agentId), normalized);
+  }
+}
+
+function captureAdminAccess(payload: unknown) {
+  if (typeof payload !== "object" || payload === null) {
+    return;
+  }
+
+  const response = payload as {
+    agentId?: unknown;
+    adminAccess?: { issuedAdminKey?: unknown };
+    session?: { sessionId?: unknown };
+  };
+
+  if (typeof response.adminAccess?.issuedAdminKey !== "string") {
+    return;
+  }
+
+  storeAdminKey(
+    response.adminAccess.issuedAdminKey,
+    typeof response.session?.sessionId === "string" ? response.session.sessionId : undefined,
+    typeof response.agentId === "string" ? response.agentId : undefined
+  );
+}
+
+function buildAdminContext(sessionId?: string, agentId?: string): AdminKeyContext | undefined {
+  const context: AdminKeyContext = {
+    ...(sessionId ? { sessionId } : {}),
+    ...(agentId ? { agentId } : {})
+  };
+  return Object.keys(context).length > 0 ? context : undefined;
+}
+
+async function request<T>(path: string, init?: RequestInit, adminContext?: AdminKeyContext): Promise<T> {
+  const headers = new Headers(init?.headers ?? {});
+  if (!headers.has("content-type")) {
+    headers.set("content-type", "application/json");
+  }
+  const adminKey = getStoredAdminKey(adminContext?.sessionId, adminContext?.agentId);
+  if (adminKey) {
+    headers.set("x-clawz-admin-key", adminKey);
+  }
+
   let response: Response;
   try {
     response = await fetch(`${API_BASE}${path}`, {
-      headers: {
-        "content-type": "application/json"
-      },
+      headers,
       ...init
     });
   } catch (error) {
@@ -101,11 +192,17 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     throw new Error(payload?.error ?? `Request failed: ${response.status}`);
   }
 
-  return response.json() as Promise<T>;
+  const payload = (await response.json()) as T;
+  captureAdminAccess(payload);
+  return payload;
 }
 
 export function fetchConsoleState(sessionId?: string, agentId?: string): Promise<ConsoleStateResponse> {
-  return request<ConsoleStateResponse>(buildPath("/api/console/state", sessionId, agentId));
+  return request<ConsoleStateResponse>(
+    buildPath("/api/console/state", sessionId, agentId),
+    undefined,
+    buildAdminContext(sessionId, agentId)
+  );
 }
 
 export function fetchAgentRegistry(): Promise<AgentRegistryEntry[]> {
@@ -150,7 +247,7 @@ export function runLiveSessionTurnFlow(
   return request<ConsoleStateResponse>("/api/zeko/session-turn/run", {
     method: "POST",
     body: JSON.stringify(payload)
-  });
+  }, buildAdminContext(payload.sessionId));
 }
 
 export function updateTrustMode(modeId: TrustModeId, sessionId?: string): Promise<ConsoleStateResponse> {
@@ -160,7 +257,7 @@ export function updateTrustMode(modeId: TrustModeId, sessionId?: string): Promis
       modeId,
       ...(sessionId ? { sessionId } : {})
     })
-  });
+  }, buildAdminContext(sessionId));
 }
 
 export function updateAgentProfile(
@@ -173,7 +270,7 @@ export function updateAgentProfile(
       ...profile,
       ...(sessionId ? { sessionId } : {})
     })
-  });
+  }, buildAdminContext(sessionId));
 }
 
 export function sponsorWallet(
@@ -188,14 +285,14 @@ export function sponsorWallet(
       ...(purpose ? { purpose } : {}),
       ...(sessionId ? { sessionId } : {})
     })
-  });
+  }, buildAdminContext(sessionId));
 }
 
 export function prepareRecoveryKit(sessionId?: string): Promise<ConsoleStateResponse> {
   return request<ConsoleStateResponse>(buildPath("/api/wallet/recovery/prepare", sessionId), {
     method: "POST",
     body: JSON.stringify(sessionId ? { sessionId } : {})
-  });
+  }, buildAdminContext(sessionId));
 }
 
 export function approvePrivacyException(
