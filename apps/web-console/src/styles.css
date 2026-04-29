@@ -237,11 +237,11 @@ pre,
   width: 100%;
   max-width: 100%;
   font-size: clamp(1.95rem, 3.9vw, 2.5rem);
-  line-height: 0.98;
+  line-height: 1.05;
   letter-spacing: -0.058em;
   color: var(--white);
   white-space: nowrap;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .masthead-copyline {
