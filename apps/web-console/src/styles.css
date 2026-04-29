@@ -917,7 +917,8 @@ pre,
 
 .share-actions {
   display: grid;
-  width: 152px;
+  width: max-content;
+  justify-self: end;
   gap: 12px;
   justify-items: end;
   align-content: start;
