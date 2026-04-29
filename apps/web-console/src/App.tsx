@@ -485,7 +485,8 @@ export function App() {
     }
 
     if (profileSessionId !== state.session.sessionId) {
-      setProfile(normalizeProfileDraft(state.profile));
+      const registeredSession = state.session.sessionId.startsWith("session_agent_");
+      setProfile(normalizeProfileDraft(registeredSession ? state.profile : undefined));
       setProfileSessionId(state.session.sessionId);
       return;
     }
