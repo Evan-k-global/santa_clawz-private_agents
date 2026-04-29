@@ -315,25 +315,42 @@ pre,
 }
 
 .step-card {
-  padding: 22px;
+  padding: 0;
+  overflow: hidden;
+}
+
+.step-head {
+  padding: 36px 36px 30px;
+  border-bottom: 1px solid rgba(18, 35, 54, 0.08);
+}
+
+.step-card-body {
+  padding: 28px 36px 34px;
 }
 
 .step-title {
-  gap: 14px;
-  align-items: center;
+  gap: 20px;
+  align-items: flex-start;
+}
+
+.step-title > div {
+  display: grid;
+  gap: 8px;
 }
 
 .step-number {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 48px;
+  height: 48px;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-bright));
-  color: white;
+  border: 1px solid rgba(18, 35, 54, 0.12);
+  background: rgba(247, 243, 235, 0.95);
+  color: rgba(18, 35, 54, 0.72);
   font-family: "IBM Plex Mono", monospace;
-  font-size: 0.88rem;
+  font-size: 1rem;
+  flex-shrink: 0;
 }
 
 .simple-choice-stack,
@@ -351,14 +368,49 @@ pre,
 }
 
 .action-list {
-  margin-top: 18px;
+  margin-top: 0;
+  display: grid;
+  gap: 0;
 }
 
 .action-row {
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: rgba(246, 250, 253, 0.72);
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  align-items: center;
+  padding: 28px 36px;
+  border-top: 1px solid rgba(18, 35, 54, 0.08);
+  border-radius: 0;
+  background: transparent;
+}
+
+.action-row-main {
+  display: flex;
+  align-items: flex-start;
+  gap: 22px;
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.action-row-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  background: rgba(247, 243, 235, 0.95);
+  border: 1px solid rgba(18, 35, 54, 0.08);
+  color: rgba(18, 35, 54, 0.5);
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1rem;
+  flex-shrink: 0;
+}
+
+.action-row-copy {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
 }
 
 .action-row-form {
@@ -382,14 +434,14 @@ pre,
 
 .register-divider {
   height: 1px;
-  margin: 22px -22px 0;
+  margin: 28px -36px 0;
   background: rgba(18, 35, 54, 0.08);
 }
 
 .register-flow-card {
   display: grid;
-  gap: 14px;
-  padding-top: 18px;
+  gap: 18px;
+  padding-top: 24px;
 }
 
 .register-flow-head,
@@ -397,7 +449,12 @@ pre,
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  align-items: start;
+  align-items: center;
+}
+
+.register-flow-copy {
+  display: grid;
+  gap: 8px;
 }
 
 .register-flow-head strong,
@@ -409,21 +466,17 @@ pre,
 .register-browser-stack,
 .register-cli-stack {
   display: grid;
-  gap: 12px;
-}
-
-.register-browser-stack {
-  justify-items: start;
+  gap: 16px;
 }
 
 .register-method-copy,
 .compact-detail-copy {
-  max-width: 60rem;
+  max-width: 46rem;
 }
 
 .register-browser-button {
-  min-width: 15rem;
-  width: auto;
+  min-width: 0;
+  width: 100%;
   justify-content: center;
 }
 
@@ -446,23 +499,7 @@ pre,
 
 .payment-step-list {
   display: grid;
-  gap: 22px;
-  margin-top: 14px;
-}
-
-.payment-step-status {
-  margin-top: 14px;
-}
-
-.payment-head-controls {
-  display: grid;
-  justify-items: end;
-  gap: 10px;
-  flex: 0 1 34rem;
-}
-
-.payment-step-status-inline {
-  max-width: 100%;
+  gap: 0;
   margin-top: 0;
 }
 
@@ -472,22 +509,17 @@ pre,
   color: #17664b;
 }
 
-.share-row {
-  margin-top: 18px;
-}
-
 .share-copy {
   flex: 1 1 auto;
   min-width: 0;
-  padding-right: 12px;
 }
 
 .share-url-placeholder {
   margin-top: 10px;
-  padding: 11px 14px;
+  padding: 13px 16px;
   border: 1px solid rgba(18, 35, 54, 0.1);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.7);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.84);
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
   font-size: 0.84rem;
@@ -510,6 +542,7 @@ pre,
 }
 
 .action-side {
+  display: flex;
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
@@ -579,33 +612,66 @@ pre,
   justify-content: space-between;
   gap: 12px;
   align-items: center;
-  padding: 11px 14px;
-  border: 1px solid var(--line);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.72);
+  padding: 18px 22px;
+  border: 1px solid rgba(18, 35, 54, 0.1);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.86);
+}
+
+.wallet-chip > div {
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  min-width: 0;
+}
+
+.wallet-chip-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 12px;
+  border-radius: 10px;
+  background: rgba(70, 144, 232, 0.12);
+  color: #1f5ea8;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.9rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .wallet-chip strong {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 1rem;
+  font-weight: 500;
   overflow-wrap: anywhere;
 }
 
 .payment-subcard {
   display: grid;
-  gap: 10px;
-  padding: 16px 18px;
-  border: 1px solid var(--line);
-  border-radius: 20px;
-  background: rgba(246, 250, 253, 0.72);
+  gap: 18px;
+  padding: 28px 36px;
+  border: 0;
+  border-top: 1px solid rgba(18, 35, 54, 0.08);
+  border-radius: 0;
+  background: transparent;
 }
 
 .payment-subcard-spaced {
-  margin-top: 2px;
+  margin-top: 0;
 }
 
 .payment-subcard-body,
 .payment-subcard-copy {
   display: grid;
-  gap: 6px;
+  gap: 10px;
+}
+
+.step-subsection-label {
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 0.82rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(18, 35, 54, 0.56);
 }
 
 .wallet-status-note,
@@ -623,23 +689,23 @@ pre,
 }
 
 .wallet-builder-grid {
-  margin-top: 0;
+  margin-top: 10px;
   grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
   align-items: start;
 }
 
 .payment-compact-grid {
-  margin-top: 4px;
-  gap: 10px;
+  margin-top: 0;
+  gap: 18px;
 }
 
-.payment-compact-grid-three {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+.payment-compact-grid-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .payment-compact-input {
-  padding: 11px 14px;
-  border-radius: 14px;
+  padding: 14px 16px;
+  border-radius: 16px;
 }
 
 .compact-payment-copy {
@@ -647,7 +713,7 @@ pre,
 }
 
 .payment-notes-area {
-  min-height: 92px;
+  min-height: 132px;
 }
 
 .wallet-builder-field {
@@ -662,15 +728,81 @@ pre,
 }
 
 .round-add-button {
-  width: 42px;
-  height: 42px;
-  flex: 0 0 42px;
+  width: 46px;
+  height: 46px;
+  flex: 0 0 46px;
   border-radius: 999px;
-  background: linear-gradient(135deg, var(--accent), var(--accent-bright));
-  color: white;
+  border: 1px solid rgba(18, 35, 54, 0.14);
+  background: rgba(255, 255, 255, 0.9);
+  color: rgba(18, 35, 54, 0.62);
   font-size: 1.5rem;
   line-height: 1;
-  box-shadow: 0 14px 30px rgba(185, 45, 34, 0.2);
+  box-shadow: none;
+}
+
+.payment-terms-head {
+  align-items: center;
+}
+
+.payment-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  background: transparent;
+  color: var(--ink);
+}
+
+.payment-switch-track {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 82px;
+  height: 42px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(18, 35, 54, 0.12);
+  transition: background 180ms ease;
+}
+
+.payment-switch-thumb {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background: white;
+  box-shadow: 0 2px 8px rgba(18, 35, 54, 0.14);
+  transform: translateX(0);
+  transition: transform 180ms ease;
+}
+
+.payment-switch.active .payment-switch-track {
+  background: #1ea672;
+}
+
+.payment-switch.active .payment-switch-thumb {
+  transform: translateX(40px);
+}
+
+.payment-switch-label {
+  font-size: 1rem;
+  line-height: 1.4;
+}
+
+.facilitator-inline {
+  gap: 14px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.host-facilitator-button {
+  border-color: rgba(44, 130, 219, 0.32);
+  background: rgba(44, 130, 219, 0.1);
+  color: #1f5ea8;
+}
+
+.field-slim {
+  max-width: 34rem;
 }
 
 .compact-queue-list,
@@ -1433,6 +1565,12 @@ h3 {
   box-shadow: 0 14px 30px rgba(185, 45, 34, 0.26);
 }
 
+.onboarding-primary-button {
+  background: #171513;
+  color: #fffaf2;
+  box-shadow: none;
+}
+
 .secondary-button,
 .action-button {
   border: 1px solid rgba(18, 35, 54, 0.12);
@@ -1653,9 +1791,16 @@ button:disabled {
     flex: 1 1 0;
   }
 
-  .masthead,
-  .step-card {
+  .masthead {
     padding: 18px;
+  }
+
+  .step-head {
+    padding: 24px 22px 22px;
+  }
+
+  .step-card-body {
+    padding: 22px;
   }
 
   .action-side {
@@ -1682,24 +1827,14 @@ button:disabled {
     width: 100%;
   }
 
-  .wallet-builder-grid {
-    grid-template-columns: minmax(0, 108px) minmax(0, 1fr);
-  }
-
-  .payment-step-status-inline,
-  .wallet-status-inline {
-    max-width: 100%;
-    width: 100%;
-  }
-
-  .payment-head-controls {
-    width: 100%;
-    justify-items: stretch;
-  }
-
-  .payment-compact-grid-three,
+  .wallet-builder-grid,
+  .payment-compact-grid-two,
   .payment-status-grid {
     grid-template-columns: 1fr;
+  }
+
+  .wallet-builder-inline {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .payment-save-row {
