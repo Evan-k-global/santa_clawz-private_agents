@@ -1151,8 +1151,8 @@ export function App() {
                 <p className="panel-copy">
                   {registrationMethod === "browser"
                     ? isRegisteredSession
-                      ? `Registered to ${state.agentId}`
-                      : "Create the SantaClawz registration record here, then deploy and share it."
+                      ? `Registered to ${state.agentId}. This browser already owns the registration record for this agent.`
+                      : "Create the SantaClawz registration record here. SantaClawz will use the profile details above, then you can deploy and share the live agent."
                     : "Run one command and the agent joins SantaClawz. Use this if it already exposes a compatible OpenClaw agent URL."}
                 </p>
               </div>
@@ -1182,11 +1182,6 @@ export function App() {
 
             {registrationMethod === "browser" ? (
               <div className="register-browser-stack">
-                <p className="panel-copy register-method-copy">
-                  {isRegisteredSession
-                    ? "This browser already owns the registration record for this agent."
-                    : "SantaClawz will register the agent using the profile details above."}
-                </p>
                 <button
                   className="primary-button register-browser-button"
                   disabled={pendingAction === "register-agent" || !connectReady || isRegisteredSession}
