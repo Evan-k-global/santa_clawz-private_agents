@@ -624,8 +624,8 @@ pre,
 
 .wallet-builder-grid {
   margin-top: 0;
-  grid-template-columns: minmax(0, 220px) minmax(0, 1fr) auto;
-  align-items: end;
+  grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+  align-items: start;
 }
 
 .payment-compact-grid {
@@ -650,15 +650,21 @@ pre,
   min-height: 92px;
 }
 
-.wallet-builder-controls {
-  display: flex;
-  justify-content: flex-end;
-  align-items: end;
+.wallet-builder-field {
+  min-width: 0;
+}
+
+.wallet-builder-inline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 
 .round-add-button {
   width: 42px;
   height: 42px;
+  flex: 0 0 42px;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--accent), var(--accent-bright));
   color: white;
@@ -1677,7 +1683,7 @@ button:disabled {
   }
 
   .wallet-builder-grid {
-    grid-template-columns: minmax(0, 108px) minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 108px) minmax(0, 1fr);
   }
 
   .payment-step-status-inline,

@@ -1537,29 +1537,29 @@ export function App() {
                     <option value="zeko">Zeko</option>
                   </select>
                 </label>
-                <label className="field">
+                <label className="field wallet-builder-field">
                   <span>Wallet address</span>
-                  <input
-                    className="text-input"
-                    value={draftPayoutWalletValue}
-                    onChange={(event: ValueInputEvent) => {
-                      setDraftPayoutWalletValue(event.target.value);
-                    }}
-                    placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
-                  />
+                  <div className="wallet-builder-inline">
+                    <input
+                      className="text-input"
+                      value={draftPayoutWalletValue}
+                      onChange={(event: ValueInputEvent) => {
+                        setDraftPayoutWalletValue(event.target.value);
+                      }}
+                      placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
+                    />
+                    <button
+                      type="button"
+                      className="round-add-button"
+                      aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
+                      onClick={() => {
+                        savePayoutWallet();
+                      }}
+                    >
+                      +
+                    </button>
+                  </div>
                 </label>
-                <div className="wallet-builder-controls">
-                  <button
-                    type="button"
-                    className="round-add-button"
-                    aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
-                    onClick={() => {
-                      savePayoutWallet();
-                    }}
-                  >
-                    +
-                  </button>
-                </div>
               </div>
             </div>
           </div>
