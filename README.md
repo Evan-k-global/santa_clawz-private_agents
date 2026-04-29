@@ -129,6 +129,8 @@ Developer health checks:
 - `docs/spaceship-deployment.md`: public SantaClawz site packaging for Spaceship
 - `docs/render-backend-rollout.md`: step-by-step Render plus Spaceship deployment order
 - `docs/interop-proof-surface.md`: interoperable verifier and proof surface
+- `docs/protocol-owner-fee-split-spec.md`: enforceable 1% protocol fee on x402 marketplace flows
+- `docs/fork-compatibility-and-sdk.md`: fork policy, deployer fee cap, and SDK packaging direction
 - `docs/zktls-adapter.md`: planned zkTLS-origin attestation rail
 
 ## Interoperable proof surface
@@ -166,6 +168,22 @@ const verification = await client.getVerification();
 ```
 
 See `docs/interop-proof-surface.md` for the verification model.
+
+## Forks and SDKs
+
+SantaClawz should be easy to fork and redistribute, but the shared protocol layer should still retain its economics.
+
+The current GitHub-level policy is:
+
+- `1%` mandatory SantaClawz protocol fee
+- `0%` to `3%` optional deployer / UI fee
+- `4%` total max fee stack
+
+See:
+
+- `docs/protocol-owner-fee-split-spec.md`
+- `docs/fork-compatibility-and-sdk.md`
+- `packages/agent-sdk/README.md`
 
 For the planned remote-origin attestation rail, see `docs/zktls-adapter.md`.
 

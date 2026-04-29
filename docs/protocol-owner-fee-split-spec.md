@@ -531,6 +531,131 @@ Do **not** try to automatically bridge or auto-route those funds back into Zeko 
 
 Use the fee treasury manually first.
 
+## Fork compatibility and deployer fee extension
+
+SantaClawz should publish a very clear compatibility rule for forks and white-label deployers:
+
+- the SantaClawz protocol fee floor remains `1%`
+- downstream deployers may add an extra UI / deployer fee of up to `3%`
+- the combined fee stack must not exceed `4%`
+
+This keeps the shared intelligence layer funded while still letting downstream builders distribute through their own surfaces.
+
+### Compatibility rule
+
+A deployment should only describe itself as `SantaClawz-compatible` if it preserves:
+
+- `protocol fee >= 100 bps`
+- `deployer fee <= 300 bps`
+- `protocol fee + deployer fee <= 400 bps`
+
+The current runtime work in this repo enforces the protocol fee path first.
+The deployer fee path is the next layer and should follow the same reserve-release enforcement model.
+
+### Additional schema for deployer fees
+
+Extend the protocol docs with a second policy object:
+
+```ts
+export interface DeployerFeePolicy {
+  enabled: boolean;
+  feeBps: number;
+  label?: string;
+  recipientByRail: Partial<Record<AgentPaymentRail, string>>;
+}
+```
+
+And extend `AgentFeePreview` so forks can surface the full stack:
+
+```ts
+export interface AgentFeePreview {
+  rail: AgentPaymentRail;
+  grossAmountUsd?: string;
+  sellerNetAmountUsd?: string;
+  protocolFeeAmountUsd?: string;
+  deployerFeeAmountUsd?: string;
+  sellerPayTo?: string;
+  protocolFeeRecipient?: string;
+  deployerFeeRecipient?: string;
+  feeBps: number;
+  deployerFeeBps?: number;
+  totalFeeBps?: number;
+}
+```
+
+### Additional env vars for white-label deployers
+
+Document these as the supported downstream layer:
+
+```text
+CLAWZ_DEPLOYER_FEE_ENABLED=true
+CLAWZ_DEPLOYER_FEE_BPS=300
+CLAWZ_DEPLOYER_FEE_BASE_RECIPIENT=0x...
+CLAWZ_DEPLOYER_FEE_ETHEREUM_RECIPIENT=0x...
+CLAWZ_DEPLOYER_FEE_LABEL=Acme Agent Marketplace
+```
+
+Validation rules:
+
+- reject configs where `CLAWZ_PROTOCOL_OWNER_FEE_BPS < 100`
+- reject configs where `CLAWZ_DEPLOYER_FEE_BPS > 300`
+- reject configs where the combined total exceeds `400`
+
+### Settlement math with deployer fee
+
+For a fork or white-label deployment, the enforced split should become:
+
+```ts
+protocolFeeAmount = floor(grossAmount * protocolFeeBps / 10000)
+deployerFeeAmount = floor(grossAmount * deployerFeeBps / 10000)
+sellerNetAmount = grossAmount - protocolFeeAmount - deployerFeeAmount
+```
+
+The fee metadata extension in `zeko-x402` should then expose:
+
+- protocol fee recipient
+- deployer fee recipient
+- seller payout address
+- total fee bps
+
+### Why this belongs in the shared protocol layer
+
+This is important enough to document bluntly:
+
+- if every fork can drop the SantaClawz fee to `0%`, the shared Zeko trust layer is economically hollow
+- if forks cannot charge anything on top, distribution incentives weaken
+- a `1% + up to 3%` split is a pragmatic middle ground
+
+That means the docs should treat:
+
+- the `1%` protocol fee as non-negotiable for compatibility
+- the extra `0%–3%` deployer fee as the extensible downstream layer
+
+## SDK packaging recommendation
+
+Forks should not have to reimplement fee previews, proof inspection, or compatibility checks by hand.
+The repo should package the shared logic as an SDK layer in GitHub.
+
+Recommended package shape:
+
+- `@clawz/agent-sdk`
+  - discovery and proof retrieval
+  - verifier access
+  - x402 plan inspection
+  - fee preview inspection
+- future `@clawz/protocol-sdk`
+  - fee policy validators
+  - fork compatibility helpers
+  - split preview utilities
+  - shared plan / quote builders
+
+The goal is simple:
+
+1. every deployer consumes the same proof surface
+2. every fork understands the mandatory `1%` protocol fee
+3. every white-label frontend can add its own capped fee consistently
+4. the shared intelligence layer becomes portable without losing protocol economics
+
 ## Rollout plan
 
 ### Phase 1

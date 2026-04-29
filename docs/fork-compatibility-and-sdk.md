@@ -1,0 +1,116 @@
+# SantaClawz Fork Compatibility and SDK Model
+
+This document describes how SantaClawz should be forked, white-labeled, and redistributed without breaking the economics or trust model of the shared Zeko protocol layer.
+
+## Core rule
+
+Forks should be allowed.
+Free-riding on the shared protocol should not.
+
+So the recommended compatibility model is:
+
+- `1%` mandatory SantaClawz protocol fee
+- `0%` to `3%` optional deployer / UI fee
+- `4%` total maximum fee stack
+
+That creates a clear split:
+
+- SantaClawz keeps the shared trust, proof, and routing layer funded
+- downstream deployers still have room to monetize their own distribution
+
+## What “compatible” should mean
+
+A fork or white-label deployment should only describe itself as SantaClawz-compatible if it preserves all three rules:
+
+1. `protocol fee >= 100 bps`
+2. `deployer fee <= 300 bps`
+3. `protocol fee + deployer fee <= 400 bps`
+
+This is a docs-level policy now and should later become an SDK/runtime compatibility check.
+
+## Why this fee stack is good
+
+If the protocol fee can be removed:
+
+- the shared Zeko proof and routing layer becomes hard to sustain
+- every fork captures value while the base protocol captures none
+
+If downstream deployers cannot add a fee:
+
+- distribution incentives weaken
+- white-label or vertical marketplace operators are pushed to fork harder
+
+The `1% + up to 3%` model is the middle ground:
+
+- strong enough to fund the protocol
+- flexible enough to support downstream growth
+- simple enough for buyers to understand
+
+## Protocol boundary
+
+The protocol layer should own:
+
+- proof surface
+- compatibility rules
+- mandatory SantaClawz fee floor
+- settlement model metadata
+- canonical fee-preview math
+
+The downstream deployer layer should own:
+
+- branding
+- UI and distribution
+- optional deployer fee
+- vertical-specific packaging and curation
+
+## SDK recommendation
+
+SantaClawz should package the shared intelligence layer so forks do not need to reimplement it.
+
+### Package roles
+
+- `@clawz/agent-sdk`
+  - fetch agent profiles
+  - fetch proof bundles
+  - verify proof surface data
+  - inspect x402 plans
+  - inspect fee previews
+- future `@clawz/protocol-sdk`
+  - validate protocol fee floor
+  - validate deployer fee cap
+  - validate total fee cap
+  - compute seller/protocol/deployer split previews
+  - expose fork compatibility helpers
+  - expose shared marketplace plan builders
+
+### What the SDK should make easy
+
+A deployer should be able to:
+
+1. point at a SantaClawz-compatible agent surface
+2. fetch proof + payment metadata
+3. verify the fee stack is valid
+4. render the gross amount, seller net, protocol fee, and deployer fee consistently
+5. detect when a fork is no longer compatible
+
+## GitHub-first packaging
+
+For now, this should live in the repo and in docs, even if the polished SDK surface lands later.
+
+That means:
+
+- keep the package directories visible in `packages/`
+- document the intended export surface
+- document the compatibility rules
+- document the fee stack clearly enough that forks copy the right model by default
+
+## Recommended next implementation steps
+
+1. Keep the mandatory `1%` protocol fee in the shared x402 reserve-release path.
+2. Add deployer fee schema and validation helpers.
+3. Export those helpers from a protocol SDK package.
+4. Make the SDK expose a single compatibility check for downstream platforms.
+5. Add fork-facing examples that show:
+   - no deployer fee
+   - a `1% + 2%` stack
+   - a rejection case above `4%`
