@@ -33,6 +33,7 @@ import {
   type PrivacyApprovalRecord,
   type PrivacyExceptionQueueItem,
   type SocialAnchorBatch,
+  type SocialAnchorBatchExport,
   type SocialAnchorCandidate,
   type SocialAnchorCandidateKind,
   type SocialAnchorQueueState,
@@ -279,8 +280,17 @@ interface SocialAnchorSettleOptions {
   agentId?: string;
   limit?: number;
   txHash?: string;
+  expectedBatchId?: string;
+  expectedRootDigestSha256?: string;
   localOnly?: boolean;
   operatorNote?: string;
+  adminKey?: string;
+}
+
+interface SocialAnchorExportOptions {
+  sessionId?: string;
+  agentId?: string;
+  limit?: number;
   adminKey?: string;
 }
 
@@ -291,6 +301,7 @@ interface RegisterAgentOptions {
   openClawUrl: string;
   payoutWallets?: AgentProfileState["payoutWallets"];
   paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
+  socialAnchorPolicy?: Partial<AgentProfileState["socialAnchorPolicy"]>;
   payoutAddress?: string;
   trustModeId?: TrustModeId;
   preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
@@ -302,8 +313,9 @@ interface OwnershipActionOptions {
   adminKey?: string;
 }
 
-type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile">> & {
+type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile" | "socialAnchorPolicy">> & {
   paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
+  socialAnchorPolicy?: Partial<AgentProfileState["socialAnchorPolicy"]>;
   payoutAddress?: unknown;
 };
 
@@ -631,6 +643,9 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
       pricingMode: "fixed-exact",
       settlementTrigger: "on-proof"
     },
+    socialAnchorPolicy: {
+      mode: "shared-batched"
+    },
     preferredProvingLocation: trustMode.defaultProvingLocation
   };
 }
@@ -755,6 +770,18 @@ function sanitizeUrl(value: unknown): string | undefined {
 
 function sanitizePaymentNotes(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 280) : undefined;
+}
+
+function sanitizeSocialAnchorPolicy(
+  input: Partial<AgentProfileState["socialAnchorPolicy"]> | undefined,
+  fallback: AgentProfileState["socialAnchorPolicy"]
+): AgentProfileState["socialAnchorPolicy"] {
+  return {
+    mode:
+      input?.mode === "priority-self-funded" || input?.mode === "shared-batched"
+        ? input.mode
+        : fallback.mode
+  };
 }
 
 function sanitizePayoutWallets(
@@ -915,6 +942,7 @@ export class ClawzControlPlane {
   private readonly blobStore: SealedBlobStore;
   private liveFlowRunPromise: Promise<ConsoleStateResponse> | null = null;
   private sponsorQueueRunPromise: Promise<void> | null = null;
+  private readonly prioritySocialAnchorRuns = new Map<string, Promise<void>>();
 
   constructor(private readonly baseDir: string) {
     this.workspaceRoot = findWorkspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
@@ -1093,7 +1121,18 @@ export class ClawzControlPlane {
     await this.ensureDirs();
     const file = await readJsonFile<SocialAnchorQueueFile>(this.socialAnchorQueuePath);
     if (file?.items && file?.batches) {
-      return file;
+      return {
+        items: file.items.map((item) => ({
+          ...item,
+          anchorMode: item.anchorMode ?? "shared-batched"
+        })),
+        batches: file.batches.map((batch) => ({
+          ...batch,
+          sessionId: batch.sessionId ?? "",
+          agentId: batch.agentId ?? "",
+          anchorMode: batch.anchorMode ?? "shared-batched"
+        }))
+      };
     }
 
     const fallback = buildDefaultSocialAnchorQueueFile();
@@ -1539,6 +1578,7 @@ export class ClawzControlPlane {
       openClawUrl: typeof input.openClawUrl === "string" ? input.openClawUrl.trim().slice(0, 280) : fallback.openClawUrl,
       payoutWallets: sanitizePayoutWallets(input.payoutWallets, fallback.payoutWallets, legacyPayoutAddress),
       paymentProfile: sanitizePaymentProfile(input.paymentProfile, fallback.paymentProfile),
+      socialAnchorPolicy: sanitizeSocialAnchorPolicy(input.socialAnchorPolicy, fallback.socialAnchorPolicy),
       preferredProvingLocation
     };
   }
@@ -2047,6 +2087,187 @@ export class ClawzControlPlane {
     };
   }
 
+  private buildCanonicalSocialAnchorBatchExport(input: {
+    state: ConsolePersistenceState;
+    queue: SocialAnchorQueueFile;
+    deployment: Pick<ZekoDeploymentState, "networkId" | "contracts">;
+    sessionId: string;
+    limit?: number;
+  }): SocialAnchorBatchExport {
+    const items = input.queue.items
+      .filter((item) => item.sessionId === input.sessionId && item.status === "pending")
+      .sort((left, right) => left.occurredAtIso.localeCompare(right.occurredAtIso))
+      .slice(0, Math.max(1, Math.min(input.limit ?? 12, 50)))
+      .map((item) => ({
+        candidateId: item.candidateId,
+        kind: item.kind,
+        occurredAtIso: item.occurredAtIso,
+        payloadDigestSha256: item.payloadDigestSha256
+      }));
+
+    if (items.length === 0) {
+      throw new Error("No pending social proof facts are waiting to anchor for this agent.");
+    }
+
+    const agentId = this.agentIdForSession(input.state, input.sessionId);
+    const anchorMode = this.profileForSession(input.state, input.sessionId).socialAnchorPolicy.mode;
+    const rootDigestSha256 = canonicalDigest({
+      sessionId: input.sessionId,
+      agentId,
+      anchorMode,
+      items
+    }).sha256Hex;
+    const batchId = `anchor_batch_${rootDigestSha256.slice(0, 16)}`;
+    const anchorField = buildSocialAnchorBatchRootField({
+      batchId,
+      sessionId: input.sessionId,
+      rootDigestSha256
+    }).toString();
+
+    return {
+      batchId,
+      sessionId: input.sessionId,
+      agentId,
+      anchorMode,
+      networkId: input.deployment.networkId,
+      rootDigestSha256,
+      anchorField,
+      itemCount: items.length,
+      candidateKinds: [...new Set(items.map((item) => item.kind))],
+      items,
+      ...(this.configuredSocialAnchorContractAddress(input.deployment)
+        ? { contractAddress: this.configuredSocialAnchorContractAddress(input.deployment)! }
+        : {})
+    };
+  }
+
+  private async settleSocialAnchorBatchForSession(
+    sessionId: string,
+    options: Omit<SocialAnchorSettleOptions, "sessionId" | "agentId" | "adminKey"> = {}
+  ): Promise<SocialAnchorQueueState> {
+    const [state, queue, deployment] = await Promise.all([
+      this.loadState(),
+      this.loadSocialAnchorQueueFile(),
+      this.getDeploymentState()
+    ]);
+    const batchExport = this.buildCanonicalSocialAnchorBatchExport({
+      state,
+      queue,
+      deployment,
+      sessionId,
+      ...(typeof options.limit === "number" ? { limit: options.limit } : {})
+    });
+    if (
+      typeof options.expectedBatchId === "string" &&
+      options.expectedBatchId.trim().length > 0 &&
+      options.expectedBatchId.trim() !== batchExport.batchId
+    ) {
+      throw new Error("The queued milestones changed before commit. Export a fresh batch and try again.");
+    }
+    if (
+      typeof options.expectedRootDigestSha256 === "string" &&
+      options.expectedRootDigestSha256.trim().length > 0 &&
+      options.expectedRootDigestSha256.trim() !== batchExport.rootDigestSha256
+    ) {
+      throw new Error("The queued proof root changed before commit. Export a fresh batch and try again.");
+    }
+    const settledAtIso = new Date().toISOString();
+    const chainResult = options.localOnly
+      ? undefined
+      : await this.submitSocialAnchorBatchToZeko({
+          batchId: batchExport.batchId,
+          sessionId,
+          rootDigestSha256: batchExport.rootDigestSha256,
+          deployment
+        });
+    const nextBatch: SocialAnchorBatch = {
+      batchId: batchExport.batchId,
+      sessionId,
+      agentId: batchExport.agentId,
+      anchorMode: batchExport.anchorMode,
+      networkId: chainResult?.networkId ?? deployment.networkId,
+      itemCount: batchExport.itemCount,
+      candidateKinds: batchExport.candidateKinds,
+      rootDigestSha256: batchExport.rootDigestSha256,
+      createdAtIso: settledAtIso,
+      settledAtIso,
+      anchorField: chainResult?.anchorField ?? batchExport.anchorField,
+      ...(chainResult?.contractAddress ?? batchExport.contractAddress
+        ? { contractAddress: chainResult?.contractAddress ?? batchExport.contractAddress! }
+        : {}),
+      ...(chainResult?.submitFeeRaw ? { submitFeeRaw: chainResult.submitFeeRaw } : {}),
+      ...(chainResult?.submitFee ? { submitFee: chainResult.submitFee } : {}),
+      ...(chainResult?.submitFeeSource ? { submitFeeSource: chainResult.submitFeeSource } : {}),
+      ...(typeof chainResult?.attemptCount === "number" ? { submitAttemptCount: chainResult.attemptCount } : {}),
+      ...(chainResult?.txHash
+        ? { txHash: chainResult.txHash }
+        : typeof options.txHash === "string" && options.txHash.trim().length > 0
+          ? { txHash: options.txHash.trim().slice(0, 140) }
+          : {}),
+      ...(typeof options.operatorNote === "string" && options.operatorNote.trim().length > 0
+        ? { operatorNote: options.operatorNote.trim().slice(0, 280) }
+        : {})
+    };
+
+    await this.saveSocialAnchorQueueFile({
+      items: queue.items.map((item) =>
+        batchExport.items.some((pending) => pending.candidateId === item.candidateId)
+          ? {
+              ...item,
+              status: "anchored",
+              batchId: batchExport.batchId,
+              anchoredAtIso: settledAtIso
+            }
+          : item
+      ),
+      batches: [nextBatch, ...queue.batches].slice(0, 80)
+    });
+
+    await this.appendEvent(
+      "SessionCheckpointed",
+      {
+        sessionId,
+        socialAnchorBatchSettled: true,
+        socialAnchorBatchId: batchExport.batchId,
+        socialAnchorRootDigestSha256: batchExport.rootDigestSha256,
+        socialAnchorItemCount: batchExport.itemCount,
+        socialAnchorAnchorField: nextBatch.anchorField,
+        socialAnchorMode: batchExport.anchorMode,
+        ...(nextBatch.contractAddress ? { socialAnchorContractAddress: nextBatch.contractAddress } : {}),
+        ...(nextBatch.txHash ? { socialAnchorTxHash: nextBatch.txHash } : {})
+      },
+      settledAtIso
+    );
+
+    return this.getSocialAnchorQueueState(sessionId);
+  }
+
+  private async runPrioritySocialAnchorBatchForSession(sessionId: string): Promise<void> {
+    const existingRun = this.prioritySocialAnchorRuns.get(sessionId);
+    if (existingRun) {
+      return existingRun;
+    }
+
+    const run = (async () => {
+      try {
+        await this.settleSocialAnchorBatchForSession(sessionId, {
+          operatorNote: "Priority anchoring lane"
+        });
+      } catch (error) {
+        console.warn(
+          `[clawz] priority social anchor settlement skipped for ${sessionId}: ${
+            error instanceof Error ? error.message : String(error)
+          }`
+        );
+      } finally {
+        this.prioritySocialAnchorRuns.delete(sessionId);
+      }
+    })();
+
+    this.prioritySocialAnchorRuns.set(sessionId, run);
+    return run;
+  }
+
   private async enqueueSocialAnchorCandidate(input: {
     sessionId: string;
     kind: SocialAnchorCandidateKind;
@@ -2058,6 +2279,7 @@ export class ClawzControlPlane {
     const state = await this.loadState();
     const queue = await this.loadSocialAnchorQueueFile();
     const agentId = this.agentIdForSession(state, input.sessionId);
+    const anchorMode = this.profileForSession(state, input.sessionId).socialAnchorPolicy.mode;
     const occurredAtIso = input.occurredAtIso ?? new Date().toISOString();
     const payloadDigestSha256 = canonicalDigest({
       kind: input.kind,
@@ -2074,6 +2296,7 @@ export class ClawzControlPlane {
       candidateId: `anchor_${randomUUID().replace(/-/g, "").slice(0, 16)}`,
       sessionId: input.sessionId,
       agentId,
+      anchorMode,
       kind: input.kind,
       title: input.title ?? titleForSocialAnchorKind(input.kind),
       summary: input.summary.trim().slice(0, 280),
@@ -2086,6 +2309,12 @@ export class ClawzControlPlane {
       ...queue,
       items: [nextItem, ...queue.items].slice(0, 500)
     });
+
+    if (anchorMode === "priority-self-funded") {
+      queueMicrotask(() => {
+        void this.runPrioritySocialAnchorBatchForSession(input.sessionId);
+      });
+    }
   }
 
   private async runSponsorQueue(): Promise<void> {
@@ -3062,6 +3291,7 @@ export class ClawzControlPlane {
         openClawUrl: options.openClawUrl,
         ...(options.payoutWallets ? { payoutWallets: options.payoutWallets } : {}),
         ...(options.paymentProfile ? { paymentProfile: options.paymentProfile } : {}),
+        ...(options.socialAnchorPolicy ? { socialAnchorPolicy: options.socialAnchorPolicy } : {}),
         ...(options.payoutAddress ? { payoutAddress: options.payoutAddress } : {}),
         ...(options.representedPrincipal ? { representedPrincipal: options.representedPrincipal } : {}),
         ...(options.preferredProvingLocation ? { preferredProvingLocation: options.preferredProvingLocation } : {})
@@ -3395,100 +3625,25 @@ export class ClawzControlPlane {
     };
   }
 
+  async exportSocialAnchorBatch(options: SocialAnchorExportOptions = {}): Promise<SocialAnchorBatchExport> {
+    const state = await this.loadState();
+    const sessionId = this.resolveOwnedSessionId(state, options);
+    this.assertAdminAccess(state, sessionId, options.adminKey);
+    const [queue, deployment] = await Promise.all([this.loadSocialAnchorQueueFile(), this.getDeploymentState()]);
+    return this.buildCanonicalSocialAnchorBatchExport({
+      state,
+      queue,
+      deployment,
+      sessionId,
+      ...(typeof options.limit === "number" ? { limit: options.limit } : {})
+    });
+  }
+
   async settleSocialAnchorBatch(options: SocialAnchorSettleOptions = {}): Promise<SocialAnchorQueueState> {
     const state = await this.loadState();
     const sessionId = this.resolveOwnedSessionId(state, options);
     this.assertAdminAccess(state, sessionId, options.adminKey);
-    const queue = await this.loadSocialAnchorQueueFile();
-    const deployment = await this.getDeploymentState();
-    const pendingItems = queue.items
-      .filter((item) => item.sessionId === sessionId && item.status === "pending")
-      .sort((left, right) => left.occurredAtIso.localeCompare(right.occurredAtIso))
-      .slice(0, Math.max(1, Math.min(options.limit ?? 12, 50)));
-
-    if (pendingItems.length === 0) {
-      throw new Error("No pending social proof facts are waiting to anchor for this agent.");
-    }
-
-    const settledAtIso = new Date().toISOString();
-    const batchId = `anchor_batch_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
-    const rootDigestSha256 = canonicalDigest({
-      batchId,
-      sessionId,
-      items: pendingItems.map((item) => ({
-        candidateId: item.candidateId,
-        kind: item.kind,
-        occurredAtIso: item.occurredAtIso,
-        payloadDigestSha256: item.payloadDigestSha256
-      }))
-    }).sha256Hex;
-    const localAnchorField = buildSocialAnchorBatchRootField({
-      batchId,
-      sessionId,
-      rootDigestSha256
-    }).toString();
-    const chainResult = options.localOnly
-      ? undefined
-      : await this.submitSocialAnchorBatchToZeko({
-          batchId,
-          sessionId,
-          rootDigestSha256,
-          deployment
-        });
-    const nextBatch: SocialAnchorBatch = {
-      batchId,
-      networkId: chainResult?.networkId ?? deployment.networkId,
-      itemCount: pendingItems.length,
-      candidateKinds: [...new Set(pendingItems.map((item) => item.kind))],
-      rootDigestSha256,
-      createdAtIso: settledAtIso,
-      settledAtIso,
-      anchorField: chainResult?.anchorField ?? localAnchorField,
-      ...(chainResult?.contractAddress ? { contractAddress: chainResult.contractAddress } : {}),
-      ...(chainResult?.submitFeeRaw ? { submitFeeRaw: chainResult.submitFeeRaw } : {}),
-      ...(chainResult?.submitFee ? { submitFee: chainResult.submitFee } : {}),
-      ...(chainResult?.submitFeeSource ? { submitFeeSource: chainResult.submitFeeSource } : {}),
-      ...(typeof chainResult?.attemptCount === "number" ? { submitAttemptCount: chainResult.attemptCount } : {}),
-      ...(chainResult?.txHash
-        ? { txHash: chainResult.txHash }
-        : typeof options.txHash === "string" && options.txHash.trim().length > 0
-          ? { txHash: options.txHash.trim().slice(0, 140) }
-          : {}),
-      ...(typeof options.operatorNote === "string" && options.operatorNote.trim().length > 0
-        ? { operatorNote: options.operatorNote.trim().slice(0, 280) }
-        : {})
-    };
-
-    await this.saveSocialAnchorQueueFile({
-      items: queue.items.map((item) =>
-        pendingItems.some((pending) => pending.candidateId === item.candidateId)
-          ? {
-              ...item,
-              status: "anchored",
-              batchId,
-              anchoredAtIso: settledAtIso
-            }
-          : item
-      ),
-      batches: [nextBatch, ...queue.batches].slice(0, 80)
-    });
-
-    await this.appendEvent(
-      "SessionCheckpointed",
-      {
-        sessionId,
-        socialAnchorBatchSettled: true,
-        socialAnchorBatchId: batchId,
-        socialAnchorRootDigestSha256: rootDigestSha256,
-        socialAnchorItemCount: pendingItems.length,
-        socialAnchorAnchorField: nextBatch.anchorField,
-        ...(nextBatch.contractAddress ? { socialAnchorContractAddress: nextBatch.contractAddress } : {}),
-        ...(nextBatch.txHash ? { socialAnchorTxHash: nextBatch.txHash } : {})
-      },
-      settledAtIso
-    );
-
-    return this.getSocialAnchorQueueState(sessionId);
+    return this.settleSocialAnchorBatchForSession(sessionId, options);
   }
 
   async setTrustMode(modeId: TrustModeId, sessionId?: string, adminKey?: string): Promise<ConsoleStateResponse> {

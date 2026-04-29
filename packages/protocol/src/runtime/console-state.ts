@@ -320,10 +320,17 @@ export type SocialAnchorCandidateKind =
   | "hire-request-submitted"
   | "operator-dispatch";
 
+export type AgentSocialAnchorMode = "shared-batched" | "priority-self-funded";
+
+export interface AgentSocialAnchorPolicy {
+  mode: AgentSocialAnchorMode;
+}
+
 export interface SocialAnchorCandidate {
   candidateId: string;
   sessionId: string;
   agentId: string;
+  anchorMode: AgentSocialAnchorMode;
   kind: SocialAnchorCandidateKind;
   title: string;
   summary: string;
@@ -336,6 +343,9 @@ export interface SocialAnchorCandidate {
 
 export interface SocialAnchorBatch {
   batchId: string;
+  sessionId: string;
+  agentId: string;
+  anchorMode: AgentSocialAnchorMode;
   networkId: string;
   itemCount: number;
   candidateKinds: SocialAnchorCandidateKind[];
@@ -350,6 +360,27 @@ export interface SocialAnchorBatch {
   submitFeeSource?: string;
   submitAttemptCount?: number;
   operatorNote?: string;
+}
+
+export interface SocialAnchorBatchExportItem {
+  candidateId: string;
+  kind: SocialAnchorCandidateKind;
+  occurredAtIso: string;
+  payloadDigestSha256: string;
+}
+
+export interface SocialAnchorBatchExport {
+  batchId: string;
+  sessionId: string;
+  agentId: string;
+  anchorMode: AgentSocialAnchorMode;
+  networkId: string;
+  rootDigestSha256: string;
+  anchorField: string;
+  itemCount: number;
+  candidateKinds: SocialAnchorCandidateKind[];
+  items: SocialAnchorBatchExportItem[];
+  contractAddress?: string;
 }
 
 export interface SocialAnchorQueueState {
@@ -368,6 +399,7 @@ export interface AgentProfileState {
   openClawUrl: string;
   payoutWallets: AgentPayoutWallets;
   paymentProfile: AgentPaymentProfile;
+  socialAnchorPolicy: AgentSocialAnchorPolicy;
   preferredProvingLocation: PrivacyProvingLocation;
 }
 

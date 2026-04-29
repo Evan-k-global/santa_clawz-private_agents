@@ -8,6 +8,8 @@ import {
   type ClawzAgentProofVerificationRequest,
   type ClawzAgentProofVerificationResponse,
   type ClawzMcpToolDefinition,
+  type SocialAnchorBatchExport,
+  type SocialAnchorQueueState,
   type WitnessPlanLike,
   verifyAgentProofBundle
 } from "@clawz/protocol";
@@ -39,6 +41,7 @@ type JsonRpcResponse<T> = JsonRpcSuccess<T> | JsonRpcFailure;
 export interface ClawzAgentClientOptions {
   baseUrl: string;
   fetchImpl?: typeof fetch;
+  adminKey?: string;
 }
 
 export interface ClawzProofQuery {
@@ -54,6 +57,11 @@ export interface LocalAgentVerificationResult {
 }
 
 export interface ClawzX402PlanQuery {
+  sessionId?: string;
+  agentId?: string;
+}
+
+export interface ClawzSocialAnchorQuery {
   sessionId?: string;
   agentId?: string;
 }
@@ -100,14 +108,23 @@ function parseJsonRpcStructuredContent<T>(payload: JsonRpcResponse<T>): T {
 export class ClawzAgentClient {
   private readonly baseUrl: string;
   private readonly fetchImpl: typeof fetch;
+  private readonly adminKey: string | undefined;
 
   constructor(options: ClawzAgentClientOptions) {
     this.baseUrl = normalizeBaseUrl(options.baseUrl);
     this.fetchImpl = options.fetchImpl ?? fetch;
+    this.adminKey = options.adminKey?.trim() ? options.adminKey.trim() : undefined;
   }
 
   private async readJson<T>(url: string, init?: RequestInit): Promise<T> {
-    const response = await this.fetchImpl(url, init);
+    const headers = new Headers(init?.headers ?? {});
+    if (this.adminKey && !headers.has("x-clawz-admin-key")) {
+      headers.set("x-clawz-admin-key", this.adminKey);
+    }
+    const response = await this.fetchImpl(url, {
+      ...init,
+      headers
+    });
     if (!response.ok) {
       throw new Error(`Request failed for ${url}: ${response.status}`);
     }
@@ -204,6 +221,26 @@ export class ClawzAgentClient {
         ...(input.sessionId ? { sessionId: input.sessionId } : {})
       })
     );
+  }
+
+  async getSocialAnchorBatchExport(input: ClawzSocialAnchorQuery = {}): Promise<SocialAnchorBatchExport> {
+    return this.readJson<SocialAnchorBatchExport>(
+      withQuery(this.baseUrl, "/api/social/anchors/export", {
+        ...(input.sessionId ? { sessionId: input.sessionId } : {}),
+        ...(input.agentId ? { agentId: input.agentId } : {})
+      })
+    );
+  }
+
+  async commitSocialAnchorBatch(
+    input: ClawzSocialAnchorQuery & {
+      txHash: string;
+      expectedBatchId?: string;
+      expectedRootDigestSha256?: string;
+      operatorNote?: string;
+    }
+  ): Promise<SocialAnchorQueueState> {
+    return this.postJson<SocialAnchorQueueState>("/api/social/anchors/commit", input);
   }
 
   async getDeployment(): Promise<unknown> {

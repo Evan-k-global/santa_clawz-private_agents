@@ -4,6 +4,7 @@ import type { ArtifactVisibility, PrivacyPreset, ProgrammablePrivacyPolicy } fro
 import type { ToolReceipt } from "../receipts/tool-receipt.js";
 import type { RetentionPolicy } from "../retention/types.js";
 import type {
+  AgentSocialAnchorMode,
   AgentPaymentRail,
   AgentPricingMode,
   AgentSettlementTrigger,
@@ -162,6 +163,7 @@ export interface AgentPrivacyClaim {
 }
 
 export interface AgentSocialClaim {
+  anchorMode: AgentSocialAnchorMode;
   pendingCandidateCount: number;
   anchoredFactCount: number;
   candidateKinds: SocialAnchorCandidateKind[];
@@ -169,6 +171,7 @@ export interface AgentSocialClaim {
   lastSettledAtIso?: string;
   recentBatches: Array<{
     batchId: string;
+    anchorMode: AgentSocialAnchorMode;
     rootDigestSha256: string;
     settledAtIso: string;
     anchorField?: string;

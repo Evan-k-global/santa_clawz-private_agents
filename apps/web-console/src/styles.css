@@ -1639,6 +1639,20 @@ h3 {
   margin-top: 8px;
 }
 
+.anchor-mode-block {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.anchor-mode-toggle {
+  width: fit-content;
+}
+
+.anchor-mode-help {
+  margin-top: 8px;
+}
+
 .adapter-help {
   display: grid;
   gap: 10px;

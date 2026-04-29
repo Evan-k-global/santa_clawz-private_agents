@@ -100,6 +100,7 @@ type RegisterAgentRequestBody = {
   payoutAddress?: unknown;
   payoutWallets?: unknown;
   paymentProfile?: unknown;
+  socialAnchorPolicy?: unknown;
   trustModeId?: unknown;
   preferredProvingLocation?: unknown;
 };
@@ -111,6 +112,7 @@ type ProfileRequestBody = {
   payoutAddress?: unknown;
   payoutWallets?: unknown;
   paymentProfile?: unknown;
+  socialAnchorPolicy?: unknown;
   preferredProvingLocation?: unknown;
   sessionId?: unknown;
 };
@@ -244,6 +246,16 @@ function parsePaymentProfile(value: unknown): Partial<AgentProfileState["payment
   };
 }
 
+function parseSocialAnchorPolicy(value: unknown): Partial<AgentProfileState["socialAnchorPolicy"]> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return value.mode === "shared-batched" || value.mode === "priority-self-funded"
+    ? { mode: value.mode }
+    : undefined;
+}
+
 function parseTrustModeRequest(body: unknown): TrustModeRequestBody {
   return isRecord(body)
     ? {
@@ -263,6 +275,7 @@ function parseRegisterAgentRequest(body: unknown): RegisterAgentRequestBody {
         payoutAddress: body.payoutAddress,
         payoutWallets: body.payoutWallets,
         paymentProfile: body.paymentProfile,
+        socialAnchorPolicy: body.socialAnchorPolicy,
         trustModeId: body.trustModeId,
         preferredProvingLocation: body.preferredProvingLocation
       }
@@ -279,6 +292,7 @@ function parseProfileRequest(body: unknown): ProfileRequestBody {
           payoutAddress: body.payoutAddress,
           payoutWallets: body.payoutWallets,
           paymentProfile: body.paymentProfile,
+          socialAnchorPolicy: body.socialAnchorPolicy,
           preferredProvingLocation: body.preferredProvingLocation,
           sessionId: body.sessionId
         }
@@ -1164,6 +1178,7 @@ app.post("/api/console/register", route(async (request, response) => {
   const body = parseRegisterAgentRequest(request.body ?? null);
   const payoutWallets = parsePayoutWallets(body.payoutWallets);
   const paymentProfile = parsePaymentProfile(body.paymentProfile);
+  const socialAnchorPolicy = parseSocialAnchorPolicy(body.socialAnchorPolicy);
   const trustModeId =
     body.trustModeId === "fast" ||
     body.trustModeId === "private" ||
@@ -1188,6 +1203,7 @@ app.post("/api/console/register", route(async (request, response) => {
         ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
         ...(payoutWallets ? { payoutWallets } : {}),
         ...(paymentProfile ? { paymentProfile } : {}),
+        ...(socialAnchorPolicy ? { socialAnchorPolicy } : {}),
         ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
         ...(trustModeId ? { trustModeId } : {}),
         ...(preferredProvingLocation ? { preferredProvingLocation } : {})
@@ -1225,6 +1241,7 @@ app.post("/api/console/profile", route(async (request, response) => {
   const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
   const payoutWallets = parsePayoutWallets(body.payoutWallets);
   const paymentProfile = parsePaymentProfile(body.paymentProfile);
+  const socialAnchorPolicy = parseSocialAnchorPolicy(body.socialAnchorPolicy);
   const preferredProvingLocation =
     body.preferredProvingLocation === "client" ||
     body.preferredProvingLocation === "server" ||
@@ -1238,6 +1255,7 @@ app.post("/api/console/profile", route(async (request, response) => {
     ...(typeof body.openClawUrl === "string" ? { openClawUrl: body.openClawUrl } : {}),
     ...(payoutWallets ? { payoutWallets } : {}),
     ...(paymentProfile ? { paymentProfile } : {}),
+    ...(socialAnchorPolicy ? { socialAnchorPolicy } : {}),
     ...(typeof body.payoutAddress === "string"
       ? {
           payoutWallets: {
@@ -1360,6 +1378,29 @@ app.get("/api/social/anchors", route(async (request, response) => {
   }
 }));
 
+app.get("/api/social/anchors/export", route(async (request, response) => {
+  const sessionId = queryString(request.query, "sessionId");
+  const agentId = queryString(request.query, "agentId");
+  if (!sessionId && !agentId) {
+    response.status(400).json({ error: "sessionId or agentId is required." });
+    return;
+  }
+
+  try {
+    response.json(
+      await controlPlane.exportSocialAnchorBatch({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(adminKeyHeader(request) ? { adminKey: adminKeyHeader(request)! } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to export social anchor batch."
+    });
+  }
+}));
+
 app.post("/api/social/anchors/settle", route(async (request, response) => {
   const body = isRecord(request.body) ? request.body : {};
   try {
@@ -1379,6 +1420,33 @@ app.post("/api/social/anchors/settle", route(async (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to settle social anchor batch."
+    });
+  }
+}));
+
+app.post("/api/social/anchors/commit", route(async (request, response) => {
+  const body = isRecord(request.body) ? request.body : {};
+  try {
+    const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+    const agentId = optionalString(body.agentId) ?? queryString(request.query, "agentId");
+    response.json(
+      await controlPlane.settleSocialAnchorBatch({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+        localOnly: true,
+        ...(typeof body.txHash === "string" ? { txHash: body.txHash } : {}),
+        ...(typeof body.expectedBatchId === "string" ? { expectedBatchId: body.expectedBatchId } : {}),
+        ...(typeof body.expectedRootDigestSha256 === "string"
+          ? { expectedRootDigestSha256: body.expectedRootDigestSha256 }
+          : {}),
+        ...(typeof body.operatorNote === "string" ? { operatorNote: body.operatorNote } : {}),
+        ...(adminKeyHeader(request) ? { adminKey: adminKeyHeader(request)! } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to commit external social anchor batch."
     });
   }
 }));

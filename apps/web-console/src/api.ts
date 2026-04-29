@@ -4,6 +4,7 @@ import type {
   ConsoleStateResponse,
   HireRequestReceipt,
   PrivacyApprovalRecord,
+  SocialAnchorBatchExport,
   SocialAnchorQueueState,
   TrustModeId
 } from "@clawz/protocol";
@@ -176,18 +177,37 @@ function buildAdminContext(sessionId?: string, agentId?: string): AdminKeyContex
 }
 
 function normalizeConsoleStateResponse(payload: ConsoleStateResponse): ConsoleStateResponse {
+  const normalizedProfile = {
+    ...payload.profile,
+    socialAnchorPolicy: payload.profile?.socialAnchorPolicy ?? {
+      mode: "shared-batched" as const
+    }
+  };
   return {
     ...payload,
     adminAccess: payload.adminAccess ?? {
       requiresAdminKey: false,
       hasAdminAccess: true
     },
-    socialAnchorQueue: payload.socialAnchorQueue ?? {
-      pendingCount: 0,
-      anchoredCount: 0,
-      items: [],
-      recentBatches: []
-    },
+    socialAnchorQueue: payload.socialAnchorQueue
+      ? {
+          ...payload.socialAnchorQueue,
+          items: payload.socialAnchorQueue.items.map((item) => ({
+            ...item,
+            anchorMode: item.anchorMode ?? "shared-batched"
+          })),
+          recentBatches: payload.socialAnchorQueue.recentBatches.map((batch) => ({
+            ...batch,
+            anchorMode: batch.anchorMode ?? "shared-batched"
+          }))
+        }
+      : {
+          pendingCount: 0,
+          anchoredCount: 0,
+          items: [],
+          recentBatches: []
+        },
+    profile: normalizedProfile,
     ownership: payload.ownership ?? {
       status: "unverified",
       legacyRegistration: false,
@@ -264,6 +284,7 @@ export function registerAgent(input: {
   openClawUrl: string;
   payoutWallets?: AgentProfileState["payoutWallets"];
   paymentProfile?: AgentProfileState["paymentProfile"];
+  socialAnchorPolicy?: AgentProfileState["socialAnchorPolicy"];
   trustModeId?: TrustModeId;
   preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
 }): Promise<ConsoleStateResponse> {
@@ -295,6 +316,14 @@ export function fetchSocialAnchorQueue(sessionId?: string, agentId?: string): Pr
   );
 }
 
+export function fetchSocialAnchorBatchExport(sessionId?: string, agentId?: string): Promise<SocialAnchorBatchExport> {
+  return request<SocialAnchorBatchExport>(
+    buildPath("/api/social/anchors/export", sessionId, agentId),
+    undefined,
+    buildAdminContext(sessionId, agentId)
+  );
+}
+
 export function settleSocialAnchorBatch(input: {
   sessionId?: string;
   agentId?: string;
@@ -304,6 +333,25 @@ export function settleSocialAnchorBatch(input: {
 }): Promise<SocialAnchorQueueState> {
   return request<SocialAnchorQueueState>(
     "/api/social/anchors/settle",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    buildAdminContext(input.sessionId, input.agentId)
+  );
+}
+
+export function commitSocialAnchorBatch(input: {
+  sessionId?: string;
+  agentId?: string;
+  limit?: number;
+  txHash?: string;
+  expectedBatchId?: string;
+  expectedRootDigestSha256?: string;
+  operatorNote?: string;
+}): Promise<SocialAnchorQueueState> {
+  return request<SocialAnchorQueueState>(
+    "/api/social/anchors/commit",
     {
       method: "POST",
       body: JSON.stringify(input)

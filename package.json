@@ -28,6 +28,7 @@
     "dev": "pnpm --parallel --filter @clawz/web-console --filter @clawz/indexer dev",
     "package:web:spaceship": "node scripts/package-spaceship-web-console.mjs",
     "register:agent": "node scripts/register-agent.mjs",
+    "social-anchor:submit": "pnpm --filter @clawz/contracts build && pnpm --filter @clawz/agent-sdk build && node scripts/social-anchor-submit.mjs",
     "start:web": "pnpm --filter @clawz/web-console preview",
     "start:indexer": "pnpm --filter @clawz/indexer start",
     "start:enterprise-kms": "pnpm --filter @clawz/enterprise-kms start",

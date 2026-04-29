@@ -7,6 +7,7 @@ const VALID_PROVING_LOCATIONS = new Set(["client", "sovereign-rollup"]);
 const VALID_PAYMENT_RAILS = new Set(["base-usdc", "ethereum-usdc", "zeko-native"]);
 const VALID_PRICING_MODES = new Set(["fixed-exact", "capped-exact", "quote-required", "agent-negotiated"]);
 const VALID_SETTLEMENT_TRIGGERS = new Set(["upfront", "on-proof"]);
+const VALID_SOCIAL_ANCHOR_MODES = new Set(["shared-batched", "priority-self-funded"]);
 
 function printUsage() {
   console.error(`Usage:
@@ -26,6 +27,7 @@ function printUsage() {
     [--fixed-price-usd "0.05"] \\
     [--quote-url "https://agent.example.com/payments"] \\
     [--payment-notes "Custom quotes available for larger jobs."] \\
+    [--anchor-mode shared-batched] \\
     [--trust-mode private] \\
     [--proving-location client] \\
     [--api-base https://api.santaclawz.ai] \\
@@ -123,6 +125,9 @@ const paymentProfile = {
   ...(typeof args["payment-notes"] === "string" ? { paymentNotes: args["payment-notes"].trim() } : {})
 };
 const trustModeId = typeof args["trust-mode"] === "string" ? args["trust-mode"].trim() : "private";
+const socialAnchorPolicy = {
+  mode: typeof args["anchor-mode"] === "string" ? args["anchor-mode"].trim() : "shared-batched"
+};
 const preferredProvingLocation =
   typeof args["proving-location"] === "string" ? args["proving-location"].trim() : undefined;
 const apiBase = normalizeBaseUrl(typeof args["api-base"] === "string" ? args["api-base"].trim() : DEFAULT_API_BASE);
@@ -160,6 +165,10 @@ if (!VALID_SETTLEMENT_TRIGGERS.has(paymentProfile.settlementTrigger)) {
   throw new Error(`Unsupported settlement trigger: ${paymentProfile.settlementTrigger}`);
 }
 
+if (!VALID_SOCIAL_ANCHOR_MODES.has(socialAnchorPolicy.mode)) {
+  throw new Error(`Unsupported anchor mode: ${socialAnchorPolicy.mode}`);
+}
+
 const response = await fetch(`${apiBase}/api/console/register`, {
   method: "POST",
   headers: {
@@ -171,6 +180,7 @@ const response = await fetch(`${apiBase}/api/console/register`, {
     openClawUrl,
     ...(Object.keys(payoutWallets).length > 0 ? { payoutWallets } : {}),
     paymentProfile,
+    socialAnchorPolicy,
     ...(representedPrincipal ? { representedPrincipal } : {}),
     trustModeId,
     ...(preferredProvingLocation ? { preferredProvingLocation } : {})

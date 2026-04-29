@@ -622,6 +622,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
   };
 
   const socialWithoutDigest = {
+    anchorMode: input.consoleState.profile.socialAnchorPolicy.mode,
     pendingCandidateCount: input.consoleState.socialAnchorQueue.pendingCount,
     anchoredFactCount: input.consoleState.socialAnchorQueue.anchoredCount,
     candidateKinds: [...new Set(input.consoleState.socialAnchorQueue.items.map((item) => item.kind))],
@@ -633,6 +634,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
       : {}),
     recentBatches: input.consoleState.socialAnchorQueue.recentBatches.map((batch) => ({
       batchId: batch.batchId,
+      anchorMode: batch.anchorMode,
       rootDigestSha256: batch.rootDigestSha256,
       settledAtIso: batch.settledAtIso,
       ...(batch.anchorField ? { anchorField: batch.anchorField } : {}),

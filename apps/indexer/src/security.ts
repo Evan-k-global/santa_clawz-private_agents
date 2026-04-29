@@ -144,6 +144,7 @@ function isPublicOnboardingPath(pathname: string, method: string, config: Securi
     (method === "GET" &&
       (pathname === "/api/console/state" ||
         pathname === "/api/social/anchors" ||
+        pathname === "/api/social/anchors/export" ||
         pathname === "/api/wallet/sponsor/queue" ||
         pathname === "/api/x402/plan" ||
         pathname === "/api/x402/proof" ||
@@ -160,6 +161,7 @@ function isPublicOnboardingPath(pathname: string, method: string, config: Securi
         pathname === "/api/console/trust-mode" ||
         pathname === "/api/console/profile" ||
         pathname === "/api/social/anchors/settle" ||
+        pathname === "/api/social/anchors/commit" ||
         pathname === "/api/wallet/sponsor" ||
         pathname === "/api/wallet/recovery/prepare" ||
         pathname === "/api/zeko/flow/run" ||

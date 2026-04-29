@@ -543,6 +543,9 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
         ? { paymentNotes: input.paymentProfile.paymentNotes }
         : {})
     },
+    socialAnchorPolicy: {
+      mode: input?.socialAnchorPolicy?.mode === "priority-self-funded" ? "priority-self-funded" : "shared-batched"
+    },
     preferredProvingLocation:
       input?.preferredProvingLocation === "client" || input?.preferredProvingLocation === "sovereign-rollup"
         ? input.preferredProvingLocation
@@ -847,6 +850,7 @@ export function App() {
           ? { payoutWallets: profileForSave.payoutWallets }
           : {}),
         paymentProfile: profileForSave.paymentProfile,
+        socialAnchorPolicy: profileForSave.socialAnchorPolicy,
         preferredProvingLocation: profileForSave.preferredProvingLocation
       });
 
@@ -1167,6 +1171,7 @@ export function App() {
   const currentAdminKey = getStoredAdminKey(sessionId, registeredAgentId ?? state.agentId);
   const currentSocialAnchorQueue = state.socialAnchorQueue;
   const latestSocialAnchorBatch = currentSocialAnchorQueue.recentBatches[0];
+  const socialAnchorMode = profile.socialAnchorPolicy.mode;
   const normalizedExploreQuery = exploreQuery.trim().toLowerCase();
   const filteredRegistry = registry.filter(
     (agent) => matchesExploreFilter(agent, exploreFilter) && matchesExploreQuery(agent, normalizedExploreQuery)
@@ -1253,6 +1258,9 @@ export function App() {
       : []),
     ...(paymentProfile.paymentNotes?.trim().length
       ? [`--payment-notes ${shellQuote(paymentProfile.paymentNotes)}`]
+      : []),
+    ...(profile.socialAnchorPolicy.mode === "priority-self-funded"
+      ? [`--anchor-mode ${shellQuote(profile.socialAnchorPolicy.mode)}`]
       : [])
   ].join(" ");
   const canSubmitHire =
@@ -1871,6 +1879,46 @@ export function App() {
                     : currentSocialAnchorQueue.anchoredCount > 0
                       ? `${currentSocialAnchorQueue.anchoredCount} public milestone${currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"} already anchored.`
                       : "Publish, verification, payment, and hire milestones will queue here until the next proof batch is anchored."}
+                </p>
+                <div className="anchor-mode-block">
+                  <span className="eyebrow">Anchoring mode</span>
+                  <div className="inline-toggle compact-inline-toggle anchor-mode-toggle" role="tablist" aria-label="Anchoring mode">
+                    <button
+                      type="button"
+                      className={`inline-toggle-button${socialAnchorMode === "shared-batched" ? " active" : ""}`}
+                      aria-selected={socialAnchorMode === "shared-batched"}
+                      onClick={() => {
+                        setProfile({
+                          ...profile,
+                          socialAnchorPolicy: {
+                            mode: "shared-batched"
+                          }
+                        });
+                      }}
+                    >
+                      Shared
+                    </button>
+                    <button
+                      type="button"
+                      className={`inline-toggle-button${socialAnchorMode === "priority-self-funded" ? " active" : ""}`}
+                      aria-selected={socialAnchorMode === "priority-self-funded"}
+                      onClick={() => {
+                        setProfile({
+                          ...profile,
+                          socialAnchorPolicy: {
+                            mode: "priority-self-funded"
+                          }
+                        });
+                      }}
+                    >
+                      Priority
+                    </button>
+                  </div>
+                </div>
+                <p className="panel-copy anchor-mode-help">
+                  {socialAnchorMode === "priority-self-funded"
+                    ? "Priority anchoring is on. SantaClawz will try to fast-track this agent’s queued milestones."
+                    : "Shared batching is the default. SantaClawz will include this agent in the next shared proof batch."}
                 </p>
                 {latestSocialAnchorBatch ? (
                   <div className="share-url-placeholder live">
