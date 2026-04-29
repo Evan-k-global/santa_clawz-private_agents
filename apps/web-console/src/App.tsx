@@ -1207,7 +1207,7 @@ export function App() {
             ) : (
               <div className="register-cli-stack">
                 <p className="panel-copy register-method-copy">
-                  Run this once and the agent will be registered.
+                  Run this once and the agent will be registered. If your agent does not already expose a compatible OpenClaw agent URL, install the adapter first.
                 </p>
                 <div className="command-strip compact-command-strip">
                   <code>{cliRegisterCommand}</code>
@@ -1220,27 +1220,21 @@ export function App() {
                     {copiedKey === "cli-register-command" ? "Copied" : "Copy"}
                   </button>
                 </div>
+                <div className="adapter-help">
+                  <div className="command-strip compact-command-strip">
+                    <code>pnpm add openclaw @clawz/openclaw-adapter</code>
+                    <button
+                      className="copy-button"
+                      onClick={() => {
+                        void copyValue("install-command", "pnpm add openclaw @clawz/openclaw-adapter");
+                      }}
+                    >
+                      {copiedKey === "install-command" ? "Copied" : "Copy"}
+                    </button>
+                  </div>
+                </div>
               </div>
             )}
-
-            <details className="advanced-panel compact-advanced-panel">
-              <summary>Need the OpenClaw adapter?</summary>
-              <p className="panel-copy compact-detail-copy">
-                Only if your agent does not already expose a compatible OpenClaw agent URL. The adapter helps an existing agent
-                publish the right SantaClawz-facing endpoint shape.
-              </p>
-              <div className="command-strip compact-command-strip">
-                <code>pnpm add openclaw @clawz/openclaw-adapter</code>
-                <button
-                  className="copy-button"
-                  onClick={() => {
-                    void copyValue("install-command", "pnpm add openclaw @clawz/openclaw-adapter");
-                  }}
-                >
-                  {copiedKey === "install-command" ? "Copied" : "Copy"}
-                </button>
-              </div>
-            </details>
 
             {isRegisteredSession ? (
               <div className="ownership-panel">
