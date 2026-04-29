@@ -1864,13 +1864,13 @@ export function App() {
 
             <div className="action-row">
               <div>
-                <strong>Anchor public facts on Zeko</strong>
+                <strong>Lock public milestones on Zeko</strong>
                 <p className="panel-copy">
                   {currentSocialAnchorQueue.pendingCount > 0
-                    ? `${currentSocialAnchorQueue.pendingCount} public fact${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} ready to batch-anchor.`
+                    ? `${currentSocialAnchorQueue.pendingCount} public milestone${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} ready to anchor.`
                     : currentSocialAnchorQueue.anchoredCount > 0
-                      ? `${currentSocialAnchorQueue.anchoredCount} public fact${currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"} already anchored.`
-                      : "Publish, verify, payment, and hire milestones will queue here for periodic anchoring."}
+                      ? `${currentSocialAnchorQueue.anchoredCount} public milestone${currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"} already anchored.`
+                      : "Publish, verification, payment, and hire milestones will queue here until the next proof batch is anchored."}
                 </p>
                 {latestSocialAnchorBatch ? (
                   <div className="share-url-placeholder live">
@@ -1893,7 +1893,7 @@ export function App() {
                     }
                   }}
                 >
-                  {copiedKey === "social-anchor-root" ? "Copied root" : "Copy latest root"}
+                  {copiedKey === "social-anchor-root" ? "Copied root" : "Copy latest proof root"}
                 </button>
                 <button
                   className="primary-button"
@@ -1907,7 +1907,7 @@ export function App() {
                     void settleSocialAnchorsAction(sessionId, registeredAgentId ?? undefined);
                   }}
                 >
-                  {pendingAction === "settle-social-anchors" ? "Anchoring..." : "Anchor pending facts"}
+                  {pendingAction === "settle-social-anchors" ? "Anchoring..." : "Anchor queued milestones"}
                 </button>
               </div>
             </div>
