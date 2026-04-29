@@ -4,6 +4,7 @@ import type {
   ConsoleStateResponse,
   HireRequestReceipt,
   PrivacyApprovalRecord,
+  SocialAnchorQueueState,
   TrustModeId
 } from "@clawz/protocol";
 
@@ -171,6 +172,12 @@ function normalizeConsoleStateResponse(payload: ConsoleStateResponse): ConsoleSt
       requiresAdminKey: false,
       hasAdminAccess: true
     },
+    socialAnchorQueue: payload.socialAnchorQueue ?? {
+      pendingCount: 0,
+      anchoredCount: 0,
+      items: [],
+      recentBatches: []
+    },
     ownership: payload.ownership ?? {
       status: "unverified",
       legacyRegistration: false,
@@ -265,6 +272,31 @@ export function submitHireRequest(
     method: "POST",
     body: JSON.stringify(input)
   });
+}
+
+export function fetchSocialAnchorQueue(sessionId?: string, agentId?: string): Promise<SocialAnchorQueueState> {
+  return request<SocialAnchorQueueState>(
+    buildPath("/api/social/anchors", sessionId, agentId),
+    undefined,
+    buildAdminContext(sessionId, agentId)
+  );
+}
+
+export function settleSocialAnchorBatch(input: {
+  sessionId?: string;
+  agentId?: string;
+  limit?: number;
+  txHash?: string;
+  operatorNote?: string;
+}): Promise<SocialAnchorQueueState> {
+  return request<SocialAnchorQueueState>(
+    "/api/social/anchors/settle",
+    {
+      method: "POST",
+      body: JSON.stringify(input)
+    },
+    buildAdminContext(input.sessionId, input.agentId)
+  );
 }
 
 export function runLiveSessionTurnFlow(

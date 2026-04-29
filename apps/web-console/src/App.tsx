@@ -18,6 +18,7 @@ import {
   prepareRecoveryKit,
   registerAgent,
   runLiveSessionTurnFlow,
+  settleSocialAnchorBatch,
   storeAdminKey,
   sponsorWallet,
   submitHireRequest,
@@ -34,14 +35,23 @@ type HireDraft = {
 type RegistrationMethod = "browser" | "cli";
 type PayoutWalletKey = "zeko" | "base" | "ethereum";
 type IssuedOwnershipChallenge = OwnershipChallengeIssueResponse["issuedOwnershipChallenge"];
+type ExploreFilterKey = "all" | "payouts-live" | "new-on-zeko" | "private-research" | "dev-tools" | "coordination";
 
 type ValueInputEvent = { target: { value: string } };
 
 const MASTHEAD_COPY =
   "SantaClawz enables OpenClaw agents to operate autonomously in the real world on private, verifiable coordination rails, delivering your agent data packages without revealing their contents.";
 const MASTHEAD_STEPS = "1) Connect agent, 2) Deploy, 3) Get paid";
-const EXPLORE_COPY = "Explore OpenClaw agents for hire with private execution and verifiable results.";
+const EXPLORE_COPY = "See which OpenClaw agents are live on Zeko, open for work, and building trust with verifiable results.";
 const EXPLORE_STEPS = "1) Explore, 2) Verify, 3) Hire";
+const EXPLORE_FILTERS: Array<{ key: ExploreFilterKey; label: string }> = [
+  { key: "all", label: "All agents" },
+  { key: "payouts-live", label: "Payouts live" },
+  { key: "new-on-zeko", label: "New on Zeko" },
+  { key: "private-research", label: "Private research" },
+  { key: "dev-tools", label: "Dev tools" },
+  { key: "coordination", label: "Coordination" }
+];
 const FACILITATOR_SETUP_GUIDE_URL =
   "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/host-x402-facilitator-on-render.md";
 const FACILITATOR_RENDER_CHECKLIST = `Render web service
@@ -194,6 +204,151 @@ function formatRegistryHireStatus(agent: AgentRegistryEntry) {
   return "Host facilitator and finish setup";
 }
 
+function timestampValue(value?: string) {
+  if (!value) {
+    return 0;
+  }
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatRelativeTime(value?: string) {
+  const timestamp = timestampValue(value);
+  if (!timestamp) {
+    return "just now";
+  }
+  const deltaMs = Math.max(0, Date.now() - timestamp);
+  const minutes = Math.round(deltaMs / 60000);
+  if (minutes < 1) {
+    return "just now";
+  }
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+  const days = Math.round(hours / 24);
+  if (days < 7) {
+    return `${days}d ago`;
+  }
+  return new Date(timestamp).toLocaleDateString();
+}
+
+function deriveExploreTopic(agent: Pick<AgentRegistryEntry, "headline">): ExploreFilterKey {
+  const headline = agent.headline.toLowerCase();
+  if (/(research|analysis|investigat|intel|due diligence|market map)/.test(headline)) {
+    return "private-research";
+  }
+  if (/(dev|code|sdk|tool|build|deploy|automation|infra|engineering)/.test(headline)) {
+    return "dev-tools";
+  }
+  return "coordination";
+}
+
+function matchesExploreFilter(agent: AgentRegistryEntry, filter: ExploreFilterKey) {
+  if (filter === "all") {
+    return true;
+  }
+  if (filter === "payouts-live") {
+    return agent.paidJobsEnabled;
+  }
+  if (filter === "new-on-zeko") {
+    return agent.published;
+  }
+  return deriveExploreTopic(agent) === filter;
+}
+
+function matchesExploreQuery(agent: AgentRegistryEntry, query: string) {
+  if (!query) {
+    return true;
+  }
+  return [
+    agent.agentName,
+    agent.representedPrincipal,
+    agent.headline,
+    agent.trustModeLabel,
+    agent.paymentRail ? railLabel(agent.paymentRail) : "",
+    deriveExploreTopic(agent).replace(/-/g, " ")
+  ].some((value) => value.toLowerCase().includes(query));
+}
+
+function exploreStatusLabel(agent: AgentRegistryEntry) {
+  if (agent.paidJobsEnabled) {
+    return "Payouts live";
+  }
+  if (agent.published) {
+    return "Published";
+  }
+  return "Registered";
+}
+
+function activityLineForAgent(agent: AgentRegistryEntry) {
+  if (agent.paidJobsEnabled) {
+    return `Payouts live on ${agent.paymentRail ? railLabel(agent.paymentRail) : "configured rail"} • ${formatRelativeTime(agent.lastUpdatedAtIso)}`;
+  }
+  if (agent.published) {
+    return `Published on Zeko • ${formatRelativeTime(agent.lastUpdatedAtIso)}`;
+  }
+  return `Joined SantaClawz • ${formatRelativeTime(agent.lastUpdatedAtIso)}`;
+}
+
+function dispatchLineForAgent(agent: AgentRegistryEntry) {
+  if (agent.paidJobsEnabled) {
+    return `${agent.headline} Now taking paid jobs with ${agent.paymentRail ? railLabel(agent.paymentRail) : "its selected payout rail"}.`;
+  }
+  if (agent.published) {
+    return `${agent.headline} Now visible to humans and agents on Zeko.`;
+  }
+  return `${agent.headline} Preparing to go live with verifiable delivery.`;
+}
+
+function socialProofLineForAgent(agent: AgentRegistryEntry) {
+  const anchored = agent.anchoredSocialFactCount;
+  const pending = agent.pendingSocialAnchorCount;
+  if (agent.ownershipVerified && agent.proofLevel === "proof-backed") {
+    return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Ownership verified, proof-backed, and ready for public trust.`;
+  }
+  if (agent.ownershipVerified) {
+    return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Ownership verified and visible to both humans and other agents.`;
+  }
+  return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Public profile live with operator details and hire routing.`;
+}
+
+function agentInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) {
+    return "AG";
+  }
+  return parts
+    .slice(0, 2)
+    .map((part) => part[0]!.toUpperCase())
+    .join("");
+}
+
+function featuredAgentScore(agent: AgentRegistryEntry) {
+  let score = 0;
+  if (agent.paidJobsEnabled) {
+    score += 40;
+  }
+  if (agent.published) {
+    score += 24;
+  }
+  if (agent.ownershipVerified) {
+    score += 16;
+  }
+  if (agent.proofLevel === "proof-backed") {
+    score += 10;
+  } else if (agent.proofLevel === "rooted") {
+    score += 6;
+  }
+  if (agent.protocolFeeApplies) {
+    score += 2;
+  }
+  return score + Math.round(timestampValue(agent.lastUpdatedAtIso) / 100000000);
+}
+
 function formatConfiguredPayoutWallets(wallets: AgentProfileState["payoutWallets"]) {
   const labels = [
     ...(wallets.zeko ? [`Zeko: ${wallets.zeko}`] : []),
@@ -248,7 +403,7 @@ function paymentProfileSummary(
   paymentProfile: AgentProfileState["paymentProfile"]
 ) {
   if (!paymentProfile.enabled) {
-    return "Paid jobs are turned off.";
+    return "Turn on paid jobs to start receiving payouts.";
   }
   const defaultRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0];
   const facilitatorUrl = defaultRail ? facilitatorUrlForRail(paymentProfile, defaultRail) : undefined;
@@ -262,11 +417,11 @@ function paymentProfileSummary(
     defaultRail ? railLabel(defaultRail) : "selected rail"
   }`;
   if (!facilitatorUrl?.trim()) {
-    return `${summary}. Add the payment processor URL for this payout method to go live.`;
+    return `${summary}. Add the payment processor URL for this payout rail to go live.`;
   }
   return paymentProfileReady
-    ? `${summary}. This agent is ready to accept paid jobs.`
-    : `${summary}. Finish the wallet, payment processor URL, and price details to go live.`;
+    ? `${summary}. This agent can now accept paid jobs.`
+    : `${summary}. Finish the last payment details to go live.`;
 }
 
 function paymentProfileDraftReady(
@@ -416,7 +571,9 @@ export function App() {
   });
   const [hireReceipt, setHireReceipt] = useState<HireRequestReceipt | null>(null);
   const [registrationMethod, setRegistrationMethod] = useState<RegistrationMethod>("browser");
-  const [selectedPayoutWalletKey, setSelectedPayoutWalletKey] = useState<PayoutWalletKey>("base");
+  const [exploreQuery, setExploreQuery] = useState("");
+  const [exploreFilter, setExploreFilter] = useState<ExploreFilterKey>("all");
+  const [selectedPayoutWalletKey, setSelectedPayoutWalletKey] = useState<PayoutWalletKey>("ethereum");
   const [draftPayoutWalletValue, setDraftPayoutWalletValue] = useState("");
   const [adminKeyDraft, setAdminKeyDraft] = useState("");
   const [issuedOwnershipChallenge, setIssuedOwnershipChallenge] = useState<IssuedOwnershipChallenge | null>(null);
@@ -665,6 +822,25 @@ export function App() {
     setIssuedOwnershipChallenge(null);
   }
 
+  async function settleSocialAnchorsAction(sessionId?: string, agentId?: string) {
+    setPendingAction("settle-social-anchors");
+    setError(null);
+
+    try {
+      await settleSocialAnchorBatch({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {})
+      });
+      const nextState = await fetchConsoleState(sessionId, sessionId ? undefined : agentId);
+      setState(nextState);
+      setSelectedSessionId(nextState.session.sessionId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not settle social proof anchors.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   function showSection(nextSection: NavSectionKey) {
     setActiveSection(nextSection);
     if (typeof window !== "undefined") {
@@ -674,13 +850,18 @@ export function App() {
     }
   }
 
-  function showAgentProfile(agentId: string) {
+  function showAgentProfile(agentId: string, focus: "profile" | "hire" = "profile") {
     setSharedAgentId(agentId);
     setSelectedSessionId(null);
     setActiveSection("explore");
     if (typeof window !== "undefined") {
       window.history.pushState(null, "", buildSectionPath("explore", agentId));
       window.scrollTo({ top: 0, behavior: "smooth" });
+      window.setTimeout(() => {
+        const targetId = focus === "hire" ? "hire-this-agent" : "agent-profile-top";
+        const target = document.getElementById(targetId);
+        target?.scrollIntoView({ behavior: "smooth", block: "start" });
+      }, 120);
     }
   }
 
@@ -864,6 +1045,12 @@ export function App() {
   const paymentProfile = effectivePaymentProfile(profile);
   const paymentsEnabled = paymentProfile.enabled;
   const paymentProfileReady = paymentProfileDraftReady(published, profile);
+  const configuredPayoutWallets = ([
+    ["base", profile.payoutWallets.base],
+    ["ethereum", profile.payoutWallets.ethereum],
+    ["zeko", profile.payoutWallets.zeko]
+  ] as Array<[PayoutWalletKey, string | undefined]>).filter(([, value]) => value?.trim().length);
+  const walletsReady = configuredPayoutWallets.length > 0;
   const profileForSave = {
     ...profile,
     paymentProfile
@@ -876,31 +1063,64 @@ export function App() {
       : savedPaymentProfileReady
         ? `Payouts live on ${railLabel(defaultPaymentRail)}`
         : "Host facilitator and finish setup";
-  const paymentToggleStatus = paymentProfile.enabled
-    ? !published
-      ? "Publish the agent first"
-      : paymentProfileReady
-        ? "Ready to accept paid jobs"
-        : "Finish setup to go live"
-    : "Not accepting paid jobs";
-  const paymentHeadlineMessage = !paymentProfile.enabled
-    ? "Turn on paid jobs to start receiving payouts."
-    : !published
-      ? "Publish the agent first, then paid jobs can go live."
-      : paymentProfileReady
-        ? "Ready to accept paid jobs."
-        : "Finish setup to go live.";
+  const paymentSectionLead = !paymentsEnabled
+    ? "You're almost ready to earn."
+    : paymentProfileReady
+      ? "Payments enabled. This agent can accept paid jobs."
+      : "Finish the required payment details to start earning.";
+  const paymentSummaryMessage = !published
+    ? "Publish on Zeko first to let buyers discover and pay this agent."
+    : paymentProfileSummary(paymentProfileReady, paymentProfile);
+  const mainPricingLabel =
+    paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated"
+      ? "Quote URL"
+      : paymentProfile.pricingMode === "capped-exact"
+        ? "Max price per job (USD)"
+        : "Price per job (USD)";
+  const mainPricingValue =
+    paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated"
+      ? paymentProfile.quoteUrl ?? ""
+      : paymentProfile.pricingMode === "capped-exact"
+        ? paymentProfile.maxAmountUsd ?? ""
+        : paymentProfile.fixedAmountUsd ?? "";
+  const mainPricingPlaceholder =
+    paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated"
+      ? "https://agent.example.com/payments"
+      : paymentProfile.pricingMode === "capped-exact"
+        ? "0.25"
+        : "0.05";
   const paymentSaveLabel = pendingAction === "save-payment-profile"
     ? "Saving..."
-    : paymentProfileReady
-      ? "Update paid jobs"
-      : paymentsEnabled
-        ? "Save get paid setup"
-        : "Save payout setup";
+    : !paymentsEnabled
+      ? "Enable payments"
+      : paymentProfileReady
+        ? "Save changes"
+        : "Save payment setup";
   const publicAgentUrl = registeredAgentId ? buildPublicAgentUrl(registeredAgentId) : null;
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl && registeredAgentId ? buildShareOnXUrl(publicAgentUrl, registeredAgentId) : null;
   const currentAdminKey = getStoredAdminKey(sessionId, registeredAgentId ?? state.agentId);
+  const currentSocialAnchorQueue = state.socialAnchorQueue;
+  const latestSocialAnchorBatch = currentSocialAnchorQueue.recentBatches[0];
+  const normalizedExploreQuery = exploreQuery.trim().toLowerCase();
+  const filteredRegistry = registry.filter(
+    (agent) => matchesExploreFilter(agent, exploreFilter) && matchesExploreQuery(agent, normalizedExploreQuery)
+  );
+  const featuredAgents = [...filteredRegistry]
+    .sort((left, right) => featuredAgentScore(right) - featuredAgentScore(left))
+    .slice(0, 3);
+  const featuredAgentIds = new Set(featuredAgents.map((agent) => agent.agentId));
+  const recentAgents = [...filteredRegistry]
+    .sort((left, right) => timestampValue(right.lastUpdatedAtIso) - timestampValue(left.lastUpdatedAtIso))
+    .filter((agent) => !featuredAgentIds.has(agent.agentId))
+    .slice(0, 6);
+  const dispatchAgents = [...filteredRegistry]
+    .filter((agent) => agent.headline.trim().length > 0)
+    .sort((left, right) => featuredAgentScore(right) - featuredAgentScore(left))
+    .slice(0, 3);
+  const liveActivityAgents = [...filteredRegistry]
+    .sort((left, right) => timestampValue(right.lastUpdatedAtIso) - timestampValue(left.lastUpdatedAtIso))
+    .slice(0, 6);
   const ownershipChallengePreview =
     issuedOwnershipChallenge?.challengeResponseJson ??
     (state.ownership.status === "challenge-issued"
@@ -918,11 +1138,6 @@ export function App() {
             ? "This is a legacy registration. Verify control of the OpenClaw runtime before SantaClawz can publish it."
             : "This agent predates ownership checks. Prove control of the OpenClaw runtime to reclaim and publish it."
           : "Prove control of the OpenClaw runtime before SantaClawz can publish this agent on Zeko.";
-  const configuredPayoutWallets = ([
-    ["base", profile.payoutWallets.base],
-    ["ethereum", profile.payoutWallets.ethereum],
-    ["zeko", profile.payoutWallets.zeko]
-  ] as Array<[PayoutWalletKey, string | undefined]>).filter(([, value]) => value?.trim().length);
   const cliRegisterCommand = [
     "pnpm register:agent --",
     `--agent-name ${shellQuote(profile.agentName || "SantaClawz Operator")}`,
@@ -1019,6 +1234,34 @@ export function App() {
     });
     setSelectedPayoutWalletKey(walletKey);
     setDraftPayoutWalletValue("");
+  }
+
+  function enablePayments() {
+    setProfile({
+      ...profile,
+      paymentProfile: {
+        ...profile.paymentProfile,
+        enabled: true,
+        ...(profile.paymentProfile.fixedAmountUsd?.trim().length ||
+        profile.paymentProfile.pricingMode === "quote-required" ||
+        profile.paymentProfile.pricingMode === "agent-negotiated" ||
+        profile.paymentProfile.pricingMode === "capped-exact"
+          ? {}
+          : { fixedAmountUsd: "0.05" })
+      }
+    });
+    setError(null);
+  }
+
+  function disablePayments() {
+    setProfile({
+      ...profile,
+      paymentProfile: {
+        ...profile.paymentProfile,
+        enabled: false
+      }
+    });
+    setError(null);
   }
 
   function unlockAdminAccess() {
@@ -1200,7 +1443,7 @@ export function App() {
                   {registrationMethod === "browser"
                     ? isRegisteredSession
                       ? `Registered to ${state.agentId}. This browser already owns the registration record for this agent.`
-                      : "Create the SantaClawz registration record here. SantaClawz will use the profile details above, then you can deploy and share the live agent."
+                      : "Create the SantaClawz registration record here. SantaClawz will check the profile details, then you can deploy and share the live agent."
                     : "Run one command and the agent joins SantaClawz. Use this if it already exposes a compatible OpenClaw agent URL."}
                 </p>
               </div>
@@ -1342,7 +1585,7 @@ export function App() {
               <span className="step-number">2</span>
               <div>
                 <h2>Deploy</h2>
-                <p className="panel-copy">SantaClawz activates the agent for you, publishes it on Zeko, and lists it in Explore. Get paid comes after this.</p>
+                <p className="panel-copy">SantaClawz activates the agent for you, publishes it on Zeko, and lists it in Explore.</p>
               </div>
             </div>
           </div>
@@ -1524,369 +1767,409 @@ export function App() {
                 )}
               </div>
             </div>
+
+            <div className="action-row">
+              <div>
+                <strong>Anchor public facts on Zeko</strong>
+                <p className="panel-copy">
+                  {currentSocialAnchorQueue.pendingCount > 0
+                    ? `${currentSocialAnchorQueue.pendingCount} public fact${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} ready to batch-anchor.`
+                    : currentSocialAnchorQueue.anchoredCount > 0
+                      ? `${currentSocialAnchorQueue.anchoredCount} public fact${currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"} already anchored.`
+                      : "Publish, verify, payment, and hire milestones will queue here for periodic anchoring."}
+                </p>
+                {latestSocialAnchorBatch ? (
+                  <div className="share-url-placeholder live">
+                    Latest batch root {shorten(latestSocialAnchorBatch.rootDigestSha256, 14, 12)}
+                    {latestSocialAnchorBatch.txHash
+                      ? ` • tx ${shorten(latestSocialAnchorBatch.txHash, 12, 10)}`
+                      : " • awaiting Zeko tx"}
+                    {" • "}
+                    {new Date(latestSocialAnchorBatch.settledAtIso).toLocaleString()}
+                  </div>
+                ) : null}
+              </div>
+              <div className="action-side">
+                <button
+                  className="secondary-button"
+                  disabled={!latestSocialAnchorBatch?.rootDigestSha256}
+                  onClick={() => {
+                    if (latestSocialAnchorBatch?.rootDigestSha256) {
+                      void copyValue("social-anchor-root", latestSocialAnchorBatch.rootDigestSha256);
+                    }
+                  }}
+                >
+                  {copiedKey === "social-anchor-root" ? "Copied root" : "Copy latest root"}
+                </button>
+                <button
+                  className="primary-button"
+                  disabled={
+                    pendingAction === "settle-social-anchors" ||
+                    !isRegisteredSession ||
+                    !hasAdminAccess ||
+                    currentSocialAnchorQueue.pendingCount === 0
+                  }
+                  onClick={() => {
+                    void settleSocialAnchorsAction(sessionId, registeredAgentId ?? undefined);
+                  }}
+                >
+                  {pendingAction === "settle-social-anchors" ? "Anchoring..." : "Anchor pending facts"}
+                </button>
+              </div>
+            </div>
           </div>
           </section>
 
           <section className="panel step-card">
-          <div className="step-head get-paid-step-head">
-            <div className="step-title">
-              <span className="step-number">3</span>
-              <div>
-                <h2>Get paid</h2>
-                <p className="panel-copy">Start accepting paid jobs in a few minutes.</p>
-              </div>
-            </div>
-            <div className="payment-head-controls">
-              <div className="inline-toggle compact-inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
-                <button
-                  type="button"
-                  className={paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
-                  onClick={() => {
-                    setProfile({
-                      ...profile,
-                      paymentProfile: {
-                        ...profile.paymentProfile,
-                        enabled: true
-                      }
-                    });
-                  }}
-                  role="radio"
-                  aria-checked={paymentProfile.enabled}
-                >
-                  On
-                </button>
-                <button
-                  type="button"
-                  className={!paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
-                  onClick={() => {
-                    setProfile({
-                      ...profile,
-                      paymentProfile: {
-                        ...profile.paymentProfile,
-                        enabled: false
-                      }
-                    });
-                  }}
-                  role="radio"
-                  aria-checked={!paymentProfile.enabled}
-                >
-                  Off
-                </button>
-              </div>
-              <p
-                className={
-                  !paymentProfile.enabled
-                    ? "status-note status-note-highlight payment-step-status payment-step-status-inline"
-                    : paymentProfileReady
-                      ? "status-note payment-step-status payment-step-status-ready payment-step-status-inline"
-                      : "status-note payment-step-status payment-step-status-inline"
-                }
-              >
-                {paymentHeadlineMessage}
-              </p>
-            </div>
-          </div>
-
-          <div className="payment-step-list">
-          <div className="payment-subcard">
-            <div className="payment-subcard-head payout-subcard-head">
-              <div className="payment-subcard-copy">
-                <strong>Payout wallets</strong>
-                <p className="panel-copy">Add where you want to receive payments.</p>
-              </div>
-              {configuredPayoutWallets.length > 0 ? (
-                <p className="status-note status-note-compact wallet-status-note wallet-status-inline">
-                  Wallets ready for payouts.
-                </p>
-              ) : null}
-            </div>
-            <div className="payment-subcard-body">
-              {configuredPayoutWallets.length > 0 ? (
-                <div className="wallet-chip-list">
-                  {configuredPayoutWallets.map(([walletKey, walletValue]) => (
-                    <div key={walletKey} className="wallet-chip">
-                      <div>
-                        <span className="metric">{payoutWalletLabel(walletKey)}</span>
-                        <strong>{walletValue}</strong>
-                      </div>
-                      <button
-                        type="button"
-                        className="mini-button"
-                        onClick={() => {
-                          removePayoutWallet(walletKey);
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
-                  ))}
+            <div className="step-head get-paid-step-head">
+              <div className="step-title">
+                <span className="step-number">3</span>
+                <div>
+                  <h2>Get paid</h2>
+                  <p className="panel-copy">Start accepting paid jobs in a few minutes.</p>
                 </div>
-              ) : null}
-
-              <div className="field-grid compact-field-grid wallet-builder-grid">
-                <label className="field">
-                  <span>Chain</span>
-                  <select
-                    className="text-input"
-                    value={selectedPayoutWalletKey}
-                    onChange={(event: ValueInputEvent) => {
-                      setSelectedPayoutWalletKey(event.target.value as PayoutWalletKey);
-                    }}
-                  >
-                    <option value="base">Base</option>
-                    <option value="ethereum">Ethereum</option>
-                    <option value="zeko">Zeko</option>
-                  </select>
-                </label>
-                <label className="field wallet-builder-field">
-                  <span>Wallet address</span>
-                  <div className="wallet-builder-inline">
-                    <input
-                      className="text-input"
-                      value={draftPayoutWalletValue}
-                      onChange={(event: ValueInputEvent) => {
-                        setDraftPayoutWalletValue(event.target.value);
-                      }}
-                      placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
-                    />
-                    <button
-                      type="button"
-                      className="round-add-button"
-                      aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
-                      onClick={() => {
-                        savePayoutWallet();
-                      }}
-                    >
-                      +
-                    </button>
-                  </div>
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="payment-subcard payment-subcard-spaced">
-            <div className="payment-subcard-head">
-              <div className="payment-subcard-copy">
-                <strong>Accept paid jobs</strong>
-                <p className="panel-copy">
-                  Turn this on when you want the agent to charge buyers. SantaClawz will use the payout wallets above as the future payment destinations.
-                </p>
               </div>
             </div>
 
-            <div className="payment-subcard-body">
-              {paymentProfile.enabled ? (
-                <>
-                  <div className="field-grid compact-field-grid payment-compact-grid">
-                    <label className="field">
-                      <span>Base payment URL</span>
-                      <input
-                        className="text-input payment-compact-input"
-                        value={paymentProfile.baseFacilitatorUrl ?? ""}
-                        onChange={(event: ValueInputEvent) => {
-                          setProfile({
-                            ...profile,
-                            paymentProfile: {
-                              ...profile.paymentProfile,
-                              baseFacilitatorUrl: event.target.value
-                            }
-                          });
-                        }}
-                        placeholder="https://payments.your-agent-domain.com"
-                      />
-                    </label>
-                    <label className="field">
-                      <span>Ethereum payment URL</span>
-                      <input
-                        className="text-input payment-compact-input"
-                        value={paymentProfile.ethereumFacilitatorUrl ?? ""}
-                        onChange={(event: ValueInputEvent) => {
-                          setProfile({
-                            ...profile,
-                            paymentProfile: {
-                              ...profile.paymentProfile,
-                              ethereumFacilitatorUrl: event.target.value
-                            }
-                          });
-                        }}
-                        placeholder="https://ethereum-payments.your-agent-domain.com"
-                      />
-                    </label>
+            <div className="payment-step-list">
+              <div className="payment-subcard">
+                <div className="payment-subcard-head payout-subcard-head">
+                  <div className="payment-subcard-copy">
+                    <strong>Payout wallets</strong>
+                    <p className="panel-copy">Where should we send your earnings?</p>
                   </div>
-
-                  <div className="facilitator-inline">
-                    <p className="panel-copy">
-                      Bring your own x402 payment processor. Paste the public payment URL for each rail you want to turn on.
+                  {configuredPayoutWallets.length > 0 ? (
+                    <p className="status-note status-note-compact wallet-status-note wallet-status-inline">
+                      Ready to receive payouts
                     </p>
-                    <div className="facilitator-actions">
-                      <a
-                        className="secondary-button"
-                        href={FACILITATOR_SETUP_GUIDE_URL}
-                        rel="noreferrer"
-                        target="_blank"
-                      >
-                        Open setup guide
-                      </a>
-                      <button
-                        type="button"
-                        className="secondary-button"
-                        onClick={() => {
-                          void copyValue("facilitator-render-checklist", FACILITATOR_RENDER_CHECKLIST);
-                        }}
-                      >
-                        {copiedKey === "facilitator-render-checklist" ? "Copied checklist" : "Copy Render checklist"}
-                      </button>
+                  ) : null}
+                </div>
+                <div className="payment-subcard-body">
+                  {configuredPayoutWallets.length > 0 ? (
+                    <div className="wallet-chip-list">
+                      {configuredPayoutWallets.map(([walletKey, walletValue]) => (
+                        <div key={walletKey} className="wallet-chip">
+                          <div>
+                            <span className="metric">{payoutWalletLabel(walletKey)}</span>
+                            <strong>{walletValue}</strong>
+                          </div>
+                          <button
+                            type="button"
+                            className="mini-button"
+                            onClick={() => {
+                              removePayoutWallet(walletKey);
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      ))}
                     </div>
-                  </div>
+                  ) : null}
 
-                  <div className="field-grid compact-field-grid payment-compact-grid payment-compact-grid-three">
+                  <div className="field-grid compact-field-grid wallet-builder-grid">
                     <label className="field">
-                      <span>Payout method</span>
+                      <span>Chain</span>
                       <select
-                        className="text-input payment-compact-input"
-                        value={defaultPaymentRail}
+                        className="text-input"
+                        value={selectedPayoutWalletKey}
                         onChange={(event: ValueInputEvent) => {
-                          setProfile({
-                            ...profile,
-                            paymentProfile: {
-                              ...profile.paymentProfile,
-                              defaultRail: event.target.value as AgentProfileState["paymentProfile"]["supportedRails"][number]
-                            }
-                          });
+                          setSelectedPayoutWalletKey(event.target.value as PayoutWalletKey);
                         }}
                       >
-                        {paymentProfile.supportedRails.map((rail) => (
-                          <option key={rail} value={rail}>
-                            {railLabel(rail)}
-                          </option>
-                        ))}
+                        <option value="base">Base</option>
+                        <option value="ethereum">Ethereum</option>
+                        <option value="zeko">Zeko</option>
                       </select>
                     </label>
-                    <label className="field">
-                      <span>Pricing</span>
-                      <select
-                        className="text-input payment-compact-input"
-                        value={paymentProfile.pricingMode}
-                        onChange={(event: ValueInputEvent) => {
-                          const nextPricingMode = event.target.value as AgentProfileState["paymentProfile"]["pricingMode"];
-                          const nextPaymentProfile = {
-                            ...profile.paymentProfile,
-                            pricingMode: nextPricingMode
-                          };
-                          if (nextPricingMode === "fixed-exact") {
-                            delete nextPaymentProfile.quoteUrl;
-                          }
-                          if (nextPricingMode === "quote-required" || nextPricingMode === "agent-negotiated") {
-                            delete nextPaymentProfile.fixedAmountUsd;
-                            delete nextPaymentProfile.maxAmountUsd;
-                          }
-                          setProfile({
-                            ...profile,
-                            paymentProfile: nextPaymentProfile
-                          });
-                        }}
-                      >
-                        <option value="fixed-exact">Fixed price</option>
-                        <option value="quote-required">Quote required</option>
-                        <option value="agent-negotiated">Negotiated by agent</option>
-                      </select>
+                    <label className="field wallet-builder-field">
+                      <span>Wallet address</span>
+                      <div className="wallet-builder-inline">
+                        <input
+                          className="text-input"
+                          value={draftPayoutWalletValue}
+                          onChange={(event: ValueInputEvent) => {
+                            setDraftPayoutWalletValue(event.target.value);
+                          }}
+                          placeholder={payoutWalletPlaceholder(selectedPayoutWalletKey)}
+                        />
+                        <button
+                          type="button"
+                          className="round-add-button"
+                          aria-label={`Add ${payoutWalletLabel(selectedPayoutWalletKey)} payout wallet`}
+                          onClick={() => {
+                            savePayoutWallet();
+                          }}
+                        >
+                          +
+                        </button>
+                      </div>
                     </label>
-
-                    {paymentProfile.pricingMode === "fixed-exact" ? (
-                      <label className="field">
-                        <span>Fixed price per job (USD)</span>
-                        <input
-                          className="text-input payment-compact-input"
-                          value={paymentProfile.fixedAmountUsd ?? ""}
-                          onChange={(event: ValueInputEvent) => {
-                            setProfile({
-                              ...profile,
-                              paymentProfile: {
-                                ...profile.paymentProfile,
-                                fixedAmountUsd: event.target.value
-                              }
-                            });
-                          }}
-                          placeholder="0.05"
-                        />
-                      </label>
-                    ) : (
-                      <label className="field">
-                        <span>Quote URL</span>
-                        <input
-                          className="text-input payment-compact-input"
-                          value={paymentProfile.quoteUrl ?? ""}
-                          onChange={(event: ValueInputEvent) => {
-                            setProfile({
-                              ...profile,
-                              paymentProfile: {
-                                ...profile.paymentProfile,
-                                quoteUrl: event.target.value
-                              }
-                            });
-                          }}
-                          placeholder="https://agent.example.com/payments"
-                        />
-                      </label>
-                    )}
                   </div>
-
-                  <p className="panel-copy compact-payment-copy">
-                    SantaClawz advertises the selected payout method first. You can keep more than one wallet on file and change the default later.
-                  </p>
-
-                  <label className="field">
-                    <span>Notes for users</span>
-                    <textarea
-                      className="text-area compact-text-area payment-notes-area"
-                      value={paymentProfile.paymentNotes ?? ""}
-                      onChange={(event: ValueInputEvent) => {
-                        setProfile({
-                          ...profile,
-                          paymentProfile: {
-                            ...profile.paymentProfile,
-                            paymentNotes: event.target.value
-                          }
-                        });
-                      }}
-                      placeholder="Share fulfillment notes, expectations, or what users should know."
-                    />
-                  </label>
-                </>
-              ) : null}
-
-              <div className="payment-status-grid">
-                <p className="status-note status-note-compact payment-inline-status">
-                  Status: {paymentToggleStatus}
-                </p>
-                <p className="status-note status-note-compact payment-summary-note">
-                  {paymentProfileSummary(paymentProfileReady, paymentProfile)}
-                </p>
+                </div>
               </div>
 
-              <div className="payment-save-row">
-                <p className="panel-copy">
-                  {isRegisteredSession
-                    ? paymentProfileReady
-                      ? "Your agent is ready to earn."
-                      : "Save once the payout setup looks right."
-                    : "Register the agent first, then save payout settings."}
-                </p>
-                <button
-                  type="button"
-                  className="primary-button"
-                  disabled={pendingAction === "save-payment-profile" || !isRegisteredSession || !hasAdminAccess}
-                  onClick={() => {
-                    void runAction("save-payment-profile", () => updateAgentProfile(profileForSave, sessionId));
-                  }}
-                >
-                  {paymentSaveLabel}
-                </button>
+              <div className="payment-subcard payment-subcard-spaced">
+                <div className="payment-subcard-head">
+                  <div className="payment-subcard-copy">
+                    <strong>Accept paid jobs</strong>
+                    <p className="panel-copy">{paymentSectionLead}</p>
+                  </div>
+                </div>
+
+                <div className="payment-subcard-body">
+                  {!paymentsEnabled ? (
+                    <div className="payment-enable-callout">
+                      <div className="payment-enable-copy">
+                        <strong>Your agent isn&apos;t earning yet.</strong>
+                        <p className="panel-copy">
+                          Start the payment setup when you&apos;re ready and SantaClawz will walk you through payout routing, payment URLs, and the default price buyers see.
+                        </p>
+                        <p className="panel-copy payment-enable-meta">
+                          SantaClawz does not host the payment processor today. You bring your own x402 payment processor and payout wallet.
+                        </p>
+                      </div>
+                      <div className="payment-enable-actions">
+                        <button
+                          type="button"
+                          className="primary-button"
+                          onClick={() => {
+                            enablePayments();
+                          }}
+                        >
+                          Start earning
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="field-grid compact-field-grid payment-main-grid">
+                        <label className="field">
+                          <span>Base payment URL</span>
+                          <input
+                            className="text-input payment-compact-input"
+                            value={paymentProfile.baseFacilitatorUrl ?? ""}
+                            onChange={(event: ValueInputEvent) => {
+                              setProfile({
+                                ...profile,
+                                paymentProfile: {
+                                  ...profile.paymentProfile,
+                                  baseFacilitatorUrl: event.target.value
+                                }
+                              });
+                            }}
+                            placeholder="https://payments.your-agent-domain.com"
+                          />
+                        </label>
+                        <label className="field">
+                          <span>Ethereum payment URL</span>
+                          <input
+                            className="text-input payment-compact-input"
+                            value={paymentProfile.ethereumFacilitatorUrl ?? ""}
+                            onChange={(event: ValueInputEvent) => {
+                              setProfile({
+                                ...profile,
+                                paymentProfile: {
+                                  ...profile.paymentProfile,
+                                  ethereumFacilitatorUrl: event.target.value
+                                }
+                              });
+                            }}
+                            placeholder="https://ethereum-payments.your-agent-domain.com"
+                          />
+                        </label>
+                      </div>
+
+                      <div className="facilitator-inline">
+                        <p className="panel-copy">
+                          Bring your own x402 payment processor. Paste the public payment URL for each rail you want to turn on.
+                        </p>
+                        <div className="facilitator-actions">
+                          <a
+                            className="secondary-button"
+                            href={FACILITATOR_SETUP_GUIDE_URL}
+                            rel="noreferrer"
+                            target="_blank"
+                          >
+                            Open setup guide
+                          </a>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => {
+                              void copyValue("facilitator-render-checklist", FACILITATOR_RENDER_CHECKLIST);
+                            }}
+                          >
+                            {copiedKey === "facilitator-render-checklist" ? "Copied checklist" : "Copy Render checklist"}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="field-grid compact-field-grid payment-main-grid">
+                        <label className="field">
+                          <span>{mainPricingLabel}</span>
+                          <input
+                            className="text-input payment-compact-input"
+                            value={mainPricingValue}
+                            onChange={(event: ValueInputEvent) => {
+                              if (
+                                paymentProfile.pricingMode === "quote-required" ||
+                                paymentProfile.pricingMode === "agent-negotiated"
+                              ) {
+                                setProfile({
+                                  ...profile,
+                                  paymentProfile: {
+                                    ...profile.paymentProfile,
+                                    quoteUrl: event.target.value
+                                  }
+                                });
+                                return;
+                              }
+
+                              if (paymentProfile.pricingMode === "capped-exact") {
+                                setProfile({
+                                  ...profile,
+                                  paymentProfile: {
+                                    ...profile.paymentProfile,
+                                    maxAmountUsd: event.target.value
+                                  }
+                                });
+                                return;
+                              }
+
+                              setProfile({
+                                ...profile,
+                                paymentProfile: {
+                                  ...profile.paymentProfile,
+                                  fixedAmountUsd: event.target.value
+                                }
+                              });
+                            }}
+                            placeholder={mainPricingPlaceholder}
+                          />
+                        </label>
+                      </div>
+
+                      <details className="advanced-panel compact-advanced-panel">
+                        <summary>Advanced settings</summary>
+                        <div className="field-grid compact-field-grid payment-advanced-grid">
+                          <label className="field">
+                            <span>Payout method</span>
+                            <select
+                              className="text-input payment-compact-input"
+                              value={defaultPaymentRail}
+                              onChange={(event: ValueInputEvent) => {
+                                setProfile({
+                                  ...profile,
+                                  paymentProfile: {
+                                    ...profile.paymentProfile,
+                                    defaultRail: event.target.value as AgentProfileState["paymentProfile"]["supportedRails"][number]
+                                  }
+                                });
+                              }}
+                            >
+                              {paymentProfile.supportedRails.map((rail) => (
+                                <option key={rail} value={rail}>
+                                  {railLabel(rail)}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+
+                          <label className="field">
+                            <span>Pricing model</span>
+                            <select
+                              className="text-input payment-compact-input"
+                              value={paymentProfile.pricingMode}
+                              onChange={(event: ValueInputEvent) => {
+                                const nextPricingMode = event.target.value as AgentProfileState["paymentProfile"]["pricingMode"];
+                                const nextPaymentProfile = {
+                                  ...profile.paymentProfile,
+                                  pricingMode: nextPricingMode
+                                };
+                                if (nextPricingMode === "fixed-exact") {
+                                  delete nextPaymentProfile.quoteUrl;
+                                  delete nextPaymentProfile.maxAmountUsd;
+                                }
+                                if (nextPricingMode === "quote-required" || nextPricingMode === "agent-negotiated") {
+                                  delete nextPaymentProfile.fixedAmountUsd;
+                                  delete nextPaymentProfile.maxAmountUsd;
+                                }
+                                if (nextPricingMode === "capped-exact") {
+                                  delete nextPaymentProfile.fixedAmountUsd;
+                                  delete nextPaymentProfile.quoteUrl;
+                                }
+                                setProfile({
+                                  ...profile,
+                                  paymentProfile: nextPaymentProfile
+                                });
+                              }}
+                            >
+                              <option value="fixed-exact">Fixed price</option>
+                              <option value="capped-exact">Capped price</option>
+                              <option value="quote-required">Quote required</option>
+                              <option value="agent-negotiated">Negotiated by agent</option>
+                            </select>
+                          </label>
+                        </div>
+
+                        <label className="field advanced-actions">
+                          <span>Notes for users</span>
+                          <textarea
+                            className="text-area compact-text-area payment-notes-area"
+                            value={paymentProfile.paymentNotes ?? ""}
+                            onChange={(event: ValueInputEvent) => {
+                              setProfile({
+                                ...profile,
+                                paymentProfile: {
+                                  ...profile.paymentProfile,
+                                  paymentNotes: event.target.value
+                                }
+                              });
+                            }}
+                            placeholder="Share fulfillment notes, expectations, or what users should know."
+                          />
+                        </label>
+                      </details>
+
+                      <div className="payment-status-grid">
+                        <p className="status-note status-note-compact payment-summary-note">
+                          {paymentSummaryMessage}
+                        </p>
+                      </div>
+
+                      <div className="payment-save-row">
+                        <p className="panel-copy">
+                          {!isRegisteredSession
+                            ? "Register the agent first, then save payout settings."
+                            : paymentProfileReady
+                              ? "Your agent is ready to earn."
+                              : "Save once the payout setup looks right."}
+                        </p>
+                        <button
+                          type="button"
+                          className="primary-button"
+                          disabled={
+                            pendingAction === "save-payment-profile" ||
+                            (paymentsEnabled && !isRegisteredSession) ||
+                            (isRegisteredSession && !hasAdminAccess)
+                          }
+                          onClick={() => {
+                            if (!paymentsEnabled) {
+                              enablePayments();
+                              return;
+                            }
+                            void runAction("save-payment-profile", () => updateAgentProfile(profileForSave, sessionId));
+                          }}
+                        >
+                          {paymentSaveLabel}
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-          </div>
           </section>
         </section>
       ) : (
@@ -1894,20 +2177,31 @@ export function App() {
           <div className="section-head">
             <div>
               <p className="eyebrow">Explore</p>
-                <h2>Browse other agents</h2>
+              <h2>{sharedAgentId ? "Agent profile" : "Browse live agents"}</h2>
             </div>
-            <span className="subtle-pill">{sharedAgentId ? "Shared profile" : `${registry.length} listed`}</span>
+            <span className="subtle-pill">
+              {sharedAgentId ? "Shared profile" : `${filteredRegistry.length} of ${registry.length} agents`}
+            </span>
           </div>
 
-          <div className="explore-grid">
-            {sharedAgentId ? (
-                <article className="explore-card explore-card-featured">
-                  <div className="explore-card-head">
-                    <strong>{profile.agentName}</strong>
-                    <span className="subtle-pill">{paidJobsEnabled ? "Payouts live" : published ? "Published" : "Registered"}</span>
-                  </div>
+          {sharedAgentId ? (
+            <div className="explore-grid">
+              <article id="agent-profile-top" className="explore-card explore-card-featured">
+                <div className="explore-card-head">
+                  <strong>{profile.agentName}</strong>
+                  <span className="subtle-pill">{paidJobsEnabled ? "Payouts live" : published ? "Published" : "Registered"}</span>
+                </div>
                 <p className="panel-copy">{profile.headline}</p>
                 <p className="panel-copy">{paidWorkStatusLabel}</p>
+                <p className="panel-copy">
+                  {currentSocialAnchorQueue.anchoredCount} anchored fact{currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"}
+                  {currentSocialAnchorQueue.pendingCount > 0
+                    ? ` • ${currentSocialAnchorQueue.pendingCount} pending`
+                    : ""}
+                  {latestSocialAnchorBatch?.settledAtIso
+                    ? ` • last batch ${formatRelativeTime(latestSocialAnchorBatch.settledAtIso)}`
+                    : ""}
+                </p>
                 <div className="action-list">
                   <div className="action-row">
                     <div>
@@ -1998,7 +2292,7 @@ export function App() {
                     </div>
                   ) : null}
 
-                  <div className="action-row action-row-form">
+                  <div id="hire-this-agent" className="action-row action-row-form">
                     <div>
                       <strong>Hire this agent</strong>
                       <p className="panel-copy">{hireStatusCopy}</p>
@@ -2086,39 +2380,237 @@ export function App() {
                   </p>
                 ) : null}
               </article>
-            ) : null}
-            {registry.length === 0 ? (
-              <article className="explore-card explore-card-featured">
-                <div className="explore-card-head">
-                  <strong>No registered agents yet</strong>
-                  <span className="subtle-pill">Be first</span>
+            </div>
+          ) : (
+            <div className="explore-social-stack">
+              <section className="explore-activity-strip">
+                <div className="explore-activity-head">
+                  <div className="explore-card-head">
+                    <strong>Live activity</strong>
+                    <span className="subtle-pill">{liveActivityAgents.length} updates</span>
+                  </div>
+                  <p className="panel-copy">See who just published, who turned on payouts, and who is building trust in public.</p>
                 </div>
-                <p className="panel-copy">Register an OpenClaw agent to make it discoverable here for humans and other agents.</p>
-              </article>
-            ) : (
-              registry.map((agent) => (
-              <article key={agent.agentId} className="explore-card">
-                <div className="explore-card-head">
-                  <strong>{agent.agentName}</strong>
-                  <span className="subtle-pill">{agent.paidJobsEnabled ? "Payouts live" : agent.published ? "Published" : "Registered"}</span>
+                <div className="explore-activity-rail">
+                  {liveActivityAgents.length === 0 ? (
+                    <div className="status-note">No public activity yet. Publish the first OpenClaw agent to start the feed.</div>
+                  ) : (
+                    liveActivityAgents.map((agent) => (
+                      <button
+                        key={`activity-${agent.agentId}`}
+                        type="button"
+                        className="activity-pill"
+                        onClick={() => {
+                          showAgentProfile(agent.agentId);
+                        }}
+                      >
+                        <span className="activity-pill-mark">{agent.paidJobsEnabled ? "●" : agent.published ? "◆" : "○"}</span>
+                        <strong>{agent.agentName}</strong>
+                        <span>{activityLineForAgent(agent)}</span>
+                      </button>
+                    ))
+                  )}
                 </div>
-                <p className="panel-copy">{agent.headline}</p>
-                <p className="panel-copy">{formatRegistryHireStatus(agent)}</p>
-                <div className="action-side">
-                  <a
-                    className="secondary-button"
-                    href={buildPublicAgentUrl(agent.agentId)}
-                    onClick={(event: { preventDefault(): void }) => {
-                      event.preventDefault();
-                      showAgentProfile(agent.agentId);
+              </section>
+
+              <section className="explore-toolbar">
+                <label className="field explore-search-field">
+                  <span>Search agents</span>
+                  <input
+                    className="text-input explore-search-input"
+                    value={exploreQuery}
+                    onChange={(event: ValueInputEvent) => {
+                      setExploreQuery(event.target.value);
                     }}
-                  >
-                    View profile
-                  </a>
+                    placeholder="Search by agent, operator, rail, or capability"
+                  />
+                </label>
+                <div className="explore-chip-row" role="tablist" aria-label="Explore categories">
+                  {EXPLORE_FILTERS.map((filter) => (
+                    <button
+                      key={filter.key}
+                      type="button"
+                      className={`explore-filter-chip${exploreFilter === filter.key ? " active" : ""}`}
+                      onClick={() => {
+                        setExploreFilter(filter.key);
+                      }}
+                    >
+                      {filter.label}
+                    </button>
+                  ))}
                 </div>
-              </article>
-            )))}
-          </div>
+              </section>
+
+              {registry.length === 0 ? (
+                <article className="explore-card explore-card-featured">
+                  <div className="explore-card-head">
+                    <strong>No registered agents yet</strong>
+                    <span className="subtle-pill">Be first</span>
+                  </div>
+                  <p className="panel-copy">Register an OpenClaw agent to make it discoverable here for humans and other agents.</p>
+                </article>
+              ) : filteredRegistry.length === 0 ? (
+                <article className="explore-card explore-card-featured">
+                  <div className="explore-card-head">
+                    <strong>No agents match this view</strong>
+                    <span className="subtle-pill">Try another chip</span>
+                  </div>
+                  <p className="panel-copy">Reset the category filter or broaden your search to pull more live agents back into the feed.</p>
+                </article>
+              ) : (
+                <>
+                  <section className="explore-section-block">
+                    <div className="section-head compact-head">
+                      <div>
+                        <p className="eyebrow">Featured agents</p>
+                        <h3 className="explore-section-title">Live, human, and ready to hire</h3>
+                      </div>
+                      <span className="subtle-pill">{featuredAgents.length} featured</span>
+                    </div>
+                    <div className="explore-featured-grid">
+                      {featuredAgents.map((agent) => (
+                        <article key={agent.agentId} className="explore-card explore-card-social explore-card-hero">
+                          <div className="explore-card-topline">
+                            <div className="explore-card-avatar">{agentInitials(agent.agentName)}</div>
+                            <div className="explore-card-meta">
+                              <strong>{agent.agentName}</strong>
+                              <span>{agent.representedPrincipal || "Independent operator"}</span>
+                            </div>
+                            <span className="subtle-pill">{exploreStatusLabel(agent)}</span>
+                          </div>
+                          <p className="explore-card-quote">“{agent.headline}”</p>
+                          <p className="panel-copy">{socialProofLineForAgent(agent)}</p>
+                          <div className="explore-tag-row">
+                            <span className="explore-tag">{deriveExploreTopic(agent).replace(/-/g, " ")}</span>
+                            <span className="explore-tag">{agent.proofLevel}</span>
+                            {agent.paymentRail ? <span className="explore-tag">{railLabel(agent.paymentRail)}</span> : null}
+                          </div>
+                          <div className="explore-card-foot">
+                            <span>{activityLineForAgent(agent)}</span>
+                            <span>{formatRegistryHireStatus(agent)}</span>
+                          </div>
+                          <div className="explore-action-row">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => {
+                                showAgentProfile(agent.agentId);
+                              }}
+                            >
+                              View profile
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => {
+                                showAgentProfile(agent.agentId, "hire");
+                              }}
+                            >
+                              Hire
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="explore-section-block">
+                    <div className="section-head compact-head">
+                      <div>
+                        <p className="eyebrow">Recent agents</p>
+                        <h3 className="explore-section-title">Fresh on SantaClawz</h3>
+                      </div>
+                      <span className="subtle-pill">{recentAgents.length} recent</span>
+                    </div>
+                    <div className="explore-feed-grid">
+                      {(recentAgents.length > 0 ? recentAgents : filteredRegistry.slice(0, 6)).map((agent) => (
+                        <article key={`recent-${agent.agentId}`} className="explore-card explore-card-social">
+                          <div className="explore-card-topline">
+                            <div className="explore-card-avatar subtle">{agentInitials(agent.agentName)}</div>
+                            <div className="explore-card-meta">
+                              <strong>{agent.agentName}</strong>
+                              <span>{activityLineForAgent(agent)}</span>
+                            </div>
+                          </div>
+                          <p className="panel-copy">{agent.headline}</p>
+                          <div className="explore-tag-row">
+                            <span className="explore-tag">{exploreStatusLabel(agent)}</span>
+                            {agent.paymentRail ? <span className="explore-tag">{railLabel(agent.paymentRail)}</span> : null}
+                            {agent.ownershipVerified ? <span className="explore-tag">ownership verified</span> : null}
+                          </div>
+                          <div className="explore-action-row">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => {
+                                showAgentProfile(agent.agentId);
+                              }}
+                            >
+                              View
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => {
+                                showAgentProfile(agent.agentId, "hire");
+                              }}
+                            >
+                              Hire
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+
+                  <section className="explore-section-block">
+                    <div className="section-head compact-head">
+                      <div>
+                        <p className="eyebrow">Operator dispatches</p>
+                        <h3 className="explore-section-title">Short public signals from the people behind the agents</h3>
+                      </div>
+                      <span className="subtle-pill">Humans + agents</span>
+                    </div>
+                    <div className="dispatch-grid">
+                      {dispatchAgents.map((agent) => (
+                        <article key={`dispatch-${agent.agentId}`} className="explore-card dispatch-card">
+                          <p className="explore-dispatch-copy">“{dispatchLineForAgent(agent)}”</p>
+                          <div className="dispatch-signature">
+                            <strong>{agent.representedPrincipal || agent.agentName}</strong>
+                            <span>{agent.agentName}</span>
+                          </div>
+                          <div className="explore-card-foot">
+                            <span>{activityLineForAgent(agent)}</span>
+                            <span>{formatRegistryHireStatus(agent)}</span>
+                          </div>
+                          <div className="explore-action-row">
+                            <button
+                              type="button"
+                              className="secondary-button"
+                              onClick={() => {
+                                showAgentProfile(agent.agentId);
+                              }}
+                            >
+                              View profile
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button"
+                              onClick={() => {
+                                showAgentProfile(agent.agentId, "hire");
+                              }}
+                            >
+                              Hire
+                            </button>
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  </section>
+                </>
+              )}
+            </div>
+          )}
         </section>
       )}
     </main>
