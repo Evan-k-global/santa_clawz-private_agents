@@ -184,3 +184,9 @@ So the right split is:
 4. Keep the read-only x402 preview routes stable so agent listings and proofs can advertise real payment posture.
 5. Replace preview-only `verify` / `settle` handlers with runtime calls into `zeko-x402`.
 6. Start with exact-price flows, then extend toward proof-triggered settlement.
+
+## Related spec
+
+For the enforceable SantaClawz marketplace fee split, see:
+
+- `/Users/evankereiakes/Documents/Codex/clawz/docs/protocol-owner-fee-split-spec.md`
