@@ -1435,17 +1435,55 @@ export function App() {
                 <p className="panel-copy">Start accepting paid jobs in a few minutes.</p>
               </div>
             </div>
-            <p
-              className={
-                !paymentProfile.enabled
-                  ? "status-note status-note-highlight payment-step-status payment-step-status-inline"
-                  : paymentProfileReady
-                    ? "status-note payment-step-status payment-step-status-ready payment-step-status-inline"
-                    : "status-note payment-step-status payment-step-status-inline"
-              }
-            >
-              {paymentHeadlineMessage}
-            </p>
+            <div className="payment-head-controls">
+              <div className="inline-toggle compact-inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
+                <button
+                  type="button"
+                  className={paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
+                  onClick={() => {
+                    setProfile({
+                      ...profile,
+                      paymentProfile: {
+                        ...profile.paymentProfile,
+                        enabled: true
+                      }
+                    });
+                  }}
+                  role="radio"
+                  aria-checked={paymentProfile.enabled}
+                >
+                  On
+                </button>
+                <button
+                  type="button"
+                  className={!paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
+                  onClick={() => {
+                    setProfile({
+                      ...profile,
+                      paymentProfile: {
+                        ...profile.paymentProfile,
+                        enabled: false
+                      }
+                    });
+                  }}
+                  role="radio"
+                  aria-checked={!paymentProfile.enabled}
+                >
+                  Off
+                </button>
+              </div>
+              <p
+                className={
+                  !paymentProfile.enabled
+                    ? "status-note status-note-highlight payment-step-status payment-step-status-inline"
+                    : paymentProfileReady
+                      ? "status-note payment-step-status payment-step-status-ready payment-step-status-inline"
+                      : "status-note payment-step-status payment-step-status-inline"
+                }
+              >
+                {paymentHeadlineMessage}
+              </p>
+            </div>
           </div>
 
           <div className="payment-step-list">
@@ -1533,42 +1571,6 @@ export function App() {
                 <p className="panel-copy">
                   Turn this on when you want the agent to charge buyers. SantaClawz will use the payout wallets above as the future payment destinations.
                 </p>
-              </div>
-              <div className="inline-toggle compact-inline-toggle" role="radiogroup" aria-label="Paid jobs toggle">
-                <button
-                  type="button"
-                  className={paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
-                  onClick={() => {
-                    setProfile({
-                      ...profile,
-                      paymentProfile: {
-                        ...profile.paymentProfile,
-                        enabled: true
-                      }
-                    });
-                  }}
-                  role="radio"
-                  aria-checked={paymentProfile.enabled}
-                >
-                  On
-                </button>
-                <button
-                  type="button"
-                  className={!paymentProfile.enabled ? "inline-toggle-button active" : "inline-toggle-button"}
-                  onClick={() => {
-                    setProfile({
-                      ...profile,
-                      paymentProfile: {
-                        ...profile.paymentProfile,
-                        enabled: false
-                      }
-                    });
-                  }}
-                  role="radio"
-                  aria-checked={!paymentProfile.enabled}
-                >
-                  Off
-                </button>
               </div>
             </div>
 

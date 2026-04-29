@@ -454,8 +454,15 @@ pre,
   margin-top: 14px;
 }
 
+.payment-head-controls {
+  display: grid;
+  justify-items: end;
+  gap: 10px;
+  flex: 0 1 34rem;
+}
+
 .payment-step-status-inline {
-  max-width: min(34rem, 48%);
+  max-width: 100%;
   margin-top: 0;
 }
 
@@ -1677,6 +1684,11 @@ button:disabled {
   .wallet-status-inline {
     max-width: 100%;
     width: 100%;
+  }
+
+  .payment-head-controls {
+    width: 100%;
+    justify-items: stretch;
   }
 
   .payment-compact-grid-three,
