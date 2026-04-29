@@ -174,6 +174,10 @@ export interface AgentSocialClaim {
     anchorField?: string;
     contractAddress?: string;
     txHash?: string;
+    submitFeeRaw?: string;
+    submitFee?: string;
+    submitFeeSource?: string;
+    submitAttemptCount?: number;
   }>;
   claimDigest: CanonicalDigest;
 }

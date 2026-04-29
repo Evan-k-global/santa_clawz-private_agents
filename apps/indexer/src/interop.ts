@@ -637,7 +637,11 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
       settledAtIso: batch.settledAtIso,
       ...(batch.anchorField ? { anchorField: batch.anchorField } : {}),
       ...(batch.contractAddress ? { contractAddress: batch.contractAddress } : {}),
-      ...(batch.txHash ? { txHash: batch.txHash } : {})
+      ...(batch.txHash ? { txHash: batch.txHash } : {}),
+      ...(batch.submitFeeRaw ? { submitFeeRaw: batch.submitFeeRaw } : {}),
+      ...(batch.submitFee ? { submitFee: batch.submitFee } : {}),
+      ...(batch.submitFeeSource ? { submitFeeSource: batch.submitFeeSource } : {}),
+      ...(typeof batch.submitAttemptCount === "number" ? { submitAttemptCount: batch.submitAttemptCount } : {})
     }))
   };
   const social = {

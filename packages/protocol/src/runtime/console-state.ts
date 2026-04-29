@@ -345,6 +345,10 @@ export interface SocialAnchorBatch {
   anchorField?: string;
   contractAddress?: string;
   txHash?: string;
+  submitFeeRaw?: string;
+  submitFee?: string;
+  submitFeeSource?: string;
+  submitAttemptCount?: number;
   operatorNote?: string;
 }
 

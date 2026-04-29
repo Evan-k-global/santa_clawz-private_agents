@@ -1122,6 +1122,16 @@ export class ClawzControlPlane {
     rootDigestSha256: string;
     deployment: Pick<ZekoDeploymentState, "networkId" | "graphqlEndpoint" | "archiveEndpoint" | "contracts">;
   }) {
+    const parsePositiveIntegerEnv = (value: string | undefined, maximum: number) => {
+      if (typeof value !== "string" || value.trim().length === 0) {
+        return undefined;
+      }
+      const parsed = Number.parseInt(value.trim(), 10);
+      if (!Number.isFinite(parsed) || parsed <= 0) {
+        return undefined;
+      }
+      return Math.min(parsed, maximum);
+    };
     const submitterPrivateKey =
       (typeof process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY === "string" &&
       process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY.trim().length > 0
@@ -1162,6 +1172,15 @@ export class ClawzControlPlane {
       archive: options.deployment.archiveEndpoint,
       ...(typeof process.env.TX_FEE === "string" && process.env.TX_FEE.trim().length > 0
         ? { fee: process.env.TX_FEE.trim() }
+        : {}),
+      ...(parsePositiveIntegerEnv(process.env.CLAWZ_SOCIAL_ANCHOR_MAX_SEND_ATTEMPTS, 5)
+        ? { maxAttempts: parsePositiveIntegerEnv(process.env.CLAWZ_SOCIAL_ANCHOR_MAX_SEND_ATTEMPTS, 5)! }
+        : {}),
+      ...(parsePositiveIntegerEnv(process.env.CLAWZ_SOCIAL_ANCHOR_RETRY_DELAY_MS, 30_000)
+        ? { retryDelayMs: parsePositiveIntegerEnv(process.env.CLAWZ_SOCIAL_ANCHOR_RETRY_DELAY_MS, 30_000)! }
+        : {}),
+      ...(parsePositiveIntegerEnv(process.env.CLAWZ_SOCIAL_ANCHOR_CONFIRMATION_WAIT_MS, 60_000)
+        ? { confirmationWaitMs: parsePositiveIntegerEnv(process.env.CLAWZ_SOCIAL_ANCHOR_CONFIRMATION_WAIT_MS, 60_000)! }
         : {})
     });
   }
@@ -3426,6 +3445,10 @@ export class ClawzControlPlane {
       settledAtIso,
       anchorField: chainResult?.anchorField ?? localAnchorField,
       ...(chainResult?.contractAddress ? { contractAddress: chainResult.contractAddress } : {}),
+      ...(chainResult?.submitFeeRaw ? { submitFeeRaw: chainResult.submitFeeRaw } : {}),
+      ...(chainResult?.submitFee ? { submitFee: chainResult.submitFee } : {}),
+      ...(chainResult?.submitFeeSource ? { submitFeeSource: chainResult.submitFeeSource } : {}),
+      ...(typeof chainResult?.attemptCount === "number" ? { submitAttemptCount: chainResult.attemptCount } : {}),
       ...(chainResult?.txHash
         ? { txHash: chainResult.txHash }
         : typeof options.txHash === "string" && options.txHash.trim().length > 0
