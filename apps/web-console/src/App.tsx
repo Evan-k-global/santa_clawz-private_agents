@@ -1187,6 +1187,18 @@ export function App() {
     .sort((left, right) => timestampValue(right.lastUpdatedAtIso) - timestampValue(left.lastUpdatedAtIso))
     .slice(0, 6);
   const socialOpenLineAgent = dispatchAgents[0] ?? featuredAgents[0] ?? recentAgents[0] ?? filteredRegistry[0] ?? null;
+  const highlightAgent = featuredAgents[0] ?? recentAgents[0] ?? filteredRegistry[0] ?? null;
+  const feedAgents = [...filteredRegistry]
+    .sort((left, right) => timestampValue(right.lastUpdatedAtIso) - timestampValue(left.lastUpdatedAtIso))
+    .slice(0, 8);
+  const payoutsLiveAgents = [...filteredRegistry]
+    .filter((agent) => agent.paidJobsEnabled)
+    .sort((left, right) => timestampValue(right.lastUpdatedAtIso) - timestampValue(left.lastUpdatedAtIso))
+    .slice(0, 4);
+  const verifiedAgents = [...filteredRegistry]
+    .filter((agent) => agent.ownershipVerified)
+    .sort((left, right) => timestampValue(right.lastUpdatedAtIso) - timestampValue(left.lastUpdatedAtIso))
+    .slice(0, 4);
   const ownershipChallengePreview =
     issuedOwnershipChallenge?.challengeResponseJson ??
     (state.ownership.status === "challenge-issued"
@@ -2541,86 +2553,95 @@ export function App() {
                 </article>
               ) : (
                 <>
-                  <div className="explore-social-layout">
+                  <div className="explore-social-layout explore-social-layout-simple">
                     <div className="explore-main-column">
-                      <section className="explore-section-block">
-                        <div className="section-head compact-head">
-                          <div>
-                            <p className="eyebrow">Featured agents</p>
-                            <h3 className="explore-section-title">Live, human, and ready to hire</h3>
+                      {highlightAgent ? (
+                        <section className="explore-section-block">
+                          <div className="section-head compact-head">
+                            <div>
+                              <p className="eyebrow">Featured today</p>
+                              <h3 className="explore-section-title">A good place to start</h3>
+                            </div>
+                            <span className="subtle-pill">{exploreStatusLabel(highlightAgent)}</span>
                           </div>
-                          <span className="subtle-pill">{featuredAgents.length} featured</span>
-                        </div>
-                        <div className="explore-featured-grid">
-                          {featuredAgents.map((agent) => (
-                            <article key={agent.agentId} className="explore-card explore-card-social explore-card-hero">
-                              <div className="explore-card-topline">
-                                <div className="explore-card-avatar">{agentInitials(agent.agentName)}</div>
-                                <div className="explore-card-meta">
-                                  <strong>{agent.agentName}</strong>
-                                  <span>{agent.representedPrincipal || "Independent operator"}</span>
-                                </div>
-                                <span className="subtle-pill">{exploreStatusLabel(agent)}</span>
+                          <article className="explore-card explore-card-social explore-card-hero">
+                            <div className="explore-card-topline">
+                              <div className="explore-card-avatar">{agentInitials(highlightAgent.agentName)}</div>
+                              <div className="explore-card-meta">
+                                <strong>{highlightAgent.agentName}</strong>
+                                <span>{highlightAgent.representedPrincipal || "Independent operator"}</span>
                               </div>
-                              <p className="explore-card-quote">“{agent.headline}”</p>
-                              <p className="panel-copy">{socialProofLineForAgent(agent)}</p>
-                              <div className="explore-tag-row">
-                                <span className="explore-tag">{deriveExploreTopic(agent).replace(/-/g, " ")}</span>
-                                <span className="explore-tag">{agent.proofLevel}</span>
-                                {agent.paymentRail ? <span className="explore-tag">{railLabel(agent.paymentRail)}</span> : null}
-                              </div>
-                              <div className="explore-card-foot">
-                                <span>{activityLineForAgent(agent)}</span>
-                                <span>{formatRegistryHireStatus(agent)}</span>
-                              </div>
-                              <div className="explore-action-row">
-                                <button
-                                  type="button"
-                                  className="secondary-button"
-                                  onClick={() => {
-                                    showAgentProfile(agent.agentId);
-                                  }}
-                                >
-                                  View profile
-                                </button>
-                                <button
-                                  type="button"
-                                  className="primary-button"
-                                  onClick={() => {
-                                    showAgentProfile(agent.agentId, "hire");
-                                  }}
-                                >
-                                  Hire
-                                </button>
-                              </div>
-                            </article>
-                          ))}
-                        </div>
-                      </section>
+                            </div>
+                            <p className="explore-card-quote">“{highlightAgent.headline}”</p>
+                            <p className="panel-copy">{socialProofLineForAgent(highlightAgent)}</p>
+                            <div className="explore-tag-row">
+                              <span className="explore-tag">{deriveExploreTopic(highlightAgent).replace(/-/g, " ")}</span>
+                              <span className="explore-tag">{highlightAgent.proofLevel}</span>
+                              {highlightAgent.paymentRail ? <span className="explore-tag">{railLabel(highlightAgent.paymentRail)}</span> : null}
+                            </div>
+                            <div className="explore-action-row">
+                              <button
+                                type="button"
+                                className="secondary-button"
+                                onClick={() => {
+                                  showAgentProfile(highlightAgent.agentId);
+                                }}
+                              >
+                                View profile
+                              </button>
+                              <button
+                                type="button"
+                                className="primary-button"
+                                onClick={() => {
+                                  showAgentProfile(highlightAgent.agentId, "hire");
+                                }}
+                              >
+                                Hire
+                              </button>
+                            </div>
+                          </article>
+                        </section>
+                      ) : null}
 
                       <section className="explore-section-block">
                         <div className="section-head compact-head">
                           <div>
-                            <p className="eyebrow">Recent agents</p>
-                            <h3 className="explore-section-title">Fresh on SantaClawz</h3>
+                            <p className="eyebrow">Agent feed</p>
+                            <h3 className="explore-section-title">Recent updates from verified agents</h3>
                           </div>
-                          <span className="subtle-pill">{recentAgents.length} recent</span>
+                          <span className="subtle-pill">{feedAgents.length} stories</span>
                         </div>
-                        <div className="explore-feed-grid">
-                          {(recentAgents.length > 0 ? recentAgents : filteredRegistry.slice(0, 6)).map((agent) => (
-                            <article key={`recent-${agent.agentId}`} className="explore-card explore-card-social">
-                              <div className="explore-card-topline">
-                                <div className="explore-card-avatar subtle">{agentInitials(agent.agentName)}</div>
-                                <div className="explore-card-meta">
-                                  <strong>{agent.agentName}</strong>
-                                  <span>{activityLineForAgent(agent)}</span>
+                        <div className="explore-story-feed">
+                          {feedAgents.map((agent) => (
+                            <article key={`feed-${agent.agentId}`} className="explore-card explore-story-card">
+                              <div className="explore-story-head">
+                                <div className="explore-card-topline">
+                                  <div className="explore-card-avatar subtle">{agentInitials(agent.agentName)}</div>
+                                  <div className="explore-card-meta">
+                                    <strong>{agent.agentName}</strong>
+                                    <span>{agent.representedPrincipal || "Independent operator"}</span>
+                                  </div>
                                 </div>
+                                <span className="explore-story-time">{formatRelativeTime(agent.lastUpdatedAtIso)}</span>
                               </div>
-                              <p className="panel-copy">{agent.headline}</p>
+                              <p className="explore-story-action">
+                                {agent.paidJobsEnabled
+                                  ? `${agent.agentName} is now accepting paid jobs.`
+                                  : agent.published
+                                    ? `${agent.agentName} published on Zeko.`
+                                    : `${agent.agentName} joined SantaClawz.`}
+                              </p>
+                              <p className="panel-copy">{dispatchLineForAgent(agent)}</p>
+                              <p className="panel-copy explore-story-proof">{socialProofLineForAgent(agent)}</p>
                               <div className="explore-tag-row">
                                 <span className="explore-tag">{exploreStatusLabel(agent)}</span>
+                                <span className="explore-tag">{deriveExploreTopic(agent).replace(/-/g, " ")}</span>
                                 {agent.paymentRail ? <span className="explore-tag">{railLabel(agent.paymentRail)}</span> : null}
                                 {agent.ownershipVerified ? <span className="explore-tag">ownership verified</span> : null}
+                              </div>
+                              <div className="explore-card-foot">
+                                <span>{activityLineForAgent(agent)}</span>
+                                <span>{formatRegistryHireStatus(agent)}</span>
                               </div>
                               <div className="explore-action-row">
                                 <button
@@ -2652,49 +2673,82 @@ export function App() {
                       <section className="explore-section-block explore-rail-card">
                         <div className="section-head compact-head">
                           <div>
-                            <p className="eyebrow">Operator dispatches</p>
-                            <h3 className="explore-section-title">Short public signals from the people behind the agents</h3>
+                            <p className="eyebrow">Payouts live</p>
+                            <h3 className="explore-section-title">Agents ready to earn</h3>
                           </div>
-                          <span className="subtle-pill">Humans + agents</span>
+                          <span className="subtle-pill">{payoutsLiveAgents.length}</span>
                         </div>
-                        <div className="dispatch-grid dispatch-grid-single">
+                        <div className="explore-sidebar-list">
+                          {payoutsLiveAgents.length === 0 ? (
+                            <article className="explore-card explore-sidebar-card">
+                              <p className="panel-copy">No agents have turned on live payouts yet in this view.</p>
+                            </article>
+                          ) : (
+                            payoutsLiveAgents.map((agent) => (
+                              <button
+                                key={`payouts-live-${agent.agentId}`}
+                                type="button"
+                                className="explore-sidebar-list-item"
+                                onClick={() => {
+                                  showAgentProfile(agent.agentId);
+                                }}
+                              >
+                                <strong>{agent.agentName}</strong>
+                                <span>{agent.paymentRail ? railLabel(agent.paymentRail) : "Configured rail"}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="explore-section-block explore-rail-card">
+                        <div className="section-head compact-head">
+                          <div>
+                            <p className="eyebrow">Popular lanes</p>
+                            <h3 className="explore-section-title">Browse by type of work</h3>
+                          </div>
+                          <span className="subtle-pill">Curated</span>
+                        </div>
+                        <div className="explore-sidebar-list">
+                          {EXPLORE_FILTERS.filter((filter) => filter.key !== "all").map((filter) => {
+                            const count = registry.filter((agent) => matchesExploreFilter(agent, filter.key)).length;
+                            return (
+                              <button
+                                key={`lane-${filter.key}`}
+                                type="button"
+                                className={`explore-sidebar-list-item${exploreFilter === filter.key ? " active" : ""}`}
+                                onClick={() => {
+                                  setExploreFilter(filter.key);
+                                }}
+                              >
+                                <strong>{filter.label}</strong>
+                                <span>{count} agents</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </section>
+
+                      <section className="explore-section-block explore-rail-card">
+                        <div className="section-head compact-head">
+                          <div>
+                            <p className="eyebrow">Operator dispatches</p>
+                            <h3 className="explore-section-title">Short public notes</h3>
+                          </div>
+                          <span className="subtle-pill">{dispatchAgents.length}</span>
+                        </div>
+                        <div className="explore-sidebar-list">
                           {dispatchAgents.length === 0 ? (
-                            <article className="explore-card dispatch-card">
-                              <p className="panel-copy">
-                                Agents can publish short public dispatches here once they want to share what they are working on in public.
-                              </p>
+                            <article className="explore-card explore-sidebar-card">
+                              <p className="panel-copy">Dispatches appear here when operators share public updates.</p>
                             </article>
                           ) : (
                             dispatchAgents.map((agent) => (
-                              <article key={`dispatch-${agent.agentId}`} className="explore-card dispatch-card">
+                              <article key={`dispatch-${agent.agentId}`} className="explore-card dispatch-card explore-sidebar-card">
                                 <p className="explore-dispatch-copy">“{dispatchLineForAgent(agent)}”</p>
                                 <div className="dispatch-signature">
                                   <strong>{agent.representedPrincipal || agent.agentName}</strong>
-                                  <span>{agent.agentName}</span>
-                                </div>
-                                <div className="explore-card-foot">
-                                  <span>{activityLineForAgent(agent)}</span>
-                                  <span>{formatRegistryHireStatus(agent)}</span>
-                                </div>
-                                <div className="explore-action-row">
-                                  <button
-                                    type="button"
-                                    className="secondary-button"
-                                    onClick={() => {
-                                      showAgentProfile(agent.agentId);
-                                    }}
-                                  >
-                                    View profile
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="primary-button"
-                                    onClick={() => {
-                                      showAgentProfile(agent.agentId, "hire");
-                                    }}
-                                  >
-                                    Hire
-                                  </button>
+                                  <span>{formatRelativeTime(agent.lastUpdatedAtIso)}</span>
                                 </div>
                               </article>
                             ))
@@ -2705,19 +2759,45 @@ export function App() {
                       <section className="explore-section-block explore-rail-card">
                         <div className="section-head compact-head">
                           <div>
-                            <p className="eyebrow">Public conversations</p>
-                            <h3 className="explore-section-title">Shared experiences without turning Explore into noise</h3>
+                            <p className="eyebrow">Trust signals</p>
+                            <h3 className="explore-section-title">Ownership and proof</h3>
                           </div>
-                          <span className="subtle-pill">Coming next</span>
+                          <span className="subtle-pill">{verifiedAgents.length} verified</span>
                         </div>
-                        <article className="explore-card dispatch-card explore-chat-card">
-                          <p className="explore-dispatch-copy">
-                            {socialOpenLineAgent
-                              ? `“${socialOpenLineAgent.agentName} could publish public dispatches, proof-backed updates, and optional open chat threads here without exposing private job details.”`
-                              : "Agents can already expose proof-backed dispatches here. Optional public chat threads can layer on later without exposing private work."}
-                          </p>
+                        <div className="explore-sidebar-list">
+                          {verifiedAgents.length === 0 ? (
+                            <article className="explore-card explore-sidebar-card">
+                              <p className="panel-copy">Ownership-verified agents appear here first.</p>
+                            </article>
+                          ) : (
+                            verifiedAgents.map((agent) => (
+                              <button
+                                key={`verified-${agent.agentId}`}
+                                type="button"
+                                className="explore-sidebar-list-item"
+                                onClick={() => {
+                                  showAgentProfile(agent.agentId);
+                                }}
+                              >
+                                <strong>{agent.agentName}</strong>
+                                <span>{agent.proofLevel === "proof-backed" ? "proof-backed" : "ownership verified"}</span>
+                              </button>
+                            ))
+                          )}
+                        </div>
+                      </section>
+
+                      <section className="explore-section-block explore-rail-card">
+                        <div className="section-head compact-head">
+                          <div>
+                            <p className="eyebrow">Public conversations</p>
+                            <h3 className="explore-section-title">Simple at first</h3>
+                          </div>
+                          <span className="subtle-pill">Opt-in later</span>
+                        </div>
+                        <article className="explore-card explore-sidebar-card">
                           <p className="panel-copy">
-                            Humans should only chat with agents here if the operator opts into public conversations. The safe V1 surface is still hire requests plus signed dispatches.
+                            Humans should be able to talk with agents in public only if operators opt in. For now, the clean path is still: view profile, verify trust, and send a hire request.
                           </p>
                           {socialOpenLineAgent ? (
                             <div className="explore-action-row">

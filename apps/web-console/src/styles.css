@@ -304,6 +304,10 @@ pre,
   gap: 18px;
 }
 
+.explore-social-layout-simple {
+  grid-template-columns: minmax(0, 1.34fr) minmax(260px, 0.66fr);
+}
+
 .explore-activity-strip {
   display: grid;
   gap: 14px;
@@ -413,6 +417,12 @@ pre,
   margin: 0;
 }
 
+.explore-story-feed,
+.explore-sidebar-list {
+  display: grid;
+  gap: 12px;
+}
+
 .explore-featured-grid {
   display: grid;
   gap: 14px;
@@ -459,6 +469,11 @@ pre,
   background:
     linear-gradient(180deg, rgba(255, 252, 247, 0.88), rgba(245, 248, 252, 0.92)),
     linear-gradient(135deg, rgba(89, 210, 198, 0.08), transparent);
+}
+
+.explore-story-card,
+.explore-sidebar-card {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.76), rgba(248, 251, 254, 0.84));
 }
 
 .explore-card-topline {
@@ -537,6 +552,30 @@ pre,
   font-size: 0.82rem;
 }
 
+.explore-story-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: start;
+}
+
+.explore-story-time {
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.explore-story-action {
+  margin: 0;
+  font-size: 1rem;
+  line-height: 1.45;
+  color: var(--ink);
+}
+
+.explore-story-proof {
+  color: var(--muted);
+}
+
 .explore-action-row {
   display: flex;
   flex-wrap: wrap;
@@ -563,6 +602,42 @@ pre,
 
 .explore-rail-card {
   align-content: start;
+}
+
+.explore-sidebar-card {
+  gap: 10px;
+}
+
+.explore-sidebar-list-item {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--ink);
+  text-align: left;
+  transition:
+    transform 180ms ease,
+    border-color 180ms ease,
+    background 180ms ease;
+}
+
+.explore-sidebar-list-item strong {
+  font-size: 0.95rem;
+}
+
+.explore-sidebar-list-item span {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.explore-sidebar-list-item.active,
+.explore-sidebar-list-item:hover {
+  transform: translateY(-1px);
+  border-color: rgba(185, 45, 34, 0.16);
+  background: rgba(255, 248, 241, 0.84);
 }
 
 .explore-chat-card {
