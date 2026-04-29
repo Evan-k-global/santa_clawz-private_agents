@@ -1455,9 +1455,11 @@ export function App() {
                 <strong>Payout wallets</strong>
                 <p className="panel-copy">Add where you want to receive payments.</p>
               </div>
-              <p className={configuredPayoutWallets.length > 0 ? "status-note status-note-compact wallet-status-note wallet-status-inline" : "status-note status-note-highlight status-note-compact wallet-status-note wallet-status-inline"}>
-                {configuredPayoutWallets.length > 0 ? "Wallets ready for payouts." : "No payout wallets configured yet."}
-              </p>
+              {configuredPayoutWallets.length > 0 ? (
+                <p className="status-note status-note-compact wallet-status-note wallet-status-inline">
+                  Wallets ready for payouts.
+                </p>
+              ) : null}
             </div>
             <div className="payment-subcard-body">
               {configuredPayoutWallets.length > 0 ? (
