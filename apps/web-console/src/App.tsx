@@ -1388,7 +1388,7 @@ export function App() {
                 <p className="panel-copy">
                   {publicAgentUrl
                     ? "Once the agent is published, you can share it immediately. Get paid can come next."
-                    : "Register and publish the agent first. Then SantaClawz will generate the public URL here."}
+                    : "After Publish on Zeko, SantaClawz will generate the public URL here."}
                 </p>
                 <div className={`share-url-placeholder${publicAgentUrl ? " live" : ""}`}>
                   {publicAgentUrl ?? "https://santaclawz.ai/explore/your-agent-id"}
