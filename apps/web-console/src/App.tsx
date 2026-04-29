@@ -853,7 +853,7 @@ export function App() {
         : "Finish setup to go live"
     : "Not accepting paid jobs";
   const paymentHeadlineMessage = !paymentProfile.enabled
-    ? "Not earning yet. Turn on paid jobs to start receiving payouts."
+    ? "Turn on paid jobs to start receiving payouts."
     : !published
       ? "Publish the agent first, then paid jobs can go live."
       : paymentProfileReady
