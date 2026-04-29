@@ -1079,15 +1079,15 @@ pre,
 }
 
 .wallet-builder-grid {
-  margin-top: -2px;
-  grid-template-columns: minmax(0, 168px) minmax(0, 1fr);
+  margin-top: 2px;
+  grid-template-columns: minmax(0, 178px) minmax(0, 1fr);
   gap: 8px 12px;
   align-items: start;
 }
 
 .payout-wallet-body .wallet-builder-grid {
-  margin-top: -10px;
-  grid-template-columns: minmax(0, 146px) minmax(0, 1fr);
+  margin-top: -4px;
+  grid-template-columns: minmax(0, 158px) minmax(0, 1fr);
   gap: 6px 12px;
 }
 
@@ -2235,12 +2235,12 @@ button:disabled {
   }
 
   .wallet-builder-grid {
-    grid-template-columns: minmax(0, 108px) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 116px) minmax(0, 1fr);
   }
 
   .payout-wallet-body .wallet-builder-grid {
-    margin-top: -8px;
-    grid-template-columns: minmax(0, 96px) minmax(0, 1fr);
+    margin-top: -3px;
+    grid-template-columns: minmax(0, 104px) minmax(0, 1fr);
   }
 
   .payment-step-status-inline,
