@@ -1305,7 +1305,7 @@ export function App() {
                 <strong>Prepare sponsored publish</strong>
                 <p className="panel-copy">
                   {!isRegisteredSession
-                    ? "Register the agent first. This step prepares sponsor balance and recovery so publish can succeed."
+                    ? "This step prepares sponsor balance and recovery so publish can succeed."
                     : "SantaClawz funds sponsor balance and seals recovery so publish can succeed."}
                 </p>
               </div>
