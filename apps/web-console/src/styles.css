@@ -1864,6 +1864,11 @@ h3 {
   background: rgba(255, 255, 255, 0.58);
 }
 
+.facilitator-inline-copy {
+  font-size: 0.96rem;
+  line-height: 1.5;
+}
+
 .payment-status-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -2205,6 +2210,10 @@ button:disabled {
     justify-items: end;
   }
 
+  .facilitator-inline-copy {
+    font-size: 0.92rem;
+  }
+
   .explore-card-topline,
   .explore-card-foot,
   .explore-action-row {
@@ -2281,6 +2290,11 @@ button:disabled {
   .masthead-copyline {
     font-size: 0.97rem;
   }
+
+  .facilitator-inline-copy {
+    font-size: 0.9rem;
+    line-height: 1.45;
+  }
 }
 
 @media (max-width: 1199px) and (min-width: 960px) {
@@ -2290,6 +2304,11 @@ button:disabled {
 
   .masthead-copyline {
     font-size: 0.95rem;
+  }
+
+  .facilitator-inline-copy {
+    font-size: 0.88rem;
+    line-height: 1.45;
   }
 }
 

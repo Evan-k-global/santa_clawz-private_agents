@@ -2075,7 +2075,7 @@ export function App() {
                       </div>
 
                       <div className="facilitator-inline">
-                        <p className="panel-copy">
+                        <p className="panel-copy facilitator-inline-copy">
                           Bring your own x402 payment processor. Paste the public payment URL for each rail you want to turn on.
                         </p>
                         <div className="facilitator-actions">
