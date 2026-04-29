@@ -1938,7 +1938,7 @@ export function App() {
                     </p>
                   ) : null}
                 </div>
-                <div className="payment-subcard-body">
+                <div className="payment-subcard-body payout-wallet-body">
                   {configuredPayoutWallets.length > 0 ? (
                     <div className="wallet-chip-list">
                       {configuredPayoutWallets.map(([walletKey, walletValue]) => (
