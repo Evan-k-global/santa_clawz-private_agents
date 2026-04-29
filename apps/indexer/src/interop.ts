@@ -152,7 +152,7 @@ function buildProofCapabilityManifest(consoleState: ConsoleStateResponse): Capab
       },
       output: {
         protocol: "clawz-agent-proof",
-        claims: ["representation", "authority", "payment", "privacy", "origin"]
+        claims: ["representation", "ownership", "authority", "payment", "privacy", "origin"]
       }
     }).sha256Hex,
     trustClass: activeMode.proofLevel === "proof-backed" ? "high-assurance" : activeMode.proofLevel === "rooted" ? "audited" : "standard",
@@ -354,8 +354,8 @@ export function buildDiscoveryDocument(input: Omit<InteropBuildInput, "sessionVi
       privacyExceptions: `${input.baseUrl}/api/privacy-exceptions?${sessionQuery}`
     },
     answersQuestion:
-      "ClawZ publishes a deterministic proof bundle plus a live Zeko deployment surface that binds represented principal, allowed action boundary, payment rail, privacy policy, proving location, and remote-origin provenance into reproducible digests another agent can verify.",
-    proofClaims: ["representation", "authority", "payment", "privacy", "origin"],
+      "ClawZ publishes a deterministic proof bundle plus a live Zeko deployment surface that binds represented principal, verified OpenClaw runtime control, allowed action boundary, payment rail, privacy policy, proving location, and remote-origin provenance into reproducible digests another agent can verify.",
+    proofClaims: ["representation", "ownership", "authority", "payment", "privacy", "origin"],
     programmablePrivacy,
     capabilities: [
       {
@@ -441,6 +441,43 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
   const representation = {
     ...representationWithoutDigest,
     claimDigest: canonicalDigest(representationWithoutDigest)
+  };
+
+  const ownershipWithoutDigest = {
+    openClawUrl: profile.openClawUrl,
+    ownershipStatus: input.consoleState.ownership.status,
+    legacyRegistration: input.consoleState.ownership.legacyRegistration,
+    canReclaim: input.consoleState.ownership.canReclaim,
+    challengePath: input.consoleState.ownership.challenge?.challengePath ?? "/.well-known/santaclawz-agent-challenge.json",
+    ...(input.consoleState.ownership.verification?.verificationMethod
+      ? { verificationMethod: input.consoleState.ownership.verification.verificationMethod }
+      : {}),
+    ...(input.consoleState.ownership.verification?.challengeId
+      ? { challengeId: input.consoleState.ownership.verification.challengeId }
+      : input.consoleState.ownership.challenge?.challengeId
+        ? { challengeId: input.consoleState.ownership.challenge.challengeId }
+        : {}),
+    ...(input.consoleState.ownership.verification?.challengeUrl
+      ? { challengeUrl: input.consoleState.ownership.verification.challengeUrl }
+      : input.consoleState.ownership.challenge?.challengeUrl
+        ? { challengeUrl: input.consoleState.ownership.challenge.challengeUrl }
+        : {}),
+    ...(input.consoleState.ownership.verification?.verifiedAtIso
+      ? { verifiedAtIso: input.consoleState.ownership.verification.verifiedAtIso }
+      : {}),
+    ...(input.consoleState.ownership.verification?.challengeResponseDigestSha256
+      ? { challengeResponseDigestSha256: input.consoleState.ownership.verification.challengeResponseDigestSha256 }
+      : {}),
+    ...(input.consoleState.ownership.verification?.attestationDigestSha256
+      ? { attestationDigestSha256: input.consoleState.ownership.verification.attestationDigestSha256 }
+      : {}),
+    ...(input.consoleState.ownership.verification?.reclaimedAtIso
+      ? { reclaimedAtIso: input.consoleState.ownership.verification.reclaimedAtIso }
+      : {})
+  };
+  const ownership = {
+    ...ownershipWithoutDigest,
+    claimDigest: canonicalDigest(ownershipWithoutDigest)
   };
 
   const allowedActions = buildAllowedActions(input.consoleState);
@@ -651,6 +688,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
     network: discovery.network,
     discoveryUrl: discovery.endpoints.discovery,
     representation,
+    ownership,
     authority,
     payment,
     privacy,

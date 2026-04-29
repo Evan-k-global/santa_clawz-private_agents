@@ -114,6 +114,10 @@ type ProfileRequestBody = {
   preferredProvingLocation?: unknown;
   sessionId?: unknown;
 };
+type OwnershipActionRequestBody = {
+  sessionId?: unknown;
+  agentId?: unknown;
+};
 type HireRequestBody = {
   taskPrompt?: unknown;
   budgetMina?: unknown;
@@ -278,6 +282,15 @@ function parseProfileRequest(body: unknown): ProfileRequestBody {
           preferredProvingLocation: body.preferredProvingLocation,
           sessionId: body.sessionId
         }
+    : {};
+}
+
+function parseOwnershipActionRequest(body: unknown): OwnershipActionRequestBody {
+  return isRecord(body)
+    ? {
+        sessionId: body.sessionId,
+        agentId: body.agentId
+      }
     : {};
 }
 
@@ -1227,6 +1240,68 @@ app.post("/api/console/profile", route(async (request, response) => {
     ...(preferredProvingLocation ? { preferredProvingLocation } : {})
   };
   response.json(await controlPlane.updateAgentProfile(sessionId, profile, adminKeyHeader(request)));
+}));
+
+app.post("/api/ownership/challenge", route(async (request, response) => {
+  const body = parseOwnershipActionRequest(request.body ?? null);
+  try {
+    const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+    const agentId = optionalString(body.agentId) ?? queryString(request.query, "agentId");
+    const adminKey = adminKeyHeader(request);
+    const result = await controlPlane.issueOwnershipChallenge({
+      ...(sessionId ? { sessionId } : {}),
+      ...(agentId ? { agentId } : {}),
+      ...(adminKey ? { adminKey } : {})
+    });
+    response.json({
+      ...result.state,
+      issuedOwnershipChallenge: result.issuedOwnershipChallenge
+    });
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to issue ownership challenge."
+    });
+  }
+}));
+
+app.post("/api/ownership/verify", route(async (request, response) => {
+  const body = parseOwnershipActionRequest(request.body ?? null);
+  try {
+    const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+    const agentId = optionalString(body.agentId) ?? queryString(request.query, "agentId");
+    const adminKey = adminKeyHeader(request);
+    response.json(
+      await controlPlane.verifyOwnershipChallenge({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(adminKey ? { adminKey } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to verify ownership challenge."
+    });
+  }
+}));
+
+app.post("/api/ownership/reclaim", route(async (request, response) => {
+  const body = parseOwnershipActionRequest(request.body ?? null);
+  try {
+    const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+    const agentId = optionalString(body.agentId) ?? queryString(request.query, "agentId");
+    const adminKey = adminKeyHeader(request);
+    response.json(
+      await controlPlane.verifyOwnershipChallenge({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(adminKey ? { adminKey } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to reclaim agent ownership."
+    });
+  }
 }));
 
 app.post("/api/agents/:agentId/hire", route(async (request, response) => {

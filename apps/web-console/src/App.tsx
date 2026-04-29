@@ -13,13 +13,16 @@ import {
   fetchConsoleState,
   getStoredAdminKey,
   getApiBase,
+  issueOwnershipChallenge,
+  type OwnershipChallengeIssueResponse,
   prepareRecoveryKit,
   registerAgent,
   runLiveSessionTurnFlow,
   storeAdminKey,
   sponsorWallet,
   submitHireRequest,
-  updateAgentProfile
+  updateAgentProfile,
+  verifyOwnershipChallenge
 } from "./api.js";
 
 type AgentProfileDraft = AgentProfileState;
@@ -30,6 +33,7 @@ type HireDraft = {
 };
 type RegistrationMethod = "browser" | "cli";
 type PayoutWalletKey = "zeko" | "base" | "ethereum";
+type IssuedOwnershipChallenge = OwnershipChallengeIssueResponse["issuedOwnershipChallenge"];
 
 type ValueInputEvent = { target: { value: string } };
 
@@ -415,6 +419,7 @@ export function App() {
   const [selectedPayoutWalletKey, setSelectedPayoutWalletKey] = useState<PayoutWalletKey>("base");
   const [draftPayoutWalletValue, setDraftPayoutWalletValue] = useState("");
   const [adminKeyDraft, setAdminKeyDraft] = useState("");
+  const [issuedOwnershipChallenge, setIssuedOwnershipChallenge] = useState<IssuedOwnershipChallenge | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -576,6 +581,10 @@ export function App() {
   }, [adminKeyDraft, state]);
 
   useEffect(() => {
+    setIssuedOwnershipChallenge(null);
+  }, [state?.session.sessionId, sharedAgentId]);
+
+  useEffect(() => {
     setHireReceipt(null);
     setHireDraft({
       taskPrompt: "",
@@ -633,6 +642,27 @@ export function App() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Copy failed.");
     }
+  }
+
+  async function issueChallengeAction(sessionId?: string, agentId?: string) {
+    setPendingAction("issue-ownership-challenge");
+    setError(null);
+
+    try {
+      const nextState = await issueOwnershipChallenge(sessionId, agentId);
+      setIssuedOwnershipChallenge(nextState.issuedOwnershipChallenge);
+      setState(nextState);
+      setSelectedSessionId(nextState.session.sessionId);
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not issue ownership challenge.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function verifyChallengeAction(sessionId?: string, agentId?: string) {
+    await runAction("verify-ownership-challenge", () => verifyOwnershipChallenge(sessionId, agentId));
+    setIssuedOwnershipChallenge(null);
   }
 
   function showSection(nextSection: NavSectionKey) {
@@ -822,10 +852,11 @@ export function App() {
   const isRegisteredSession = state.session.sessionId.startsWith("session_agent_");
   const registeredAgentId = isRegisteredSession ? state.agentId : null;
   const published = Boolean(registeredAgentId) && (Boolean(activeTurn?.turnId) || state.liveFlow.status === "succeeded");
+  const ownershipVerified = state.ownership.status === "verified";
   const connectReady =
     profile.agentName.trim().length > 0 && profile.openClawUrl.trim().length > 0 && profile.headline.trim().length > 0;
   const canPreparePublish = isRegisteredSession && connectReady;
-  const canPublish = isRegisteredSession && connectReady && hasSponsoredBalance && recoveryReady;
+  const canPublish = isRegisteredSession && connectReady && hasSponsoredBalance && recoveryReady && ownershipVerified;
   const hasAdminAccess = state.adminAccess.hasAdminAccess;
   const savedPaymentsEnabled = state.paymentsEnabled;
   const savedPaymentProfileReady = state.paymentProfileReady;
@@ -870,6 +901,23 @@ export function App() {
   const routedPublicAgentUrl = sharedAgentId ?? state.agentId ? buildPublicAgentUrl(sharedAgentId ?? state.agentId) : null;
   const shareOnXUrl = publicAgentUrl && registeredAgentId ? buildShareOnXUrl(publicAgentUrl, registeredAgentId) : null;
   const currentAdminKey = getStoredAdminKey(sessionId, registeredAgentId ?? state.agentId);
+  const ownershipChallengePreview =
+    issuedOwnershipChallenge?.challengeResponseJson ??
+    (state.ownership.status === "challenge-issued"
+      ? `Issue a fresh challenge to recover the verification token, then serve it at ${state.ownership.challenge?.challengePath ?? "/.well-known/santaclawz-agent-challenge.json"}.`
+      : null);
+  const ownershipStatusCopy =
+    !isRegisteredSession
+      ? "Register the agent first, then SantaClawz can verify control of the OpenClaw runtime before publish."
+      : state.ownership.status === "verified"
+      ? `Control verified${state.ownership.verification?.verifiedAtIso ? ` on ${new Date(state.ownership.verification.verifiedAtIso).toLocaleString()}` : ""}.`
+      : state.ownership.status === "challenge-issued"
+        ? `Serve the current challenge from ${state.ownership.challenge?.challengePath ?? "/.well-known/santaclawz-agent-challenge.json"}, then verify control.`
+        : state.ownership.status === "legacy-unverified"
+          ? hasAdminAccess
+            ? "This is a legacy registration. Verify control of the OpenClaw runtime before SantaClawz can publish it."
+            : "This agent predates ownership checks. Prove control of the OpenClaw runtime to reclaim and publish it."
+          : "Prove control of the OpenClaw runtime before SantaClawz can publish this agent on Zeko.";
   const configuredPayoutWallets = ([
     ["base", profile.payoutWallets.base],
     ["ethereum", profile.payoutWallets.ethereum],
@@ -1302,6 +1350,63 @@ export function App() {
           <div className="action-list">
             <div className="action-row">
               <div>
+                <strong>{state.ownership.canReclaim && !hasAdminAccess ? "Claim control of this OpenClaw agent" : "Verify control of this OpenClaw URL"}</strong>
+                <p className="panel-copy">{ownershipStatusCopy}</p>
+                {ownershipChallengePreview ? (
+                  <div className="ownership-challenge-stack">
+                    <div className="share-url-placeholder live">
+                      {issuedOwnershipChallenge?.challengeUrl ?? state.ownership.challenge?.challengeUrl ?? `${profile.openClawUrl.replace(/\/+$/, "")}/.well-known/santaclawz-agent-challenge.json`}
+                    </div>
+                    <div className="command-strip compact-command-strip">
+                      <code>{ownershipChallengePreview}</code>
+                      {issuedOwnershipChallenge ? (
+                        <button
+                          className="copy-button"
+                          onClick={() => {
+                            void copyValue("ownership-challenge-json", issuedOwnershipChallenge.challengeResponseJson);
+                          }}
+                        >
+                          {copiedKey === "ownership-challenge-json" ? "Copied" : "Copy"}
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+              <div className="action-side">
+                {!ownershipVerified ? (
+                  <>
+                    <button
+                      className="secondary-button"
+                      disabled={pendingAction === "issue-ownership-challenge" || !isRegisteredSession || !profile.openClawUrl.trim()}
+                      onClick={() => {
+                        void issueChallengeAction(sessionId, registeredAgentId ?? undefined);
+                      }}
+                    >
+                      {pendingAction === "issue-ownership-challenge" ? "Issuing..." : issuedOwnershipChallenge || state.ownership.status === "challenge-issued" ? "Refresh challenge" : "Issue challenge"}
+                    </button>
+                    <button
+                      className="primary-button"
+                      disabled={pendingAction === "verify-ownership-challenge" || !isRegisteredSession}
+                      onClick={() => {
+                        void verifyChallengeAction(sessionId, registeredAgentId ?? undefined);
+                      }}
+                    >
+                      {pendingAction === "verify-ownership-challenge"
+                        ? "Verifying..."
+                        : state.ownership.canReclaim && !hasAdminAccess
+                          ? "Verify and claim"
+                          : "Verify control"}
+                    </button>
+                  </>
+                ) : (
+                  <span className="subtle-pill">Ownership verified</span>
+                )}
+              </div>
+            </div>
+
+            <div className="action-row">
+              <div>
                 <strong>Prepare sponsored publish</strong>
                 <p className="panel-copy">
                   {!isRegisteredSession
@@ -1345,11 +1450,13 @@ export function App() {
                     ? `Live turn ${shorten(activeTurn?.turnId ?? state.liveFlow.turnId, 12, 10)}`
                     : !isRegisteredSession
                       ? "Register the agent first."
+                      : !ownershipVerified
+                        ? "Verify control of the OpenClaw URL first."
                       : canPublish
-                      ? "Your agent is ready to publish."
+                        ? "Your agent is ready to publish."
                       : !connectReady
-                        ? "Complete the agent profile first."
-                        : "Prepare publish first."}
+                          ? "Complete the agent profile first."
+                          : "Prepare publish first."}
                 </p>
               </div>
               <div className="action-side">
@@ -1831,6 +1938,65 @@ export function App() {
                       </button>
                     </div>
                   </div>
+
+                  {!ownershipVerified ? (
+                    <div className="action-row">
+                      <div>
+                        <strong>{state.ownership.canReclaim && !hasAdminAccess ? "Claim control of this OpenClaw agent" : "Verify control of this OpenClaw URL"}</strong>
+                        <p className="panel-copy">{ownershipStatusCopy}</p>
+                        {ownershipChallengePreview ? (
+                          <div className="ownership-challenge-stack">
+                            <div className="share-url-placeholder live">
+                              {issuedOwnershipChallenge?.challengeUrl ??
+                                state.ownership.challenge?.challengeUrl ??
+                                `${profile.openClawUrl.replace(/\/+$/, "")}/.well-known/santaclawz-agent-challenge.json`}
+                            </div>
+                            <div className="command-strip compact-command-strip">
+                              <code>{ownershipChallengePreview}</code>
+                              {issuedOwnershipChallenge ? (
+                                <button
+                                  className="copy-button"
+                                  onClick={() => {
+                                    void copyValue("shared-ownership-challenge-json", issuedOwnershipChallenge.challengeResponseJson);
+                                  }}
+                                >
+                                  {copiedKey === "shared-ownership-challenge-json" ? "Copied" : "Copy"}
+                                </button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ) : null}
+                      </div>
+                      <div className="action-side">
+                        <button
+                          className="secondary-button"
+                          disabled={pendingAction === "issue-ownership-challenge" || !profile.openClawUrl.trim()}
+                          onClick={() => {
+                            void issueChallengeAction(sessionId, sharedAgentId ?? registeredAgentId ?? undefined);
+                          }}
+                        >
+                          {pendingAction === "issue-ownership-challenge"
+                            ? "Issuing..."
+                            : issuedOwnershipChallenge || state.ownership.status === "challenge-issued"
+                              ? "Refresh challenge"
+                              : "Issue challenge"}
+                        </button>
+                        <button
+                          className="primary-button"
+                          disabled={pendingAction === "verify-ownership-challenge"}
+                          onClick={() => {
+                            void verifyChallengeAction(sessionId, sharedAgentId ?? registeredAgentId ?? undefined);
+                          }}
+                        >
+                          {pendingAction === "verify-ownership-challenge"
+                            ? "Verifying..."
+                            : state.ownership.canReclaim && !hasAdminAccess
+                              ? "Verify and claim"
+                              : "Verify control"}
+                        </button>
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="action-row action-row-form">
                     <div>

@@ -264,6 +264,35 @@ export interface AgentPaymentProfile {
   paymentNotes?: string;
 }
 
+export interface AgentOwnershipChallengeState {
+  challengeId: string;
+  challengePath: string;
+  challengeUrl: string;
+  verificationMethod: "well-known-http";
+  issuedAtIso: string;
+  expiresAtIso: string;
+}
+
+export interface AgentOwnershipVerificationState {
+  challengeId: string;
+  challengePath: string;
+  challengeUrl: string;
+  verificationMethod: "well-known-http";
+  verifiedAtIso: string;
+  verifiedOpenClawUrl: string;
+  challengeResponseDigestSha256: string;
+  attestationDigestSha256: string;
+  reclaimedAtIso?: string;
+}
+
+export interface AgentOwnershipState {
+  status: "unverified" | "challenge-issued" | "verified" | "legacy-unverified";
+  legacyRegistration: boolean;
+  canReclaim: boolean;
+  challenge?: AgentOwnershipChallengeState;
+  verification?: AgentOwnershipVerificationState;
+}
+
 export interface AgentProfileState {
   agentName: string;
   representedPrincipal: string;
@@ -293,6 +322,7 @@ export interface AgentRegistryEntry {
   payoutAddressConfigured: boolean;
   paymentProfileReady: boolean;
   paidJobsEnabled: boolean;
+  ownershipVerified: boolean;
   published: boolean;
   lastUpdatedAtIso?: string;
 }
@@ -334,6 +364,7 @@ export interface ConsoleStateResponse {
   liveFlow: LiveSessionTurnFlowState;
   sponsorQueue: SponsorQueueState;
   profile: AgentProfileState;
+  ownership: AgentOwnershipState;
 }
 
 export type AgentX402SettlementRail = "evm" | "zeko";

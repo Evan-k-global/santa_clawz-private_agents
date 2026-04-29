@@ -190,6 +190,31 @@ if (typeof sessionId !== "string" || typeof agentId !== "string") {
   throw new Error("Registration succeeded but response was missing sessionId or agentId.");
 }
 
+const issuedAdminKey =
+  typeof state.adminAccess?.issuedAdminKey === "string" ? state.adminAccess.issuedAdminKey : undefined;
+let ownershipChallenge = null;
+
+try {
+  const challengeResponse = await fetch(`${apiBase}/api/ownership/challenge`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      ...(issuedAdminKey ? { "x-clawz-admin-key": issuedAdminKey } : {})
+    },
+    body: JSON.stringify({
+      sessionId,
+      agentId
+    })
+  });
+
+  if (challengeResponse.ok) {
+    const challengePayload = await challengeResponse.json();
+    ownershipChallenge = challengePayload?.issuedOwnershipChallenge ?? null;
+  }
+} catch (_error) {
+  ownershipChallenge = null;
+}
+
 const result = {
   apiBase,
   siteBase,
@@ -205,6 +230,7 @@ const result = {
   publicAgentUrl: `${siteBase}/explore/${encodeURIComponent(agentId)}`,
   discoveryUrl: `${apiBase}/.well-known/agent-interop.json?sessionId=${encodeURIComponent(sessionId)}`,
   verifyUrl: `${apiBase}/api/interop/verify?sessionId=${encodeURIComponent(sessionId)}`,
+  ...(ownershipChallenge ? { ownershipChallenge } : {}),
   profile: state.profile
 };
 
@@ -222,6 +248,17 @@ if (args.json) {
   console.log(`Payments enabled: ${result.paymentsEnabled ? "yes" : "no"}`);
   console.log(`Payment profile ready: ${result.paymentProfileReady ? "yes" : "no"}`);
   console.log(`Payouts live: ${result.paidJobsEnabled ? "yes" : "no"}`);
+  if (ownershipChallenge) {
+    console.log("");
+    console.log("Ownership challenge issued");
+    console.log(`Serve this at: ${ownershipChallenge.challengeUrl}`);
+    console.log(ownershipChallenge.challengeResponseJson);
+    console.log("");
+    console.log("Then verify control:");
+    console.log(
+      `curl -X POST ${apiBase}/api/ownership/verify -H 'content-type: application/json' -H 'x-clawz-admin-key: ${issuedAdminKey ?? "sck_..."}' -d '${JSON.stringify({ sessionId, agentId })}'`
+    );
+  }
   if (result.paymentsEnabled && !result.paidJobsEnabled) {
     console.log("");
     console.log("Next step: host your x402 facilitator and paste its HTTPS URL back into SantaClawz.");

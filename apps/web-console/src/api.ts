@@ -170,7 +170,25 @@ function normalizeConsoleStateResponse(payload: ConsoleStateResponse): ConsoleSt
     adminAccess: payload.adminAccess ?? {
       requiresAdminKey: false,
       hasAdminAccess: true
+    },
+    ownership: payload.ownership ?? {
+      status: "unverified",
+      legacyRegistration: false,
+      canReclaim: false
     }
+  };
+}
+
+export interface OwnershipChallengeIssueResponse extends ConsoleStateResponse {
+  issuedOwnershipChallenge: {
+    challengeId: string;
+    challengePath: string;
+    challengeUrl: string;
+    verificationMethod: "well-known-http";
+    issuedAtIso: string;
+    expiresAtIso: string;
+    challengeToken: string;
+    challengeResponseJson: string;
   };
 }
 
@@ -281,6 +299,38 @@ export function updateAgentProfile(
       ...(sessionId ? { sessionId } : {})
     })
   }, buildAdminContext(sessionId)).then(normalizeConsoleStateResponse);
+}
+
+export function issueOwnershipChallenge(sessionId?: string, agentId?: string): Promise<OwnershipChallengeIssueResponse> {
+  return request<OwnershipChallengeIssueResponse>(
+    buildPath("/api/ownership/challenge", sessionId, agentId),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {})
+      })
+    },
+    buildAdminContext(sessionId, agentId)
+  ).then((payload) => ({
+    ...normalizeConsoleStateResponse(payload),
+    ownership: normalizeConsoleStateResponse(payload).ownership,
+    issuedOwnershipChallenge: payload.issuedOwnershipChallenge
+  }));
+}
+
+export function verifyOwnershipChallenge(sessionId?: string, agentId?: string): Promise<ConsoleStateResponse> {
+  return request<ConsoleStateResponse>(
+    buildPath("/api/ownership/verify", sessionId, agentId),
+    {
+      method: "POST",
+      body: JSON.stringify({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {})
+      })
+    },
+    buildAdminContext(sessionId, agentId)
+  ).then(normalizeConsoleStateResponse);
 }
 
 export function sponsorWallet(

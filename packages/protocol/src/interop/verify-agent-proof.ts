@@ -2,6 +2,7 @@ import { canonicalDigest } from "../hashing/digest.js";
 
 import type {
   AgentAuthorityClaim,
+  AgentOwnershipClaim,
   AgentPaymentClaim,
   AgentPrivacyClaim,
   AgentRepresentationClaim,
@@ -51,6 +52,18 @@ export interface AgentTrustQuestionAnswer {
     walletId: string;
     tenantId: string;
     workspaceId: string;
+  };
+  ownership: {
+    openClawUrl: string;
+    ownershipStatus: AgentOwnershipClaim["ownershipStatus"];
+    legacyRegistration: boolean;
+    canReclaim: boolean;
+    challengePath: string;
+    verificationMethod?: AgentOwnershipClaim["verificationMethod"];
+    challengeId?: string;
+    verifiedAtIso?: string;
+    reclaimedAtIso?: string;
+    verified: boolean;
   };
   authority: {
     sessionId: string;
@@ -191,6 +204,10 @@ function verifyRepresentation(representation: AgentRepresentationClaim): Verific
       representation.proofCapability.manifest
     )
   ];
+}
+
+function verifyOwnership(ownership: AgentOwnershipClaim): VerificationCheck[] {
+  return [compareDigest("ownership.claimDigest", ownership.claimDigest, stripDigest(ownership))];
 }
 
 function verifyAuthority(authority: AgentAuthorityClaim): VerificationCheck[] {
@@ -358,6 +375,18 @@ export function summarizeAgentProofBundle(bundle: ClawzAgentProofBundle): AgentT
       tenantId: bundle.representation.representedPrincipal.tenantId,
       workspaceId: bundle.representation.representedPrincipal.workspaceId
     },
+    ownership: {
+      openClawUrl: bundle.ownership.openClawUrl,
+      ownershipStatus: bundle.ownership.ownershipStatus,
+      legacyRegistration: bundle.ownership.legacyRegistration,
+      canReclaim: bundle.ownership.canReclaim,
+      challengePath: bundle.ownership.challengePath,
+      ...(bundle.ownership.verificationMethod ? { verificationMethod: bundle.ownership.verificationMethod } : {}),
+      ...(bundle.ownership.challengeId ? { challengeId: bundle.ownership.challengeId } : {}),
+      ...(bundle.ownership.verifiedAtIso ? { verifiedAtIso: bundle.ownership.verifiedAtIso } : {}),
+      ...(bundle.ownership.reclaimedAtIso ? { reclaimedAtIso: bundle.ownership.reclaimedAtIso } : {}),
+      verified: bundle.ownership.ownershipStatus === "verified"
+    },
     authority: {
       sessionId: bundle.authority.sessionId,
       ...(bundle.authority.turnId ? { turnId: bundle.authority.turnId } : {}),
@@ -460,6 +489,7 @@ export function verifyAgentProofBundle(
   const checks: VerificationCheck[] = [
     compareDigest("bundle.bundleDigest", bundle.bundleDigest, stripBundleDigest(bundle)),
     ...verifyRepresentation(bundle.representation),
+    ...verifyOwnership(bundle.ownership),
     ...verifyAuthority(bundle.authority),
     ...verifyPayment(bundle.payment),
     ...verifyPrivacy(bundle.privacy),

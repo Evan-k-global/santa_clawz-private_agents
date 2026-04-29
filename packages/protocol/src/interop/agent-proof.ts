@@ -50,6 +50,22 @@ export interface AgentRepresentationClaim {
   claimDigest: CanonicalDigest;
 }
 
+export interface AgentOwnershipClaim {
+  openClawUrl: string;
+  ownershipStatus: "unverified" | "challenge-issued" | "verified" | "legacy-unverified";
+  legacyRegistration: boolean;
+  canReclaim: boolean;
+  challengePath: string;
+  verificationMethod?: "well-known-http";
+  challengeId?: string;
+  challengeUrl?: string;
+  verifiedAtIso?: string;
+  challengeResponseDigestSha256?: string;
+  attestationDigestSha256?: string;
+  reclaimedAtIso?: string;
+  claimDigest: CanonicalDigest;
+}
+
 export interface AllowedActionClaim {
   capabilityClass: string;
   summary: string;
@@ -179,6 +195,7 @@ export interface ClawzAgentProofBundle {
   };
   discoveryUrl: string;
   representation: AgentRepresentationClaim;
+  ownership: AgentOwnershipClaim;
   authority: AgentAuthorityClaim;
   payment: AgentPaymentClaim;
   privacy: AgentPrivacyClaim;
@@ -224,7 +241,7 @@ export interface ClawzAgentDiscoveryDocument {
     privacyExceptions: string;
   };
   answersQuestion: string;
-  proofClaims: Array<"representation" | "authority" | "payment" | "privacy" | "origin">;
+  proofClaims: Array<"representation" | "ownership" | "authority" | "payment" | "privacy" | "origin">;
   programmablePrivacy: ProgrammablePrivacyPolicy;
   capabilities: DiscoveryCapability[];
   supportedMcpTools: string[];

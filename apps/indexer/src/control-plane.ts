@@ -7,7 +7,11 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { createSealedBlobStore, type SealedBlobStore } from "@clawz/blob-store";
 import { createTenantKeyBroker, type TenantKeyBrokerRuntimeDescriptor, TenantKeyBroker } from "@clawz/key-broker";
 import {
+  canonicalDigest,
   type AgentRegistryEntry,
+  type AgentOwnershipChallengeState,
+  type AgentOwnershipState,
+  type AgentOwnershipVerificationState,
   type AgentProfileState,
   type HireRequestReceipt,
   type SponsorQueueJob,
@@ -38,6 +42,8 @@ const DEFAULT_TENANT_ID = "tenant_acme";
 const DEFAULT_WORKSPACE_ID = "workspace_blue";
 const DEFAULT_SESSION_ID = "session_demo_enterprise";
 const DEFAULT_TURN_ID = "turn_0011";
+const OPENCLAW_OWNERSHIP_CHALLENGE_PATH = "/.well-known/santaclawz-agent-challenge.json";
+const OWNERSHIP_CHALLENGE_TTL_MS = 15 * 60 * 1000;
 type LiveFlowKind = "first-turn" | "next-turn" | "abort-turn" | "refund-turn" | "revoke-disclosure";
 
 const LIVE_FLOW_METHODS: Record<LiveFlowKind, readonly string[]> = {
@@ -75,7 +81,7 @@ const ALL_LIVE_FLOW_METHODS = Array.from(
 );
 
 interface ConsolePersistenceState {
-  schemaVersion: 1;
+  schemaVersion: 2;
   currentSessionId: string;
   activeMode: TrustModeId;
   wallet: ShadowWalletState;
@@ -83,12 +89,39 @@ interface ConsolePersistenceState {
   agentIdsBySession: Record<string, string>;
   profilesBySession: Record<string, AgentProfileState>;
   adminKeysBySession: Record<string, SessionAdminAccessRecord>;
+  ownershipBySession: Record<string, SessionOwnershipRecord>;
 }
 
 interface SessionAdminAccessRecord {
   keyHash: string;
   keyHint: string;
   issuedAtIso: string;
+}
+
+interface SessionOwnershipChallengeRecord extends AgentOwnershipChallengeState {
+  challengeToken: string;
+}
+
+interface SessionOwnershipRecord {
+  status: AgentOwnershipState["status"];
+  legacyRegistration: boolean;
+  canReclaim: boolean;
+  challenge?: SessionOwnershipChallengeRecord;
+  verification?: AgentOwnershipVerificationState;
+}
+
+interface OwnershipChallengeIssueResult {
+  state: ConsoleStateResponse;
+  issuedOwnershipChallenge: {
+    challengeId: string;
+    challengePath: string;
+    challengeUrl: string;
+    verificationMethod: "well-known-http";
+    issuedAtIso: string;
+    expiresAtIso: string;
+    challengeToken: string;
+    challengeResponseJson: string;
+  };
 }
 
 interface DeploymentManifestFile {
@@ -225,6 +258,12 @@ interface RegisterAgentOptions {
   payoutAddress?: string;
   trustModeId?: TrustModeId;
   preferredProvingLocation?: AgentProfileState["preferredProvingLocation"];
+}
+
+interface OwnershipActionOptions {
+  sessionId?: string;
+  agentId?: string;
+  adminKey?: string;
 }
 
 type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile">> & {
@@ -442,7 +481,7 @@ function buildPrivacyExceptions(nowIso: string): PrivacyExceptionQueueItem[] {
 
 function buildDefaultState(nowIso: string): ConsolePersistenceState {
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     currentSessionId: DEFAULT_SESSION_ID,
     activeMode: "private",
     wallet: buildWalletState(nowIso),
@@ -453,7 +492,10 @@ function buildDefaultState(nowIso: string): ConsolePersistenceState {
     profilesBySession: {
       [DEFAULT_SESSION_ID]: buildDefaultProfile("private")
     },
-    adminKeysBySession: {}
+    adminKeysBySession: {},
+    ownershipBySession: {
+      [DEFAULT_SESSION_ID]: buildDefaultOwnershipRecord(true)
+    }
   };
 }
 
@@ -555,6 +597,49 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
     },
     preferredProvingLocation: trustMode.defaultProvingLocation
   };
+}
+
+function buildDefaultOwnershipRecord(legacyRegistration: boolean): SessionOwnershipRecord {
+  return {
+    status: legacyRegistration ? "legacy-unverified" : "unverified",
+    legacyRegistration,
+    canReclaim: legacyRegistration
+  };
+}
+
+function asPublicOwnershipState(record: SessionOwnershipRecord, openClawUrl: string): AgentOwnershipState {
+  const activeChallenge =
+    record.challenge && Date.parse(record.challenge.expiresAtIso) > Date.now()
+      ? {
+          challengeId: record.challenge.challengeId,
+          challengePath: record.challenge.challengePath,
+          challengeUrl: record.challenge.challengeUrl,
+          verificationMethod: record.challenge.verificationMethod,
+          issuedAtIso: record.challenge.issuedAtIso,
+          expiresAtIso: record.challenge.expiresAtIso
+        }
+      : undefined;
+
+  return {
+    status:
+      record.status === "challenge-issued" && !activeChallenge
+        ? record.legacyRegistration
+          ? "legacy-unverified"
+          : "unverified"
+        : record.status,
+    legacyRegistration: record.legacyRegistration,
+    canReclaim: record.canReclaim,
+    ...(activeChallenge ? { challenge: activeChallenge } : {}),
+    ...(record.verification ? { verification: record.verification } : {})
+  };
+}
+
+function ownershipChallengeUrlFor(openClawUrl: string) {
+  return new URL(OPENCLAW_OWNERSHIP_CHALLENGE_PATH, openClawUrl).toString();
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 async function readJsonFile<T>(filePath: string): Promise<T | undefined> {
@@ -814,36 +899,43 @@ export class ClawzControlPlane {
     await this.ensureDirs();
     const state = await readJsonFile<ConsolePersistenceState>(this.statePath);
     if (state) {
+      const resolvedProfiles =
+        state.profilesBySession && Object.keys(state.profilesBySession).length > 0
+          ? state.profilesBySession
+          : {
+              [state.currentSessionId]: buildDefaultProfile(state.activeMode)
+            };
       const migratedState: ConsolePersistenceState = {
         ...state,
-        schemaVersion: 1,
+        schemaVersion: 2,
         agentIdsBySession:
           state.agentIdsBySession && Object.keys(state.agentIdsBySession).length > 0
             ? state.agentIdsBySession
             : Object.fromEntries(
-                Object.entries(
-                  state.profilesBySession && Object.keys(state.profilesBySession).length > 0
-                    ? state.profilesBySession
-                    : {
-                        [state.currentSessionId]: buildDefaultProfile(state.activeMode)
-                      }
-                ).map(([sessionId, profile]) => [sessionId, buildStableAgentId(profile.agentName, sessionId)])
+                Object.entries(resolvedProfiles).map(([sessionId, profile]) => [sessionId, buildStableAgentId(profile.agentName, sessionId)])
               ),
-        profilesBySession:
-          state.profilesBySession && Object.keys(state.profilesBySession).length > 0
-            ? state.profilesBySession
-            : {
-                [state.currentSessionId]: buildDefaultProfile(state.activeMode)
-              },
-        adminKeysBySession: state.adminKeysBySession ?? {}
+        profilesBySession: resolvedProfiles,
+        adminKeysBySession: state.adminKeysBySession ?? {},
+        ownershipBySession:
+          state.ownershipBySession && Object.keys(state.ownershipBySession).length > 0
+            ? Object.fromEntries(
+                Object.entries(resolvedProfiles).map(([sessionId, profile]) => [
+                  sessionId,
+                  state.ownershipBySession?.[sessionId] ?? buildDefaultOwnershipRecord(true)
+                ])
+              )
+            : Object.fromEntries(
+                Object.entries(resolvedProfiles).map(([sessionId]) => [sessionId, buildDefaultOwnershipRecord(true)])
+              )
       };
       if (
-        state.schemaVersion !== 1 ||
+        state.schemaVersion !== 2 ||
         !state.agentIdsBySession ||
         Object.keys(state.agentIdsBySession).length === 0 ||
         !state.profilesBySession ||
         Object.keys(state.profilesBySession).length === 0 ||
-        !state.adminKeysBySession
+        !state.adminKeysBySession ||
+        !state.ownershipBySession
       ) {
         await this.saveState(migratedState);
       }
@@ -980,8 +1072,51 @@ export class ClawzControlPlane {
     );
   }
 
+  private ownershipRecordForSession(state: ConsolePersistenceState, sessionId: string): SessionOwnershipRecord {
+    return state.ownershipBySession[sessionId] ?? buildDefaultOwnershipRecord(true);
+  }
+
+  private ownershipForSession(state: ConsolePersistenceState, sessionId: string): AgentOwnershipState {
+    return asPublicOwnershipState(
+      this.ownershipRecordForSession(state, sessionId),
+      this.profileForSession(state, sessionId).openClawUrl
+    );
+  }
+
   private resolveSessionIdFromAgentId(state: ConsolePersistenceState, agentId: string): string | undefined {
     return Object.entries(state.agentIdsBySession).find(([, value]) => value === agentId)?.[0];
+  }
+
+  private resolveOwnedSessionId(
+    state: ConsolePersistenceState,
+    options: Pick<OwnershipActionOptions, "sessionId" | "agentId">,
+    fallbackSessionId = state.currentSessionId
+  ): string {
+    const sessionIdFromAgentId = options.agentId ? this.resolveSessionIdFromAgentId(state, options.agentId) : undefined;
+    if (options.agentId && !sessionIdFromAgentId) {
+      throw new Error(`Unknown agent: ${options.agentId}`);
+    }
+
+    if (options.sessionId && sessionIdFromAgentId && options.sessionId !== sessionIdFromAgentId) {
+      throw new Error("The provided agentId does not match the provided sessionId.");
+    }
+
+    const sessionId = options.sessionId ?? sessionIdFromAgentId ?? fallbackSessionId;
+    if (!sessionId) {
+      throw new Error("Unknown agent or session.");
+    }
+
+    return sessionId;
+  }
+
+  private hasAdminAccess(state: ConsolePersistenceState, sessionId: string, adminKey?: string) {
+    const record = state.adminKeysBySession[sessionId];
+    if (!record) {
+      return true;
+    }
+
+    const normalizedAdminKey = typeof adminKey === "string" ? adminKey.trim() : "";
+    return normalizedAdminKey.length > 0 && timingSafeEqualHex(record.keyHash, adminKeyHash(normalizedAdminKey));
   }
 
   private buildAdminAccessState(
@@ -1010,11 +1145,10 @@ export class ClawzControlPlane {
       return;
     }
 
-    const normalizedAdminKey = typeof adminKey === "string" ? adminKey.trim() : "";
-    if (normalizedAdminKey.length === 0) {
+    if (!adminKey?.trim()) {
       throw new Error("Admin key required to manage this registered agent.");
     }
-    if (!timingSafeEqualHex(record.keyHash, adminKeyHash(normalizedAdminKey))) {
+    if (!this.hasAdminAccess(state, sessionId, adminKey)) {
       throw new Error("Admin key was rejected for this agent.");
     }
   }
@@ -1132,6 +1266,88 @@ export class ClawzControlPlane {
       throw new Error(`OpenClaw agent URL did not respond cleanly (${message}).`);
     } finally {
       clearTimeout(timeout);
+    }
+  }
+
+  private buildOwnershipChallengeRecord(openClawUrl: string, issuedAtIso: string): SessionOwnershipChallengeRecord {
+    const challengeId = `och_${randomUUID().replace(/-/g, "").slice(0, 18)}`;
+    const challengeToken = createHash("sha256")
+      .update(`${challengeId}:${randomUUID()}:${openClawUrl}`)
+      .digest("hex");
+    const challengeUrl = ownershipChallengeUrlFor(openClawUrl);
+    return {
+      challengeId,
+      challengeToken,
+      challengePath: OPENCLAW_OWNERSHIP_CHALLENGE_PATH,
+      challengeUrl,
+      verificationMethod: "well-known-http",
+      issuedAtIso,
+      expiresAtIso: new Date(Date.parse(issuedAtIso) + OWNERSHIP_CHALLENGE_TTL_MS).toISOString()
+    };
+  }
+
+  private challengePayloadForSession(
+    state: ConsolePersistenceState,
+    sessionId: string,
+    challenge: SessionOwnershipChallengeRecord
+  ) {
+    const profile = this.profileForSession(state, sessionId);
+    return {
+      challengeId: challenge.challengeId,
+      challengeToken: challenge.challengeToken,
+      agentId: this.agentIdForSession(state, sessionId),
+      sessionId,
+      openClawUrl: profile.openClawUrl
+    };
+  }
+
+  private async fetchOwnershipChallengeResponse(challenge: SessionOwnershipChallengeRecord) {
+    const response = await fetch(challenge.challengeUrl, {
+      method: "GET",
+      headers: {
+        accept: "application/json,text/plain,*/*"
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(8000)
+    });
+
+    const bodyText = (await response.text()).trim();
+    if (!response.ok) {
+      throw new Error(`Challenge endpoint returned ${response.status}.`);
+    }
+
+    if (!bodyText) {
+      throw new Error("Challenge endpoint returned an empty response.");
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(bodyText);
+    } catch (_error) {
+      parsed = undefined;
+    }
+
+    if (isRecord(parsed)) {
+      return {
+        parsed,
+        bodyText,
+        matched:
+          parsed.challengeId === challenge.challengeId &&
+          parsed.challengeToken === challenge.challengeToken
+      };
+    }
+
+    return {
+      parsed: bodyText,
+      bodyText,
+      matched: bodyText === challenge.challengeToken
+    };
+  }
+
+  private assertOwnershipVerifiedForPublish(state: ConsolePersistenceState, sessionId: string) {
+    const ownership = this.ownershipRecordForSession(state, sessionId);
+    if (ownership.status !== "verified" || !ownership.verification) {
+      throw new Error("Verify control of the OpenClaw agent URL before publishing on Zeko.");
     }
   }
 
@@ -2173,6 +2389,9 @@ export class ClawzControlPlane {
       const resume = this.canResumeLiveFlow(existingStatus, options);
       const requestedSessionId = options.sessionId ?? liveFlowState.sessionId ?? state.currentSessionId;
       this.assertAdminAccess(state, requestedSessionId, adminKey);
+      if (flowKind === "first-turn" || flowKind === "next-turn") {
+        this.assertOwnershipVerifiedForPublish(state, requestedSessionId);
+      }
       const jobTrustModeId =
         resume && existingStatus?.trustModeId
           ? existingStatus.trustModeId
@@ -2394,11 +2613,12 @@ export class ClawzControlPlane {
     ]);
     const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
     const requestedSessionId =
-      options.sessionId ??
-      (options.agentId ? this.resolveSessionIdFromAgentId(state, options.agentId) : undefined);
-    if (options.agentId && !requestedSessionId) {
-      throw new Error(`Unknown agent: ${options.agentId}`);
-    }
+      options.sessionId || options.agentId
+        ? this.resolveOwnedSessionId(state, {
+            ...(options.sessionId ? { sessionId: options.sessionId } : {}),
+            ...(options.agentId ? { agentId: options.agentId } : {})
+          })
+        : undefined;
     const focus = this.resolveSessionFocus(state, events, liveFlowTargets, liveFlow, requestedSessionId);
     const materializer = new ReplayMaterializer(events);
     const session = materializer.getSession(focus.sessionId);
@@ -2415,6 +2635,7 @@ export class ClawzControlPlane {
     const paymentProfileReady = hasReadyPaymentProfile(profile);
     const payoutAddressConfigured = hasPayoutAddress(profile);
     const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
+    const ownership = this.ownershipForSession(state, focus.sessionId);
     const adminAccess = this.buildAdminAccessState(
       state,
       focus.sessionId,
@@ -2458,7 +2679,8 @@ export class ClawzControlPlane {
       liveFlowTargets,
       liveFlow,
       sponsorQueue,
-      profile
+      profile,
+      ownership
     };
   }
 
@@ -2479,6 +2701,7 @@ export class ClawzControlPlane {
         const session = materializer.getSession(sessionId);
         const published = liveFlowTargets.turns.some((target) => target.sessionId === sessionId);
         const lastUpdatedAtIso = session.events.at(-1)?.occurredAtIso;
+        const ownership = this.ownershipForSession(state, sessionId);
         return {
           agentId: this.agentIdForSession(state, sessionId, trustModeId),
           sessionId,
@@ -2498,6 +2721,7 @@ export class ClawzControlPlane {
           payoutAddressConfigured: hasPayoutAddress(profile),
           paymentProfileReady: hasReadyPaymentProfile(profile),
           paidJobsEnabled: computePaidJobsEnabled(profile, published, deployment),
+          ownershipVerified: ownership.status === "verified",
           published,
           ...(lastUpdatedAtIso ? { lastUpdatedAtIso } : {})
         } satisfies AgentRegistryEntry;
@@ -2588,6 +2812,10 @@ export class ClawzControlPlane {
           keyHint: adminKeyHint(adminKey),
           issuedAtIso: registeredAtIso
         }
+      },
+      ownershipBySession: {
+        ...state.ownershipBySession,
+        [sessionId]: buildDefaultOwnershipRecord(false)
       }
     };
 
@@ -2617,6 +2845,164 @@ export class ClawzControlPlane {
       sessionId,
       adminKey,
       exposeIssuedAdminKey: adminKey
+    });
+  }
+
+  async issueOwnershipChallenge(options: OwnershipActionOptions = {}): Promise<OwnershipChallengeIssueResult> {
+    const state = await this.loadState();
+    const sessionId = this.resolveOwnedSessionId(state, options);
+
+    const profile = this.profileForSession(state, sessionId);
+    if (!profile.openClawUrl.trim()) {
+      throw new Error("This agent still needs an OpenClaw agent URL before ownership can be verified.");
+    }
+
+    const issuedAtIso = new Date().toISOString();
+    const challenge = this.buildOwnershipChallengeRecord(profile.openClawUrl, issuedAtIso);
+    const prior = this.ownershipRecordForSession(state, sessionId);
+    const nextRecord: SessionOwnershipRecord = {
+      ...prior,
+      status: "challenge-issued",
+      canReclaim: prior.canReclaim || prior.legacyRegistration,
+      challenge
+    };
+    const nextState: ConsolePersistenceState = {
+      ...state,
+      ownershipBySession: {
+        ...state.ownershipBySession,
+        [sessionId]: nextRecord
+      }
+    };
+
+    await this.saveState(nextState);
+    await this.appendEvent(
+      "SessionCheckpointed",
+      {
+        sessionId,
+        ownershipChallengeIssued: true,
+        ownershipChallengeId: challenge.challengeId
+      },
+      issuedAtIso
+    );
+
+    const challengePayload = this.challengePayloadForSession(nextState, sessionId, challenge);
+
+    return {
+      state: await this.getConsoleState({
+        sessionId,
+        ...(options.adminKey ? { adminKey: options.adminKey } : {})
+      }),
+      issuedOwnershipChallenge: {
+        challengeId: challenge.challengeId,
+        challengePath: challenge.challengePath,
+        challengeUrl: challenge.challengeUrl,
+        verificationMethod: challenge.verificationMethod,
+        issuedAtIso: challenge.issuedAtIso,
+        expiresAtIso: challenge.expiresAtIso,
+        challengeToken: challenge.challengeToken,
+        challengeResponseJson: JSON.stringify(challengePayload, null, 2)
+      }
+    };
+  }
+
+  async verifyOwnershipChallenge(options: OwnershipActionOptions = {}): Promise<ConsoleStateResponse> {
+    const state = await this.loadState();
+    const sessionId = this.resolveOwnedSessionId(state, options);
+
+    const profile = this.profileForSession(state, sessionId);
+    if (!profile.openClawUrl.trim()) {
+      throw new Error("This agent still needs an OpenClaw agent URL before ownership can be verified.");
+    }
+
+    const ownership = this.ownershipRecordForSession(state, sessionId);
+    const challenge = ownership.challenge;
+    if (!challenge) {
+      throw new Error("Issue an ownership challenge first.");
+    }
+    if (Date.parse(challenge.expiresAtIso) <= Date.now()) {
+      throw new Error("The ownership challenge expired. Issue a new challenge.");
+    }
+
+    const challengeResult = await this.fetchOwnershipChallengeResponse(challenge);
+    if (!challengeResult.matched) {
+      throw new Error(
+        `The OpenClaw runtime did not return the expected SantaClawz challenge at ${challenge.challengePath}.`
+      );
+    }
+
+    const verifiedAtIso = new Date().toISOString();
+    const challengeResponseDigestSha256 = canonicalDigest(challengeResult.parsed).sha256Hex;
+    const verificationMethod = challenge.verificationMethod;
+    const attestationDigestSha256 = canonicalDigest({
+      sessionId,
+      agentId: this.agentIdForSession(state, sessionId),
+      openClawUrl: profile.openClawUrl,
+      challengeId: challenge.challengeId,
+      challengePath: challenge.challengePath,
+      challengeUrl: challenge.challengeUrl,
+      verificationMethod,
+      challengeResponseDigestSha256,
+      verifiedAtIso
+    }).sha256Hex;
+    const adminHadAccess = this.hasAdminAccess(state, sessionId, options.adminKey);
+    const issuedAdminKey = adminHadAccess ? undefined : buildAdminKey();
+    const verification: AgentOwnershipVerificationState = {
+      challengeId: challenge.challengeId,
+      challengePath: challenge.challengePath,
+      challengeUrl: challenge.challengeUrl,
+      verificationMethod,
+      verifiedAtIso,
+      verifiedOpenClawUrl: profile.openClawUrl,
+      challengeResponseDigestSha256,
+      attestationDigestSha256,
+      ...(!adminHadAccess ? { reclaimedAtIso: verifiedAtIso } : {})
+    };
+    const nextState: ConsolePersistenceState = {
+      ...state,
+      adminKeysBySession:
+        issuedAdminKey
+          ? {
+              ...state.adminKeysBySession,
+              [sessionId]: {
+                keyHash: adminKeyHash(issuedAdminKey),
+                keyHint: adminKeyHint(issuedAdminKey),
+                issuedAtIso: verifiedAtIso
+              }
+            }
+          : state.adminKeysBySession,
+      ownershipBySession: {
+        ...state.ownershipBySession,
+        [sessionId]: {
+          status: "verified",
+          legacyRegistration: ownership.legacyRegistration,
+          canReclaim: false,
+          verification
+        }
+      }
+    };
+
+    await this.saveState(nextState);
+    await this.appendEvent(
+      "SessionCheckpointed",
+      {
+        sessionId,
+        ownershipVerified: true,
+        ownershipChallengeId: challenge.challengeId,
+        ...(issuedAdminKey ? { ownershipReclaimed: true } : {})
+      },
+      verifiedAtIso
+    );
+
+    return this.getConsoleState({
+      sessionId,
+      ...(issuedAdminKey
+        ? {
+            adminKey: issuedAdminKey,
+            exposeIssuedAdminKey: issuedAdminKey
+          }
+        : options.adminKey
+          ? { adminKey: options.adminKey }
+          : {})
     });
   }
 
@@ -2734,6 +3120,13 @@ export class ClawzControlPlane {
       profilesBySession: {
         ...state.profilesBySession,
         [focus.sessionId]: nextProfile
+      },
+      ownershipBySession: {
+        ...state.ownershipBySession,
+        [focus.sessionId]:
+          nextProfile.openClawUrl !== currentProfile.openClawUrl
+            ? buildDefaultOwnershipRecord(false)
+            : this.ownershipRecordForSession(state, focus.sessionId)
       }
     };
     await this.saveState(nextState);
