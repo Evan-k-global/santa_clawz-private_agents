@@ -33,6 +33,9 @@ importers:
       '@clawz/blob-store':
         specifier: workspace:*
         version: link:../../packages/blob-store
+      '@clawz/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@clawz/key-broker':
         specifier: workspace:*
         version: link:../../packages/key-broker

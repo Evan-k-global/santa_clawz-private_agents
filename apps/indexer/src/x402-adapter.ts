@@ -5,6 +5,10 @@ import type {
   AgentX402RailPlan,
   ConsoleStateResponse
 } from "@clawz/protocol";
+import {
+  buildProtocolOwnerFeePreviews,
+  protocolOwnerFeeAppliesToRail
+} from "./protocol-owner-fee.js";
 
 export const X402_CATALOG_ROUTE = "/.well-known/x402.json";
 export const X402_RESOURCE_ROUTE = "/api/x402/proof";
@@ -199,6 +203,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const payTo = profile.payoutWallets.base?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
   const settleOnProof = settlementTrigger === "on-proof";
+  const protocolFeeApplies = protocolOwnerFeeAppliesToRail(consoleState.protocolOwnerFeePolicy, "base-usdc");
   const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
@@ -221,6 +226,12 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   if (operatorFacilitatorUrl && !settleOnProof) {
     notes.push("Base exact-price flows use the operator-hosted x402 facilitator for this agent.");
   }
+  if (protocolFeeApplies) {
+    notes.push(`SantaClawz marketplace flow previews a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Base.`);
+    if (!settleOnProof) {
+      notes.push("The protocol owner fee becomes enforceable on the split reserve-release rail, not the current exact-price path.");
+    }
+  }
 
   if (facilitatorUrl && settleOnProof) {
     notes.push("Base reserve-release is expected to use a self-hosted or dedicated facilitator path.");
@@ -237,9 +248,19 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
     assetDecimals: BASE_MAINNET.assetDecimals,
     assetStandard: BASE_MAINNET.assetStandard,
     assetAddress: BASE_MAINNET.assetAddress,
-    builderHint: settleOnProof ? "buildBaseMainnetUsdcReserveReleaseRail" : "buildBaseMainnetUsdcRail",
+    builderHint:
+      settleOnProof && protocolFeeApplies
+        ? "buildBaseMainnetUsdcReserveReleaseFeeRail"
+        : settleOnProof
+          ? "buildBaseMainnetUsdcReserveReleaseRail"
+          : "buildBaseMainnetUsdcRail",
     facilitatorMode: settleOnProof ? "evm-reserve-release" : "x402-http",
-    settlementModel: settleOnProof ? "x402-base-usdc-reserve-release-v2" : "x402-exact-evm-v1",
+    settlementModel:
+      settleOnProof && protocolFeeApplies
+        ? "x402-base-usdc-reserve-release-v3"
+        : settleOnProof
+          ? "x402-base-usdc-reserve-release-v2"
+          : "x402-exact-evm-v1",
     executionMode: executionMode(settlementTrigger),
     ...(payTo ? { payTo } : {}),
     ...(escrowContract ? { settlementContractAddress: escrowContract } : {}),
@@ -257,6 +278,8 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const notes: string[] = [];
   const payTo = profile.payoutWallets.ethereum?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
+  const settleOnProof = settlementTrigger === "on-proof";
+  const protocolFeeApplies = protocolOwnerFeeAppliesToRail(consoleState.protocolOwnerFeePolicy, "ethereum-usdc");
   const operatorFacilitatorUrl = profile.paymentProfile.ethereumFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
@@ -271,15 +294,21 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     missing.push("Add an Ethereum facilitator URL for this agent.");
   }
 
-  if (settlementTrigger === "on-proof") {
-    missing.push("Reserve-release is currently Base-first in zeko-x402; Ethereum stays a compatibility rail for now.");
-  }
-
   if (operatorFacilitatorUrl) {
-    notes.push("Ethereum mainnet uses the operator-hosted facilitator for this rail.");
+    notes.push(
+      settleOnProof
+        ? "Ethereum reserve-release is expected to use an operator-hosted facilitator for this rail."
+        : "Ethereum mainnet uses the operator-hosted facilitator for this rail."
+    );
   }
   if (!operatorFacilitatorUrl && facilitatorUrl) {
     notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
+  }
+  if (protocolFeeApplies) {
+    notes.push(`SantaClawz marketplace flow previews a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Ethereum.`);
+    if (!settleOnProof) {
+      notes.push("The protocol owner fee becomes enforceable on the split reserve-release rail, not the current exact-price path.");
+    }
   }
 
   return {
@@ -290,9 +319,19 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     assetDecimals: ETHEREUM_MAINNET.assetDecimals,
     assetStandard: ETHEREUM_MAINNET.assetStandard,
     assetAddress: ETHEREUM_MAINNET.assetAddress,
-    builderHint: "buildEthereumMainnetUsdcRail",
-    facilitatorMode: "x402-http",
-    settlementModel: "x402-exact-evm-v1",
+    builderHint:
+      settleOnProof && protocolFeeApplies
+        ? "buildEthereumMainnetUsdcReserveReleaseFeeRail"
+        : settleOnProof
+          ? "buildEthereumMainnetUsdcReserveReleaseRail"
+          : "buildEthereumMainnetUsdcRail",
+    facilitatorMode: settleOnProof ? "evm-reserve-release" : "x402-http",
+    settlementModel:
+      settleOnProof && protocolFeeApplies
+        ? "x402-ethereum-mainnet-usdc-reserve-release-v3"
+        : settleOnProof
+          ? "x402-ethereum-mainnet-usdc-reserve-release-v2"
+          : "x402-exact-evm-v1",
     executionMode: executionMode(settlementTrigger),
     ...(payTo ? { payTo } : {}),
     ...(facilitatorUrl ? { facilitatorUrl } : {}),
@@ -350,6 +389,11 @@ export function buildAgentX402Plan(input: {
   const sessionId = consoleState.session.sessionId;
   const agentId = consoleState.agentId;
   const profile = consoleState.profile;
+  const protocolOwnerFeePolicy = consoleState.protocolOwnerFeePolicy;
+  const feePreviewByRail = buildProtocolOwnerFeePreviews({
+    policy: protocolOwnerFeePolicy,
+    profile
+  });
   const query = toQueryString(sessionId);
   const rails = profile.paymentProfile.supportedRails.map((rail) => {
     if (rail === "base-usdc") {
@@ -375,6 +419,8 @@ export function buildAgentX402Plan(input: {
     ...(profile.paymentProfile.defaultRail ? { defaultRail: profile.paymentProfile.defaultRail } : {}),
     ...(profile.paymentProfile.quoteUrl ? { quoteUrl: profile.paymentProfile.quoteUrl } : {}),
     ...(profile.paymentProfile.paymentNotes ? { paymentNotes: profile.paymentProfile.paymentNotes } : {}),
+    ...(protocolOwnerFeePolicy.enabled ? { protocolOwnerFeePolicy } : {}),
+    ...(feePreviewByRail.length > 0 ? { feePreviewByRail } : {}),
     proofBundleUrl: `${baseUrl}/api/interop/agent-proof?${query}`,
     verifyProofUrl: `${baseUrl}/api/interop/verify?${query}`,
     catalogPreviewUrl: `${baseUrl}${X402_CATALOG_ROUTE}?${query}`,
@@ -404,6 +450,7 @@ function railAcceptPreview(plan: AgentX402Plan, rail: AgentX402RailPlan) {
   if (!amount) {
     return undefined;
   }
+  const feePreview = plan.feePreviewByRail?.find((preview) => preview.rail === rail.rail);
 
   return {
     scheme: "exact",
@@ -434,6 +481,7 @@ function railAcceptPreview(plan: AgentX402Plan, rail: AgentX402RailPlan) {
         executionMode: rail.executionMode,
         pricingMode: plan.pricingMode,
         settlementTrigger: plan.settlementTrigger,
+        ...(feePreview ? { feePreview } : {}),
         missing: rail.missing,
         notes: rail.notes
       },
@@ -441,7 +489,18 @@ function railAcceptPreview(plan: AgentX402Plan, rail: AgentX402RailPlan) {
         ? {
             evm: {
               ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {}),
-              ...(rail.settlementContractAddress ? { escrowContract: rail.settlementContractAddress } : {})
+              ...(rail.settlementContractAddress ? { escrowContract: rail.settlementContractAddress } : {}),
+              ...(feePreview
+                ? {
+                    feeSplit: {
+                      version: "protocol-owner-fee-v1",
+                      feeBps: feePreview.feeBps,
+                      ...(feePreview.protocolFeeRecipient ? { protocolFeePayTo: feePreview.protocolFeeRecipient } : {}),
+                      ...(feePreview.sellerPayTo ? { sellerPayTo: feePreview.sellerPayTo } : {}),
+                      feeSettlementMode: "split-release-v1"
+                    }
+                  }
+                : {})
             }
           }
         : {
@@ -514,6 +573,8 @@ export function buildAgentX402CatalogPreview(input: {
         payoutAddressConfigured: input.plan.payoutAddressConfigured,
         pricingMode: input.plan.pricingMode,
         settlementTrigger: input.plan.settlementTrigger,
+        ...(input.plan.protocolOwnerFeePolicy ? { protocolOwnerFeePolicy: input.plan.protocolOwnerFeePolicy } : {}),
+        ...(input.plan.feePreviewByRail ? { feePreviewByRail: input.plan.feePreviewByRail } : {}),
         ...(input.plan.defaultRail ? { defaultRail: input.plan.defaultRail } : {}),
         ...(input.plan.quoteUrl ? { quoteUrl: input.plan.quoteUrl } : {}),
         ...(input.plan.paymentNotes ? { paymentNotes: input.plan.paymentNotes } : {}),
@@ -553,6 +614,8 @@ export function buildAgentX402PaymentRequiredPreview(input: {
         verifyProofUrl: input.plan.verifyProofUrl,
         verifyPaymentUrl: input.plan.verifyPaymentUrl,
         settlePaymentUrl: input.plan.settlePaymentUrl,
+        ...(input.plan.protocolOwnerFeePolicy ? { protocolOwnerFeePolicy: input.plan.protocolOwnerFeePolicy } : {}),
+        ...(input.plan.feePreviewByRail ? { feePreviewByRail: input.plan.feePreviewByRail } : {}),
         pricingMode: input.plan.pricingMode,
         settlementTrigger: input.plan.settlementTrigger
       }

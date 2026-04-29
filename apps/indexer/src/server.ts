@@ -1328,6 +1328,52 @@ app.post("/api/agents/:agentId/hire", route(async (request, response) => {
   }
 }));
 
+app.get("/api/social/anchors", route(async (request, response) => {
+  const sessionId = queryString(request.query, "sessionId");
+  const agentId = queryString(request.query, "agentId");
+  if (!sessionId && !agentId) {
+    response.status(400).json({ error: "sessionId or agentId is required." });
+    return;
+  }
+
+  try {
+    response.json(
+      await controlPlane.getOwnedSocialAnchorQueueState({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(adminKeyHeader(request) ? { adminKey: adminKeyHeader(request)! } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to load social anchor queue."
+    });
+  }
+}));
+
+app.post("/api/social/anchors/settle", route(async (request, response) => {
+  const body = isRecord(request.body) ? request.body : {};
+  try {
+    const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
+    const agentId = optionalString(body.agentId) ?? queryString(request.query, "agentId");
+    response.json(
+      await controlPlane.settleSocialAnchorBatch({
+        ...(sessionId ? { sessionId } : {}),
+        ...(agentId ? { agentId } : {}),
+        ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
+        ...(typeof body.localOnly === "boolean" ? { localOnly: body.localOnly } : {}),
+        ...(typeof body.txHash === "string" ? { txHash: body.txHash } : {}),
+        ...(typeof body.operatorNote === "string" ? { operatorNote: body.operatorNote } : {}),
+        ...(adminKeyHeader(request) ? { adminKey: adminKeyHeader(request)! } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to settle social anchor batch."
+    });
+  }
+}));
+
 app.post("/api/wallet/sponsor", route(async (request, response) => {
   const body = parseSponsorRequest(request.body ?? null);
   const resolvedSessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");

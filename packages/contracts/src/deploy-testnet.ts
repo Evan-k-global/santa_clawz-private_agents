@@ -12,6 +12,7 @@ import { loadLocalEnv } from "./shared/load-env.js";
 import { normalizeGraphqlEndpoint } from "./shared/network.js";
 import { SessionKernel } from "./session/SessionKernel.js";
 import { buildDeploymentWitnessPlan } from "./shared/witness-builders.js";
+import { SocialAnchorKernel } from "./social/SocialAnchorKernel.js";
 import { TurnKernel } from "./turn/TurnKernel.js";
 
 type DeployTarget = {
@@ -24,7 +25,8 @@ type DeployTarget = {
     | typeof TurnKernel
     | typeof ApprovalKernel
     | typeof DisclosureKernel
-    | typeof EscrowKernel;
+    | typeof EscrowKernel
+    | typeof SocialAnchorKernel;
 };
 
 type SecretResolution = {
@@ -237,6 +239,12 @@ async function main() {
       privateKeyEnv: "ESCROW_PRIVATE_KEY",
       keychainService: "ClawZ_ESCROW_PRIVATE_KEY",
       contractClass: EscrowKernel
+    },
+    {
+      label: "SocialAnchorKernel",
+      privateKeyEnv: "SOCIAL_ANCHOR_PRIVATE_KEY",
+      keychainService: "ClawZ_SOCIAL_ANCHOR_PRIVATE_KEY",
+      contractClass: SocialAnchorKernel
     }
   ];
 

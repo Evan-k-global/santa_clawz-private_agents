@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@clawz/blob-store": "workspace:*",
+    "@clawz/contracts": "workspace:*",
     "@clawz/key-broker": "workspace:*",
     "@clawz/protocol": "workspace:*",
     "@clawz/worker-runtime": "workspace:*",

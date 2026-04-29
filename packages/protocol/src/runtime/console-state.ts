@@ -249,6 +249,25 @@ export interface AgentPayoutWallets {
 export type AgentPaymentRail = "base-usdc" | "ethereum-usdc" | "zeko-native";
 export type AgentPricingMode = "fixed-exact" | "capped-exact" | "quote-required" | "agent-negotiated";
 export type AgentSettlementTrigger = "upfront" | "on-proof";
+export type ProtocolOwnerFeeApplicability = "santaclawz-marketplace";
+
+export interface ProtocolOwnerFeePolicy {
+  enabled: boolean;
+  feeBps: number;
+  settlementModel: "split-release-v1";
+  appliesTo: ProtocolOwnerFeeApplicability[];
+  recipientByRail: Partial<Record<AgentPaymentRail, string>>;
+}
+
+export interface AgentFeePreview {
+  rail: AgentPaymentRail;
+  grossAmountUsd?: string;
+  sellerNetAmountUsd?: string;
+  protocolFeeAmountUsd?: string;
+  sellerPayTo?: string;
+  protocolFeeRecipient?: string;
+  feeBps: number;
+}
 
 export interface AgentPaymentProfile {
   enabled: boolean;
@@ -293,6 +312,51 @@ export interface AgentOwnershipState {
   verification?: AgentOwnershipVerificationState;
 }
 
+export type SocialAnchorCandidateKind =
+  | "agent-registered"
+  | "ownership-verified"
+  | "agent-published"
+  | "payment-terms-live"
+  | "hire-request-submitted"
+  | "operator-dispatch";
+
+export interface SocialAnchorCandidate {
+  candidateId: string;
+  sessionId: string;
+  agentId: string;
+  kind: SocialAnchorCandidateKind;
+  title: string;
+  summary: string;
+  occurredAtIso: string;
+  payloadDigestSha256: string;
+  status: "pending" | "anchored";
+  batchId?: string;
+  anchoredAtIso?: string;
+}
+
+export interface SocialAnchorBatch {
+  batchId: string;
+  networkId: string;
+  itemCount: number;
+  candidateKinds: SocialAnchorCandidateKind[];
+  rootDigestSha256: string;
+  createdAtIso: string;
+  settledAtIso: string;
+  anchorField?: string;
+  contractAddress?: string;
+  txHash?: string;
+  operatorNote?: string;
+}
+
+export interface SocialAnchorQueueState {
+  pendingCount: number;
+  anchoredCount: number;
+  latestRootDigestSha256?: string;
+  lastSettledAtIso?: string;
+  items: SocialAnchorCandidate[];
+  recentBatches: SocialAnchorBatch[];
+}
+
 export interface AgentProfileState {
   agentName: string;
   representedPrincipal: string;
@@ -316,6 +380,8 @@ export interface AgentRegistryEntry {
   proofLevel: "signed" | "rooted" | "proof-backed";
   preferredProvingLocation: PrivacyProvingLocation;
   paymentsEnabled: boolean;
+  protocolOwnerFeeBps?: number;
+  protocolFeeApplies?: boolean;
   paymentRail?: AgentPaymentRail;
   pricingMode: AgentPricingMode;
   settlementTrigger: AgentSettlementTrigger;
@@ -324,6 +390,9 @@ export interface AgentRegistryEntry {
   paidJobsEnabled: boolean;
   ownershipVerified: boolean;
   published: boolean;
+  pendingSocialAnchorCount: number;
+  anchoredSocialFactCount: number;
+  lastSocialAnchorAtIso?: string;
   lastUpdatedAtIso?: string;
 }
 
@@ -351,6 +420,7 @@ export interface ConsoleStateResponse {
   paymentProfileReady: boolean;
   payoutAddressConfigured: boolean;
   paidJobsEnabled: boolean;
+  protocolOwnerFeePolicy: ProtocolOwnerFeePolicy;
   adminAccess: AdminAccessState;
   wallet: ShadowWalletState;
   trustModes: TrustModeCard[];
@@ -363,6 +433,7 @@ export interface ConsoleStateResponse {
   liveFlowTargets: LiveFlowTargets;
   liveFlow: LiveSessionTurnFlowState;
   sponsorQueue: SponsorQueueState;
+  socialAnchorQueue: SocialAnchorQueueState;
   profile: AgentProfileState;
   ownership: AgentOwnershipState;
 }
@@ -406,6 +477,8 @@ export interface AgentX402Plan {
   defaultRail?: AgentPaymentRail;
   quoteUrl?: string;
   paymentNotes?: string;
+  protocolOwnerFeePolicy?: ProtocolOwnerFeePolicy;
+  feePreviewByRail?: AgentFeePreview[];
   proofBundleUrl: string;
   verifyProofUrl: string;
   catalogPreviewUrl: string;

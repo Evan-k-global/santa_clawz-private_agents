@@ -8,6 +8,7 @@ import type {
   AgentPricingMode,
   AgentSettlementTrigger,
   GovernancePolicy,
+  SocialAnchorCandidateKind,
   TrustModeId,
   ZekoDeploymentMode
 } from "../runtime/console-state.js";
@@ -132,6 +133,15 @@ export interface AgentPaymentClaim {
     fixedAmountUsd?: string;
     maxAmountUsd?: string;
     quoteUrl?: string;
+    protocolOwnerFeeBps?: number;
+    protocolFeeRecipientByRail?: Partial<Record<AgentPaymentRail, string>>;
+    feeSettlementMode?: "split-release-v1";
+    feePreviewByRail?: Array<{
+      rail: AgentPaymentRail;
+      grossAmountUsd?: string;
+      sellerNetAmountUsd?: string;
+      protocolFeeAmountUsd?: string;
+    }>;
     facilitatorUrlByRail?: Partial<Record<AgentPaymentRail, string>>;
     paymentNotes?: string;
     payTo?: Partial<Record<AgentPaymentRail, string>>;
@@ -148,6 +158,23 @@ export interface AgentPrivacyClaim {
   retentionPolicy: RetentionPolicy;
   sealedArtifactCount: number;
   programmablePrivacy: ProgrammablePrivacyPolicy;
+  claimDigest: CanonicalDigest;
+}
+
+export interface AgentSocialClaim {
+  pendingCandidateCount: number;
+  anchoredFactCount: number;
+  candidateKinds: SocialAnchorCandidateKind[];
+  latestRootDigestSha256?: string;
+  lastSettledAtIso?: string;
+  recentBatches: Array<{
+    batchId: string;
+    rootDigestSha256: string;
+    settledAtIso: string;
+    anchorField?: string;
+    contractAddress?: string;
+    txHash?: string;
+  }>;
   claimDigest: CanonicalDigest;
 }
 
@@ -199,6 +226,7 @@ export interface ClawzAgentProofBundle {
   authority: AgentAuthorityClaim;
   payment: AgentPaymentClaim;
   privacy: AgentPrivacyClaim;
+  social: AgentSocialClaim;
   originProofs?: ZkTlsOriginProof[];
   exampleToolReceipt?: ToolReceipt;
   evidence: InteropEvidenceObject[];

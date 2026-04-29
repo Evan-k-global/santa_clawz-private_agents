@@ -5,6 +5,10 @@ import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { createSealedBlobStore, type SealedBlobStore } from "@clawz/blob-store";
+import {
+  buildSocialAnchorBatchRootField,
+  submitSocialAnchorBatchOnZeko
+} from "@clawz/contracts";
 import { createTenantKeyBroker, type TenantKeyBrokerRuntimeDescriptor, TenantKeyBroker } from "@clawz/key-broker";
 import {
   canonicalDigest,
@@ -28,6 +32,10 @@ import {
   type LiveFlowTurnTarget,
   type PrivacyApprovalRecord,
   type PrivacyExceptionQueueItem,
+  type SocialAnchorBatch,
+  type SocialAnchorCandidate,
+  type SocialAnchorCandidateKind,
+  type SocialAnchorQueueState,
   type ShadowWalletState,
   type TrustModeId,
   type ZekoContractDeployment,
@@ -36,6 +44,7 @@ import {
 import { buildGhostRunPlan } from "@clawz/worker-runtime";
 
 import { ReplayMaterializer } from "./materializer.js";
+import { buildProtocolOwnerFeePolicyFromEnv } from "./protocol-owner-fee.js";
 import { sampleEvents } from "./sample-data.js";
 
 const DEFAULT_TENANT_ID = "tenant_acme";
@@ -246,6 +255,21 @@ interface SponsorWalletOptions {
   adminKey?: string;
   sessionId?: string;
   purpose?: SponsorQueueJob["purpose"];
+}
+
+interface SocialAnchorQueueFile {
+  items: SocialAnchorCandidate[];
+  batches: SocialAnchorBatch[];
+}
+
+interface SocialAnchorSettleOptions {
+  sessionId?: string;
+  agentId?: string;
+  limit?: number;
+  txHash?: string;
+  localOnly?: boolean;
+  operatorNote?: string;
+  adminKey?: string;
 }
 
 interface RegisterAgentOptions {
@@ -673,6 +697,30 @@ function buildDefaultHireRequestFile(): HireRequestFile {
   };
 }
 
+function buildDefaultSocialAnchorQueueFile(): SocialAnchorQueueFile {
+  return {
+    items: [],
+    batches: []
+  };
+}
+
+function titleForSocialAnchorKind(kind: SocialAnchorCandidateKind) {
+  switch (kind) {
+    case "agent-registered":
+      return "Agent registered";
+    case "ownership-verified":
+      return "Ownership verified";
+    case "agent-published":
+      return "Published on Zeko";
+    case "payment-terms-live":
+      return "Payment terms live";
+    case "hire-request-submitted":
+      return "Hire request received";
+    case "operator-dispatch":
+      return "Operator dispatch updated";
+  }
+}
+
 function isMainnetNetwork(deployment: Pick<ZekoDeploymentState, "networkId" | "mode">): boolean {
   const networkId = deployment.networkId.toLowerCase();
   if (deployment.mode === "local-runtime" || deployment.mode === "planned-testnet" || deployment.mode === "testnet-live") {
@@ -849,6 +897,7 @@ export class ClawzControlPlane {
   private readonly liveFlowStatusPath: string;
   private readonly sponsorQueuePath: string;
   private readonly hireRequestPath: string;
+  private readonly socialAnchorQueuePath: string;
   private readonly keyBroker: TenantKeyBroker;
   private readonly keyBrokerRuntime: TenantKeyBrokerRuntimeDescriptor;
   private readonly blobStore: SealedBlobStore;
@@ -873,6 +922,7 @@ export class ClawzControlPlane {
     this.liveFlowStatusPath = path.join(baseDir, "state", "live-session-turn-flow.json");
     this.sponsorQueuePath = path.join(baseDir, "state", "wallet-sponsor-queue.json");
     this.hireRequestPath = path.join(baseDir, "state", "hire-requests.json");
+    this.socialAnchorQueuePath = path.join(baseDir, "state", "social-anchor-queue.json");
     this.keyBroker = createTenantKeyBroker({
       baseDir: path.join(baseDir, "kms"),
       wrappedKeyDir: path.join(baseDir, "kms", "wrapped-keys")
@@ -1025,6 +1075,83 @@ export class ClawzControlPlane {
   private async saveHireRequestFile(file: HireRequestFile) {
     await this.ensureDirs();
     await writeJsonFile(this.hireRequestPath, file);
+  }
+
+  private async loadSocialAnchorQueueFile(): Promise<SocialAnchorQueueFile> {
+    await this.ensureDirs();
+    const file = await readJsonFile<SocialAnchorQueueFile>(this.socialAnchorQueuePath);
+    if (file?.items && file?.batches) {
+      return file;
+    }
+
+    const fallback = buildDefaultSocialAnchorQueueFile();
+    await this.saveSocialAnchorQueueFile(fallback);
+    return fallback;
+  }
+
+  private async saveSocialAnchorQueueFile(file: SocialAnchorQueueFile) {
+    await this.ensureDirs();
+    await writeJsonFile(this.socialAnchorQueuePath, file);
+  }
+
+  private configuredSocialAnchorContractAddress(deployment: Pick<ZekoDeploymentState, "contracts">) {
+    return (
+      deployment.contracts.find((contract) => contract.label === "SocialAnchorKernel" && contract.address)?.address ??
+      (typeof process.env.CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY === "string" &&
+      process.env.CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY.trim().length > 0
+        ? process.env.CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY.trim()
+        : undefined)
+    );
+  }
+
+  private async submitSocialAnchorBatchToZeko(options: {
+    batchId: string;
+    sessionId: string;
+    rootDigestSha256: string;
+    deployment: Pick<ZekoDeploymentState, "networkId" | "graphqlEndpoint" | "archiveEndpoint" | "contracts">;
+  }) {
+    const submitterPrivateKey =
+      (typeof process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY === "string" &&
+      process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY.trim().length > 0
+        ? process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY.trim()
+        : undefined) ??
+      (typeof process.env.DEPLOYER_PRIVATE_KEY === "string" && process.env.DEPLOYER_PRIVATE_KEY.trim().length > 0
+        ? process.env.DEPLOYER_PRIVATE_KEY.trim()
+        : undefined);
+    if (!submitterPrivateKey) {
+      throw new Error(
+        "Set CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY or DEPLOYER_PRIVATE_KEY to anchor social batches on Zeko."
+      );
+    }
+
+    const socialAnchorPrivateKey =
+      (typeof process.env.SOCIAL_ANCHOR_PRIVATE_KEY === "string" && process.env.SOCIAL_ANCHOR_PRIVATE_KEY.trim().length > 0
+        ? process.env.SOCIAL_ANCHOR_PRIVATE_KEY.trim()
+        : undefined) ??
+      (typeof process.env.CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY === "string" &&
+      process.env.CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY.trim().length > 0
+        ? process.env.CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY.trim()
+        : undefined);
+    if (!socialAnchorPrivateKey) {
+      throw new Error("Set SOCIAL_ANCHOR_PRIVATE_KEY to anchor social batches on Zeko.");
+    }
+
+    return submitSocialAnchorBatchOnZeko({
+      batchId: options.batchId,
+      sessionId: options.sessionId,
+      rootDigestSha256: options.rootDigestSha256,
+      submitterPrivateKey,
+      socialAnchorPrivateKey,
+      ...(this.configuredSocialAnchorContractAddress(options.deployment)
+        ? { socialAnchorPublicKey: this.configuredSocialAnchorContractAddress(options.deployment)! }
+        : {}),
+      networkId: options.deployment.networkId,
+      mina: options.deployment.graphqlEndpoint,
+      archive: options.deployment.archiveEndpoint,
+      ...(typeof process.env.TX_FEE === "string" && process.env.TX_FEE.trim().length > 0
+        ? { fee: process.env.TX_FEE.trim() }
+        : {})
+    });
   }
 
   private async saveEvents(events: ClawzEvent[]) {
@@ -1851,6 +1978,77 @@ export class ClawzControlPlane {
     };
   }
 
+  async getSocialAnchorQueueState(sessionId?: string): Promise<SocialAnchorQueueState> {
+    const queue = await this.loadSocialAnchorQueueFile();
+    return this.buildSocialAnchorQueueState(queue, sessionId);
+  }
+
+  async getOwnedSocialAnchorQueueState(options: OwnershipActionOptions = {}): Promise<SocialAnchorQueueState> {
+    const state = await this.loadState();
+    const sessionId = this.resolveOwnedSessionId(state, options);
+    this.assertAdminAccess(state, sessionId, options.adminKey);
+    return this.getSocialAnchorQueueState(sessionId);
+  }
+
+  private buildSocialAnchorQueueState(queue: SocialAnchorQueueFile, sessionId?: string): SocialAnchorQueueState {
+    const visibleItems = (sessionId ? queue.items.filter((item) => item.sessionId === sessionId) : queue.items).sort((left, right) =>
+      right.occurredAtIso.localeCompare(left.occurredAtIso)
+    );
+    const visibleBatches = queue.batches
+      .filter((batch) => !sessionId || visibleItems.some((item) => item.batchId === batch.batchId))
+      .sort((left, right) => right.settledAtIso.localeCompare(left.settledAtIso));
+
+    return {
+      pendingCount: visibleItems.filter((item) => item.status === "pending").length,
+      anchoredCount: visibleItems.filter((item) => item.status === "anchored").length,
+      ...(visibleBatches[0]?.rootDigestSha256 ? { latestRootDigestSha256: visibleBatches[0].rootDigestSha256 } : {}),
+      ...(visibleBatches[0]?.settledAtIso ? { lastSettledAtIso: visibleBatches[0].settledAtIso } : {}),
+      items: visibleItems.slice(0, 16),
+      recentBatches: visibleBatches.slice(0, 6)
+    };
+  }
+
+  private async enqueueSocialAnchorCandidate(input: {
+    sessionId: string;
+    kind: SocialAnchorCandidateKind;
+    title?: string;
+    summary: string;
+    occurredAtIso?: string;
+    payload: Record<string, unknown>;
+  }): Promise<void> {
+    const state = await this.loadState();
+    const queue = await this.loadSocialAnchorQueueFile();
+    const agentId = this.agentIdForSession(state, input.sessionId);
+    const occurredAtIso = input.occurredAtIso ?? new Date().toISOString();
+    const payloadDigestSha256 = canonicalDigest({
+      kind: input.kind,
+      sessionId: input.sessionId,
+      agentId,
+      payload: input.payload
+    }).sha256Hex;
+
+    if (queue.items.some((item) => item.kind === input.kind && item.payloadDigestSha256 === payloadDigestSha256)) {
+      return;
+    }
+
+    const nextItem: SocialAnchorCandidate = {
+      candidateId: `anchor_${randomUUID().replace(/-/g, "").slice(0, 16)}`,
+      sessionId: input.sessionId,
+      agentId,
+      kind: input.kind,
+      title: input.title ?? titleForSocialAnchorKind(input.kind),
+      summary: input.summary.trim().slice(0, 280),
+      occurredAtIso,
+      payloadDigestSha256,
+      status: "pending"
+    };
+
+    await this.saveSocialAnchorQueueFile({
+      ...queue,
+      items: [nextItem, ...queue.items].slice(0, 500)
+    });
+  }
+
   private async runSponsorQueue(): Promise<void> {
     if (this.sponsorQueueRunPromise) {
       return this.sponsorQueueRunPromise;
@@ -2388,6 +2586,9 @@ export class ClawzControlPlane {
       const liveFlowState = await this.getLiveFlowState();
       const resume = this.canResumeLiveFlow(existingStatus, options);
       const requestedSessionId = options.sessionId ?? liveFlowState.sessionId ?? state.currentSessionId;
+      const priorPublished = this.buildLiveFlowTargets(events, liveFlowState).turns.some(
+        (target) => target.sessionId === requestedSessionId
+      );
       this.assertAdminAccess(state, requestedSessionId, adminKey);
       if (flowKind === "first-turn" || flowKind === "next-turn") {
         this.assertOwnershipVerifiedForPublish(state, requestedSessionId);
@@ -2495,9 +2696,24 @@ export class ClawzControlPlane {
           runningStatus.trustModeId ?? refreshedState.activeMode
         );
         await this.saveState(focusedState);
+        const finalSessionId = runningStatus.sessionId ?? refreshedState.currentSessionId;
+        if (!priorPublished && (flowKind === "first-turn" || flowKind === "next-turn")) {
+          const publishedProfile = this.profileForSession(focusedState, finalSessionId, runningStatus.trustModeId ?? focusedState.activeMode);
+          await this.enqueueSocialAnchorCandidate({
+            sessionId: finalSessionId,
+            kind: "agent-published",
+            summary: `${publishedProfile.agentName} published on Zeko and is now visible in Explore.`,
+            occurredAtIso: report.generatedAtIso ?? new Date().toISOString(),
+            payload: {
+              agentId: this.agentIdForSession(focusedState, finalSessionId),
+              turnId: runningStatus.turnId ?? DEFAULT_TURN_ID,
+              networkId: "zeko_testnet"
+            }
+          });
+        }
 
         return this.getConsoleState({
-          sessionId: runningStatus.sessionId ?? refreshedState.currentSessionId,
+          sessionId: finalSessionId,
           ...(adminKey ? { adminKey } : {})
         });
       } catch (error) {
@@ -2605,11 +2821,12 @@ export class ClawzControlPlane {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const normalizedExceptions = this.normalizePrivacyExceptions(state);
-    const [manifests, deployment, liveFlow, sponsorQueueFile] = await Promise.all([
+    const [manifests, deployment, liveFlow, sponsorQueueFile, socialAnchorQueueFile] = await Promise.all([
       this.blobStore.listManifests(state.currentSessionId),
       this.getDeploymentState(),
       this.getLiveFlowState(),
-      this.loadSponsorQueueFile()
+      this.loadSponsorQueueFile(),
+      this.loadSocialAnchorQueueFile()
     ]);
     const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
     const requestedSessionId =
@@ -2628,6 +2845,7 @@ export class ClawzControlPlane {
       .sort((left, right) => left.status.localeCompare(right.status) || right.severity.localeCompare(left.severity));
     const sessionTimeMachine = new ReplayMaterializer(session.events).buildTimeMachineEntries().slice(0, 12);
     const sponsorQueue = this.buildSponsorQueueState(sponsorQueueFile, focus.sessionId);
+    const socialAnchorQueue = this.buildSocialAnchorQueueState(socialAnchorQueueFile, focus.sessionId);
     const profile = this.profileForSession(state, focus.sessionId, focus.trustModeId);
     const agentId = this.agentIdForSession(state, focus.sessionId, focus.trustModeId);
     const published = liveFlowTargets.turns.some((target) => target.sessionId === focus.sessionId);
@@ -2636,6 +2854,7 @@ export class ClawzControlPlane {
     const payoutAddressConfigured = hasPayoutAddress(profile);
     const paidJobsEnabled = computePaidJobsEnabled(profile, published, deployment);
     const ownership = this.ownershipForSession(state, focus.sessionId);
+    const protocolOwnerFeePolicy = buildProtocolOwnerFeePolicyFromEnv();
     const adminAccess = this.buildAdminAccessState(
       state,
       focus.sessionId,
@@ -2649,6 +2868,7 @@ export class ClawzControlPlane {
       paymentProfileReady,
       payoutAddressConfigured,
       paidJobsEnabled,
+      protocolOwnerFeePolicy,
       adminAccess,
       wallet: {
         ...state.wallet,
@@ -2679,6 +2899,7 @@ export class ClawzControlPlane {
       liveFlowTargets,
       liveFlow,
       sponsorQueue,
+      socialAnchorQueue,
       profile,
       ownership
     };
@@ -2687,9 +2908,14 @@ export class ClawzControlPlane {
   async listRegisteredAgents(): Promise<AgentRegistryEntry[]> {
     const state = await this.loadState();
     const events = await this.loadEvents();
-    const [liveFlow, deployment] = await Promise.all([this.getLiveFlowState(), this.getDeploymentState()]);
+    const [liveFlow, deployment, socialAnchorQueueFile] = await Promise.all([
+      this.getLiveFlowState(),
+      this.getDeploymentState(),
+      this.loadSocialAnchorQueueFile()
+    ]);
     const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
     const materializer = new ReplayMaterializer(events);
+    const protocolOwnerFeePolicy = buildProtocolOwnerFeePolicyFromEnv();
     const proofRank = (proofLevel: AgentRegistryEntry["proofLevel"]) =>
       proofLevel === "proof-backed" ? 3 : proofLevel === "rooted" ? 2 : 1;
 
@@ -2702,6 +2928,10 @@ export class ClawzControlPlane {
         const published = liveFlowTargets.turns.some((target) => target.sessionId === sessionId);
         const lastUpdatedAtIso = session.events.at(-1)?.occurredAtIso;
         const ownership = this.ownershipForSession(state, sessionId);
+        const sessionAnchors = socialAnchorQueueFile.items.filter((item) => item.sessionId === sessionId);
+        const anchoredBatches = socialAnchorQueueFile.batches
+          .filter((batch) => sessionAnchors.some((item) => item.batchId === batch.batchId))
+          .sort((left, right) => right.settledAtIso.localeCompare(left.settledAtIso));
         return {
           agentId: this.agentIdForSession(state, sessionId, trustModeId),
           sessionId,
@@ -2715,6 +2945,16 @@ export class ClawzControlPlane {
           proofLevel: trustMode.proofLevel,
           preferredProvingLocation: profile.preferredProvingLocation,
           paymentsEnabled: profile.paymentProfile.enabled,
+          ...(protocolOwnerFeePolicy.enabled
+            ? {
+                protocolOwnerFeeBps: protocolOwnerFeePolicy.feeBps,
+                protocolFeeApplies: Boolean(
+                  protocolOwnerFeePolicy.appliesTo.includes("santaclawz-marketplace") &&
+                    profile.paymentProfile.defaultRail &&
+                    protocolOwnerFeePolicy.recipientByRail[profile.paymentProfile.defaultRail]
+                )
+              }
+            : {}),
           ...(profile.paymentProfile.defaultRail ? { paymentRail: profile.paymentProfile.defaultRail } : {}),
           pricingMode: profile.paymentProfile.pricingMode,
           settlementTrigger: profile.paymentProfile.settlementTrigger,
@@ -2723,6 +2963,9 @@ export class ClawzControlPlane {
           paidJobsEnabled: computePaidJobsEnabled(profile, published, deployment),
           ownershipVerified: ownership.status === "verified",
           published,
+          pendingSocialAnchorCount: sessionAnchors.filter((item) => item.status === "pending").length,
+          anchoredSocialFactCount: sessionAnchors.filter((item) => item.status === "anchored").length,
+          ...(anchoredBatches[0]?.settledAtIso ? { lastSocialAnchorAtIso: anchoredBatches[0].settledAtIso } : {}),
           ...(lastUpdatedAtIso ? { lastUpdatedAtIso } : {})
         } satisfies AgentRegistryEntry;
       })
@@ -2840,6 +3083,29 @@ export class ClawzControlPlane {
       },
       registeredAtIso
     );
+    await this.enqueueSocialAnchorCandidate({
+      sessionId,
+      kind: "agent-registered",
+      summary: `${profile.agentName} joined SantaClawz and is preparing to publish on Zeko.`,
+      occurredAtIso: registeredAtIso,
+      payload: {
+        agentId,
+        agentName: profile.agentName,
+        representedPrincipal: profile.representedPrincipal,
+        openClawUrl: profile.openClawUrl
+      }
+    });
+    await this.enqueueSocialAnchorCandidate({
+      sessionId,
+      kind: "operator-dispatch",
+      summary: profile.headline,
+      occurredAtIso: registeredAtIso,
+      payload: {
+        agentId,
+        agentName: profile.agentName,
+        headline: profile.headline
+      }
+    });
 
     return this.getConsoleState({
       sessionId,
@@ -2992,6 +3258,18 @@ export class ClawzControlPlane {
       },
       verifiedAtIso
     );
+    await this.enqueueSocialAnchorCandidate({
+      sessionId,
+      kind: "ownership-verified",
+      summary: `${profile.agentName} proved control of its OpenClaw runtime.`,
+      occurredAtIso: verifiedAtIso,
+      payload: {
+        agentId: this.agentIdForSession(state, sessionId),
+        challengeId: challenge.challengeId,
+        attestationDigestSha256,
+        verifiedOpenClawUrl: profile.openClawUrl
+      }
+    });
 
     return this.getConsoleState({
       sessionId,
@@ -3054,6 +3332,17 @@ export class ClawzControlPlane {
     await this.saveHireRequestFile({
       requests: [nextRecord, ...hireRequests.requests].slice(0, 200)
     });
+    await this.enqueueSocialAnchorCandidate({
+      sessionId,
+      kind: "hire-request-submitted",
+      summary: `${profile.agentName} received a new hire request through SantaClawz.`,
+      occurredAtIso: submittedAtIso,
+      payload: {
+        requestId,
+        agentId: options.agentId,
+        requesterContact: nextRecord.requesterContact
+      }
+    });
 
     return {
       requestId,
@@ -3065,6 +3354,98 @@ export class ClawzControlPlane {
       deliveryTarget: profile.openClawUrl,
       paidJobsEnabled
     };
+  }
+
+  async settleSocialAnchorBatch(options: SocialAnchorSettleOptions = {}): Promise<SocialAnchorQueueState> {
+    const state = await this.loadState();
+    const sessionId = this.resolveOwnedSessionId(state, options);
+    this.assertAdminAccess(state, sessionId, options.adminKey);
+    const queue = await this.loadSocialAnchorQueueFile();
+    const deployment = await this.getDeploymentState();
+    const pendingItems = queue.items
+      .filter((item) => item.sessionId === sessionId && item.status === "pending")
+      .sort((left, right) => left.occurredAtIso.localeCompare(right.occurredAtIso))
+      .slice(0, Math.max(1, Math.min(options.limit ?? 12, 50)));
+
+    if (pendingItems.length === 0) {
+      throw new Error("No pending social proof facts are waiting to anchor for this agent.");
+    }
+
+    const settledAtIso = new Date().toISOString();
+    const batchId = `anchor_batch_${randomUUID().replace(/-/g, "").slice(0, 16)}`;
+    const rootDigestSha256 = canonicalDigest({
+      batchId,
+      sessionId,
+      items: pendingItems.map((item) => ({
+        candidateId: item.candidateId,
+        kind: item.kind,
+        occurredAtIso: item.occurredAtIso,
+        payloadDigestSha256: item.payloadDigestSha256
+      }))
+    }).sha256Hex;
+    const localAnchorField = buildSocialAnchorBatchRootField({
+      batchId,
+      sessionId,
+      rootDigestSha256
+    }).toString();
+    const chainResult = options.localOnly
+      ? undefined
+      : await this.submitSocialAnchorBatchToZeko({
+          batchId,
+          sessionId,
+          rootDigestSha256,
+          deployment
+        });
+    const nextBatch: SocialAnchorBatch = {
+      batchId,
+      networkId: chainResult?.networkId ?? deployment.networkId,
+      itemCount: pendingItems.length,
+      candidateKinds: [...new Set(pendingItems.map((item) => item.kind))],
+      rootDigestSha256,
+      createdAtIso: settledAtIso,
+      settledAtIso,
+      anchorField: chainResult?.anchorField ?? localAnchorField,
+      ...(chainResult?.contractAddress ? { contractAddress: chainResult.contractAddress } : {}),
+      ...(chainResult?.txHash
+        ? { txHash: chainResult.txHash }
+        : typeof options.txHash === "string" && options.txHash.trim().length > 0
+          ? { txHash: options.txHash.trim().slice(0, 140) }
+          : {}),
+      ...(typeof options.operatorNote === "string" && options.operatorNote.trim().length > 0
+        ? { operatorNote: options.operatorNote.trim().slice(0, 280) }
+        : {})
+    };
+
+    await this.saveSocialAnchorQueueFile({
+      items: queue.items.map((item) =>
+        pendingItems.some((pending) => pending.candidateId === item.candidateId)
+          ? {
+              ...item,
+              status: "anchored",
+              batchId,
+              anchoredAtIso: settledAtIso
+            }
+          : item
+      ),
+      batches: [nextBatch, ...queue.batches].slice(0, 80)
+    });
+
+    await this.appendEvent(
+      "SessionCheckpointed",
+      {
+        sessionId,
+        socialAnchorBatchSettled: true,
+        socialAnchorBatchId: batchId,
+        socialAnchorRootDigestSha256: rootDigestSha256,
+        socialAnchorItemCount: pendingItems.length,
+        socialAnchorAnchorField: nextBatch.anchorField,
+        ...(nextBatch.contractAddress ? { socialAnchorContractAddress: nextBatch.contractAddress } : {}),
+        ...(nextBatch.txHash ? { socialAnchorTxHash: nextBatch.txHash } : {})
+      },
+      settledAtIso
+    );
+
+    return this.getSocialAnchorQueueState(sessionId);
   }
 
   async setTrustMode(modeId: TrustModeId, sessionId?: string, adminKey?: string): Promise<ConsoleStateResponse> {
@@ -3102,11 +3483,14 @@ export class ClawzControlPlane {
     const state = await this.loadState();
     const events = await this.loadEvents();
     const liveFlow = await this.getLiveFlowState();
-    const focus = this.resolveSessionFocus(state, events, this.buildLiveFlowTargets(events, liveFlow), liveFlow, sessionId);
+    const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
+    const focus = this.resolveSessionFocus(state, events, liveFlowTargets, liveFlow, sessionId);
     this.assertAdminAccess(state, focus.sessionId, adminKey);
     const trustModeId = focus.trustModeId;
     const fallbackProfile = buildDefaultProfile(trustModeId);
     const currentProfile = this.profileForSession(state, focus.sessionId, trustModeId);
+    const wasPublished = liveFlowTargets.turns.some((target) => target.sessionId === focus.sessionId);
+    const wasPaymentReady = computePaidJobsEnabled(currentProfile, wasPublished, await this.getDeploymentState());
     const nextProfile = this.sanitizeProfileInput(trustModeId, input, {
       ...fallbackProfile,
       ...currentProfile
@@ -3134,6 +3518,30 @@ export class ClawzControlPlane {
       sessionId: focus.sessionId,
       profileUpdated: true
     });
+    const nextPaymentReady = computePaidJobsEnabled(nextProfile, wasPublished, await this.getDeploymentState());
+    if (wasPublished && nextProfile.headline.trim() !== currentProfile.headline.trim() && nextProfile.headline.trim().length > 0) {
+      await this.enqueueSocialAnchorCandidate({
+        sessionId: focus.sessionId,
+        kind: "operator-dispatch",
+        summary: nextProfile.headline,
+        payload: {
+          agentId: this.agentIdForSession(nextState, focus.sessionId),
+          headline: nextProfile.headline
+        }
+      });
+    }
+    if (wasPublished && !wasPaymentReady && nextPaymentReady) {
+      await this.enqueueSocialAnchorCandidate({
+        sessionId: focus.sessionId,
+        kind: "payment-terms-live",
+        summary: `${nextProfile.agentName} turned on paid jobs with ${nextProfile.paymentProfile.defaultRail ?? "its selected rail"}.`,
+        payload: {
+          agentId: this.agentIdForSession(nextState, focus.sessionId),
+          defaultRail: nextProfile.paymentProfile.defaultRail,
+          pricingMode: nextProfile.paymentProfile.pricingMode
+        }
+      });
+    }
     return this.getConsoleState({ sessionId: focus.sessionId, ...(adminKey ? { adminKey } : {}) });
   }
 

@@ -20,6 +20,7 @@ import {
 import { buildGhostRunPlan, buildNoopOriginProofAttestation } from "@clawz/worker-runtime";
 
 import type { SessionView } from "./materializer.js";
+import { buildProtocolOwnerFeePreviews } from "./protocol-owner-fee.js";
 
 const SERVICE_ID = "clawz-privacy-orchestrator";
 const PROOF_PLUGIN_ID = "plugin_clawz_proof_surface";
@@ -514,6 +515,10 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
       .map((rail) => [rail, facilitatorUrlForRail(input.consoleState.profile, rail)] as const)
       .filter((entry): entry is [typeof entry[0], string] => typeof entry[1] === "string" && entry[1].trim().length > 0)
   );
+  const x402FeePreviewByRail = buildProtocolOwnerFeePreviews({
+    policy: input.consoleState.protocolOwnerFeePolicy,
+    profile: input.consoleState.profile
+  });
 
   const paymentWithoutDigest = {
     settlementAsset: "MINA" as const,
@@ -568,6 +573,23 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
             ...(input.consoleState.profile.paymentProfile.quoteUrl
               ? { quoteUrl: input.consoleState.profile.paymentProfile.quoteUrl }
               : {}),
+            ...(input.consoleState.protocolOwnerFeePolicy.enabled
+              ? {
+                  protocolOwnerFeeBps: input.consoleState.protocolOwnerFeePolicy.feeBps,
+                  protocolFeeRecipientByRail: input.consoleState.protocolOwnerFeePolicy.recipientByRail,
+                  feeSettlementMode: input.consoleState.protocolOwnerFeePolicy.settlementModel
+                }
+              : {}),
+            ...(x402FeePreviewByRail.length > 0
+              ? {
+                  feePreviewByRail: x402FeePreviewByRail.map((preview) => ({
+                    rail: preview.rail,
+                    ...(preview.grossAmountUsd ? { grossAmountUsd: preview.grossAmountUsd } : {}),
+                    ...(preview.sellerNetAmountUsd ? { sellerNetAmountUsd: preview.sellerNetAmountUsd } : {}),
+                    ...(preview.protocolFeeAmountUsd ? { protocolFeeAmountUsd: preview.protocolFeeAmountUsd } : {})
+                  }))
+                }
+              : {}),
             ...(Object.keys(x402FacilitatorUrlByRail).length > 0
               ? { facilitatorUrlByRail: x402FacilitatorUrlByRail }
               : {}),
@@ -597,6 +619,30 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
   const privacy = {
     ...privacyWithoutDigest,
     claimDigest: canonicalDigest(privacyWithoutDigest)
+  };
+
+  const socialWithoutDigest = {
+    pendingCandidateCount: input.consoleState.socialAnchorQueue.pendingCount,
+    anchoredFactCount: input.consoleState.socialAnchorQueue.anchoredCount,
+    candidateKinds: [...new Set(input.consoleState.socialAnchorQueue.items.map((item) => item.kind))],
+    ...(input.consoleState.socialAnchorQueue.latestRootDigestSha256
+      ? { latestRootDigestSha256: input.consoleState.socialAnchorQueue.latestRootDigestSha256 }
+      : {}),
+    ...(input.consoleState.socialAnchorQueue.lastSettledAtIso
+      ? { lastSettledAtIso: input.consoleState.socialAnchorQueue.lastSettledAtIso }
+      : {}),
+    recentBatches: input.consoleState.socialAnchorQueue.recentBatches.map((batch) => ({
+      batchId: batch.batchId,
+      rootDigestSha256: batch.rootDigestSha256,
+      settledAtIso: batch.settledAtIso,
+      ...(batch.anchorField ? { anchorField: batch.anchorField } : {}),
+      ...(batch.contractAddress ? { contractAddress: batch.contractAddress } : {}),
+      ...(batch.txHash ? { txHash: batch.txHash } : {})
+    }))
+  };
+  const social = {
+    ...socialWithoutDigest,
+    claimDigest: canonicalDigest(socialWithoutDigest)
   };
 
   const generatedAtIso =
@@ -661,6 +707,21 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
       verificationMaterial: [...KERNEL_VERIFICATION_PATH],
       note: "These claim categories map cleanly onto the Zeko deployment path for registry, approvals, disclosures, escrow, and turn finalization."
     },
+    ...social.recentBatches
+      .filter((batch) => Boolean(batch.contractAddress) && Boolean(batch.txHash))
+      .slice(0, 1)
+      .map((batch) => ({
+        type: "zeko-kernel-path" as const,
+        chain: "zeko" as const,
+        networkId: discovery.network.networkId,
+        verificationMaterial: [
+          batch.contractAddress!,
+          batch.txHash!,
+          ...(batch.anchorField ? [batch.anchorField] : []),
+          batch.rootDigestSha256
+        ],
+        note: "Recent social activity can be checked against the SocialAnchorKernel batch root SantaClawz submitted on Zeko."
+      })),
     ...unique(originProofs.map((proof) => `${proof.verifierSystem}:${proof.verifierKeyHash}`)).map((descriptor) => {
       const separator = descriptor.indexOf(":");
       const verifierSystem = separator >= 0 ? descriptor.slice(0, separator) : descriptor;
@@ -692,6 +753,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
     authority,
     payment,
     privacy,
+    social,
     ...(originProofs.length > 0 ? { originProofs } : {}),
     exampleToolReceipt,
     evidence,

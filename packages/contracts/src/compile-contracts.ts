@@ -11,6 +11,7 @@ import { DisclosureScopeProgram } from "./proofs/DisclosureScopeProgram.js";
 import { RegistryKernel } from "./registry/RegistryKernel.js";
 import { SessionKernel } from "./session/SessionKernel.js";
 import { buildDeploymentWitnessPlan } from "./shared/witness-builders.js";
+import { SocialAnchorKernel } from "./social/SocialAnchorKernel.js";
 import { TurnKernel } from "./turn/TurnKernel.js";
 
 async function writeCompileArtifacts(payload: {
@@ -41,7 +42,8 @@ async function main() {
     ["TurnKernel", TurnKernel],
     ["ApprovalKernel", ApprovalKernel],
     ["DisclosureKernel", DisclosureKernel],
-    ["EscrowKernel", EscrowKernel]
+    ["EscrowKernel", EscrowKernel],
+    ["SocialAnchorKernel", SocialAnchorKernel]
   ] as const;
 
   for (const [label, contractClass] of compileTargets) {
