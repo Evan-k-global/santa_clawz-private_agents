@@ -2178,6 +2178,7 @@ button:disabled {
 
   .action-side {
     width: 100%;
+    align-items: flex-end;
   }
 
   .ownership-reclaim-note {
@@ -2189,7 +2190,8 @@ button:disabled {
   }
 
   .share-actions {
-    justify-items: stretch;
+    width: 100%;
+    justify-items: end;
   }
 
   .explore-card-topline,
@@ -2212,7 +2214,9 @@ button:disabled {
 
   .action-side button,
   .action-side a {
-    width: 100%;
+    width: auto;
+    max-width: 100%;
+    align-self: flex-end;
   }
 
   .register-browser-button {
