@@ -46,6 +46,16 @@ type AdminKeyContext = {
   agentId?: string;
 };
 
+export class ApiError extends Error {
+  data: Record<string, unknown> | undefined;
+
+  constructor(message: string, data?: Record<string, unknown>) {
+    super(message);
+    this.name = "ApiError";
+    this.data = data;
+  }
+}
+
 export function getApiBase() {
   return API_BASE;
 }
@@ -223,8 +233,11 @@ async function request<T>(path: string, init?: RequestInit, adminContext?: Admin
   }
 
   if (!response.ok) {
-    const payload = (await response.json().catch(() => null)) as { error?: string } | null;
-    throw new Error(payload?.error ?? `Request failed: ${response.status}`);
+    const payload = (await response.json().catch(() => null)) as Record<string, unknown> | null;
+    throw new ApiError(
+      typeof payload?.error === "string" ? payload.error : `Request failed: ${response.status}`,
+      payload ?? undefined
+    );
   }
 
   const payload = (await response.json()) as T;

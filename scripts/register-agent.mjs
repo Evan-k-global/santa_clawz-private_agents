@@ -119,7 +119,7 @@ const paymentProfile = {
   ...(typeof args["max-price-usd"] === "string" ? { maxAmountUsd: args["max-price-usd"].trim() } : {}),
   ...(typeof args["quote-url"] === "string" ? { quoteUrl: args["quote-url"].trim() } : {}),
   settlementTrigger:
-    typeof args["settlement-trigger"] === "string" ? args["settlement-trigger"].trim() : "upfront",
+    typeof args["settlement-trigger"] === "string" ? args["settlement-trigger"].trim() : "on-proof",
   ...(typeof args["payment-notes"] === "string" ? { paymentNotes: args["payment-notes"].trim() } : {})
 };
 const trustModeId = typeof args["trust-mode"] === "string" ? args["trust-mode"].trim() : "private";

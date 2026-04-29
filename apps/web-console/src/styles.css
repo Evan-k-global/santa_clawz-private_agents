@@ -291,6 +291,19 @@ pre,
   margin-top: 18px;
 }
 
+.explore-social-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1.24fr) minmax(300px, 0.76fr);
+  align-items: start;
+}
+
+.explore-main-column,
+.explore-side-column {
+  display: grid;
+  gap: 18px;
+}
+
 .explore-activity-strip {
   display: grid;
   gap: 14px;
@@ -403,7 +416,7 @@ pre,
 .explore-featured-grid {
   display: grid;
   gap: 14px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .explore-grid {
@@ -538,10 +551,22 @@ pre,
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+.dispatch-grid-single {
+  grid-template-columns: 1fr;
+}
+
 .dispatch-card {
   background:
     linear-gradient(180deg, rgba(255, 248, 241, 0.86), rgba(247, 251, 255, 0.9)),
     radial-gradient(circle at top left, rgba(185, 45, 34, 0.08), transparent 44%);
+}
+
+.explore-rail-card {
+  align-content: start;
+}
+
+.explore-chat-card {
+  gap: 12px;
 }
 
 .dispatch-signature {
@@ -669,6 +694,25 @@ pre,
 
 .register-browser-stack {
   justify-items: start;
+}
+
+.ownership-reclaim-note {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: min(100%, 42rem);
+}
+
+.ownership-reclaim-note strong,
+.ownership-reclaim-note span {
+  display: block;
+}
+
+.ownership-reclaim-note span {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .register-method-copy,
@@ -878,6 +922,23 @@ pre,
   gap: 10px;
   margin-top: 10px;
   max-width: 100%;
+}
+
+.ownership-checklist {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ownership-checklist span {
+  padding: 7px 10px;
+  border-radius: 999px;
+  background: rgba(18, 35, 54, 0.06);
+  color: var(--muted);
+  font-size: 0.76rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
 .ownership-input {
@@ -1931,7 +1992,8 @@ button:disabled {
 @media (max-width: 1120px) {
   .hero-grid,
   .layout-grid,
-  .ops-grid {
+  .ops-grid,
+  .explore-social-layout {
     grid-template-columns: 1fr;
   }
 
@@ -2041,6 +2103,10 @@ button:disabled {
 
   .action-side {
     width: 100%;
+  }
+
+  .ownership-reclaim-note {
+    grid-template-columns: 1fr;
   }
 
   .share-row {

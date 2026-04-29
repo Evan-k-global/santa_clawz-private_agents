@@ -45,8 +45,36 @@ type SettlementLedger = {
 };
 type ZekoX402Module = {
   buildBaseMainnetUsdcRail(input: { payTo: string; amount: string; facilitatorUrl?: string }): unknown;
+  buildBaseMainnetUsdcReserveReleaseFeeRail(input: {
+    payTo: string;
+    amount: string;
+    escrowContract: string;
+    protocolFeePayTo: string;
+    feeBps: number;
+    facilitatorUrl?: string;
+  }): unknown;
+  buildBaseMainnetUsdcReserveReleaseRail(input: {
+    payTo: string;
+    amount: string;
+    escrowContract: string;
+    facilitatorUrl?: string;
+  }): unknown;
   buildCatalog(input: JsonRecord): unknown;
   buildEthereumMainnetUsdcRail(input: { payTo: string; amount: string; facilitatorUrl?: string }): unknown;
+  buildEthereumMainnetUsdcReserveReleaseFeeRail(input: {
+    payTo: string;
+    amount: string;
+    escrowContract: string;
+    protocolFeePayTo: string;
+    feeBps: number;
+    facilitatorUrl?: string;
+  }): unknown;
+  buildEthereumMainnetUsdcReserveReleaseRail(input: {
+    payTo: string;
+    amount: string;
+    escrowContract: string;
+    facilitatorUrl?: string;
+  }): unknown;
   buildPaymentRequired(input: JsonRecord): unknown;
   buildSettlementResponse(input: JsonRecord): unknown;
   CDPFacilitatorClient: new (input: { bearerToken: string }) => FacilitatorClient;
@@ -202,8 +230,8 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const notes: string[] = [];
   const payTo = profile.payoutWallets.base?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
-  const settleOnProof = settlementTrigger === "on-proof";
   const protocolFeeApplies = protocolOwnerFeeAppliesToRail(consoleState.protocolOwnerFeePolicy, "base-usdc");
+  const settleOnProof = settlementTrigger === "on-proof" || protocolFeeApplies;
   const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
@@ -227,10 +255,8 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
     notes.push("Base exact-price flows use the operator-hosted x402 facilitator for this agent.");
   }
   if (protocolFeeApplies) {
-    notes.push(`SantaClawz marketplace flow previews a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Base.`);
-    if (!settleOnProof) {
-      notes.push("The protocol owner fee becomes enforceable on the split reserve-release rail, not the current exact-price path.");
-    }
+    notes.push(`SantaClawz marketplace routing applies a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Base.`);
+    notes.push("This fee is enforced on the split reserve-release rail before seller payout release.");
   }
 
   if (facilitatorUrl && settleOnProof) {
@@ -261,7 +287,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
         : settleOnProof
           ? "x402-base-usdc-reserve-release-v2"
           : "x402-exact-evm-v1",
-    executionMode: executionMode(settlementTrigger),
+    executionMode: settleOnProof ? "reserve-release" : executionMode(settlementTrigger),
     ...(payTo ? { payTo } : {}),
     ...(escrowContract ? { settlementContractAddress: escrowContract } : {}),
     ...(facilitatorUrl ? { facilitatorUrl } : {}),
@@ -278,11 +304,12 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const notes: string[] = [];
   const payTo = profile.payoutWallets.ethereum?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
-  const settleOnProof = settlementTrigger === "on-proof";
   const protocolFeeApplies = protocolOwnerFeeAppliesToRail(consoleState.protocolOwnerFeePolicy, "ethereum-usdc");
+  const settleOnProof = settlementTrigger === "on-proof" || protocolFeeApplies;
   const operatorFacilitatorUrl = profile.paymentProfile.ethereumFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
+  const escrowContract = process.env.CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT?.trim();
 
   if (!payTo) {
     missing.push("Add an Ethereum payout wallet.");
@@ -292,6 +319,10 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
 
   if (!operatorFacilitatorUrl) {
     missing.push("Add an Ethereum facilitator URL for this agent.");
+  }
+
+  if (settleOnProof && !escrowContract) {
+    missing.push("Set CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT for Ethereum reserve-release.");
   }
 
   if (operatorFacilitatorUrl) {
@@ -305,10 +336,8 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
   }
   if (protocolFeeApplies) {
-    notes.push(`SantaClawz marketplace flow previews a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Ethereum.`);
-    if (!settleOnProof) {
-      notes.push("The protocol owner fee becomes enforceable on the split reserve-release rail, not the current exact-price path.");
-    }
+    notes.push(`SantaClawz marketplace routing applies a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Ethereum.`);
+    notes.push("This fee is enforced on the split reserve-release rail before seller payout release.");
   }
 
   return {
@@ -332,8 +361,9 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
         : settleOnProof
           ? "x402-ethereum-mainnet-usdc-reserve-release-v2"
           : "x402-exact-evm-v1",
-    executionMode: executionMode(settlementTrigger),
+    executionMode: settleOnProof ? "reserve-release" : executionMode(settlementTrigger),
     ...(payTo ? { payTo } : {}),
+    ...(escrowContract ? { settlementContractAddress: escrowContract } : {}),
     ...(facilitatorUrl ? { facilitatorUrl } : {}),
     ...pricing,
     ready: consoleState.paymentsEnabled && missing.length === 0 && !isQuotedPricing(profile.paymentProfile.pricingMode),
@@ -439,7 +469,9 @@ function railDescription(rail: AgentX402RailPlan): string {
   }
 
   if (rail.rail === "ethereum-usdc") {
-    return "Ethereum mainnet USDC rail using exact-price x402 settlement.";
+    return rail.executionMode === "reserve-release"
+      ? "Ethereum mainnet USDC rail using reserve-now, release-on-proof settlement."
+      : "Ethereum mainnet USDC rail using exact-price x402 settlement.";
   }
 
   return "Zeko settlement-contract rail using a proof-aware zkApp settlement path.";
@@ -672,18 +704,18 @@ function facilitatorClientForRail(rail: AgentX402RailPlan) {
   return null;
 }
 
-function isLiveExactRail(plan: AgentX402Plan, rail: AgentX402RailPlan): boolean {
+function isLiveRuntimeRail(plan: AgentX402Plan, rail: AgentX402RailPlan): boolean {
   return (
     rail.ready &&
-    rail.executionMode === "settle-first" &&
     rail.settlementRail === "evm" &&
     plan.pricingMode === "fixed-exact" &&
     typeof rail.amountUsd === "string" &&
-    rail.amountUsd.trim().length > 0
+    rail.amountUsd.trim().length > 0 &&
+    (rail.executionMode === "settle-first" || rail.executionMode === "reserve-release")
   );
 }
 
-function buildLiveRail(rail: AgentX402RailPlan): JsonRecord | null {
+function buildLiveRail(plan: AgentX402Plan, rail: AgentX402RailPlan): JsonRecord | null {
   if (!zekoX402Module) {
     return null;
   }
@@ -692,7 +724,34 @@ function buildLiveRail(rail: AgentX402RailPlan): JsonRecord | null {
     return null;
   }
 
+  const feePreview = plan.feePreviewByRail?.find((preview) => preview.rail === rail.rail);
+  const escrowContract = rail.settlementContractAddress;
+
+  if (rail.executionMode === "reserve-release" && !escrowContract) {
+    return null;
+  }
+
   if (rail.rail === "base-usdc") {
+    if (rail.executionMode === "reserve-release") {
+      if (feePreview?.protocolFeeRecipient && feePreview.feeBps > 0) {
+        return zekoX402Module.buildBaseMainnetUsdcReserveReleaseFeeRail({
+          payTo: rail.payTo,
+          amount: rail.amountUsd,
+          escrowContract: escrowContract!,
+          protocolFeePayTo: feePreview.protocolFeeRecipient,
+          feeBps: feePreview.feeBps,
+          ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {})
+        }) as JsonRecord;
+      }
+
+      return zekoX402Module.buildBaseMainnetUsdcReserveReleaseRail({
+        payTo: rail.payTo,
+        amount: rail.amountUsd,
+        escrowContract: escrowContract!,
+        ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {})
+      }) as JsonRecord;
+    }
+
     return zekoX402Module.buildBaseMainnetUsdcRail({
       payTo: rail.payTo,
       amount: rail.amountUsd,
@@ -701,6 +760,26 @@ function buildLiveRail(rail: AgentX402RailPlan): JsonRecord | null {
   }
 
   if (rail.rail === "ethereum-usdc") {
+    if (rail.executionMode === "reserve-release") {
+      if (feePreview?.protocolFeeRecipient && feePreview.feeBps > 0) {
+        return zekoX402Module.buildEthereumMainnetUsdcReserveReleaseFeeRail({
+          payTo: rail.payTo,
+          amount: rail.amountUsd,
+          escrowContract: escrowContract!,
+          protocolFeePayTo: feePreview.protocolFeeRecipient,
+          feeBps: feePreview.feeBps,
+          ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {})
+        }) as JsonRecord;
+      }
+
+      return zekoX402Module.buildEthereumMainnetUsdcReserveReleaseRail({
+        payTo: rail.payTo,
+        amount: rail.amountUsd,
+        escrowContract: escrowContract!,
+        ...(rail.facilitatorUrl ? { facilitatorUrl: rail.facilitatorUrl } : {})
+      }) as JsonRecord;
+    }
+
     return zekoX402Module.buildEthereumMainnetUsdcRail({
       payTo: rail.payTo,
       amount: rail.amountUsd,
@@ -720,9 +799,9 @@ export function buildAgentX402RuntimeContext(input: {
     return null;
   }
 
-  const runtimeRails = input.plan.rails.filter((rail) => isLiveExactRail(input.plan, rail));
+  const runtimeRails = input.plan.rails.filter((rail) => isLiveRuntimeRail(input.plan, rail));
   const rails = runtimeRails
-    .map((rail) => buildLiveRail(rail))
+    .map((rail) => buildLiveRail(input.plan, rail))
     .filter((rail): rail is JsonRecord => Boolean(rail));
 
   if (rails.length === 0) {

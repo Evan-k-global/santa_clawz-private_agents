@@ -119,6 +119,18 @@ interface SessionOwnershipRecord {
   verification?: AgentOwnershipVerificationState;
 }
 
+export class DuplicateOpenClawUrlError extends Error {
+  existingAgentId: string;
+  canReclaim: boolean;
+
+  constructor(message: string, existingAgentId: string, canReclaim: boolean) {
+    super(message);
+    this.name = "DuplicateOpenClawUrlError";
+    this.existingAgentId = existingAgentId;
+    this.canReclaim = canReclaim;
+  }
+}
+
 interface OwnershipChallengeIssueResult {
   state: ConsoleStateResponse;
   issuedOwnershipChallenge: {
@@ -617,7 +629,7 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
       supportedRails: ["base-usdc"],
       defaultRail: "base-usdc",
       pricingMode: "fixed-exact",
-      settlementTrigger: "upfront"
+      settlementTrigger: "on-proof"
     },
     preferredProvingLocation: trustMode.defaultProvingLocation
   };
@@ -1297,7 +1309,15 @@ export class ClawzControlPlane {
         continue;
       }
       if (normalizedKnownUrl === normalizedOpenClawUrl) {
-        throw new Error("That OpenClaw agent URL is already registered with SantaClawz.");
+        const existingAgentId = state.agentIdsBySession[knownSessionId] ?? knownSessionId;
+        const ownership = this.ownershipRecordForSession(state, knownSessionId);
+        throw new DuplicateOpenClawUrlError(
+          ownership.status === "verified"
+            ? "That OpenClaw agent URL is already registered and ownership has already been verified."
+            : "That OpenClaw agent URL is already registered. Verify control of the existing agent record to reclaim it.",
+          existingAgentId,
+          ownership.status !== "verified"
+        );
       }
     }
 

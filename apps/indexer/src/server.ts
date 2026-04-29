@@ -14,7 +14,7 @@ import {
   verifyAgentProofBundle
 } from "@clawz/protocol";
 
-import { ClawzControlPlane } from "./control-plane.js";
+import { ClawzControlPlane, DuplicateOpenClawUrlError } from "./control-plane.js";
 import { buildAgentProofBundle, buildDiscoveryDocument, buildMcpToolDefinitions } from "./interop.js";
 import {
   apiAuthMiddleware,
@@ -1194,6 +1194,15 @@ app.post("/api/console/register", route(async (request, response) => {
       })
     );
   } catch (error) {
+    if (error instanceof DuplicateOpenClawUrlError) {
+      response.status(409).json({
+        error: error.message,
+        code: "openclaw_url_registered",
+        agentId: error.existingAgentId,
+        canReclaim: error.canReclaim
+      });
+      return;
+    }
     const retryAfterSeconds =
       error instanceof Error && "retryAfterSeconds" in error
         ? (error as Error & { retryAfterSeconds?: number }).retryAfterSeconds
