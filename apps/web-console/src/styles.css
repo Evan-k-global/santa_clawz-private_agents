@@ -329,7 +329,10 @@ pre,
   align-items: center;
   justify-content: center;
   width: 36px;
+  min-width: 36px;
   height: 36px;
+  min-height: 36px;
+  flex: 0 0 36px;
   border-radius: 999px;
   background: linear-gradient(135deg, var(--accent), var(--accent-bright));
   color: white;
