@@ -179,6 +179,11 @@ The current GitHub-level policy is:
 - `0%` to `3%` optional deployer / UI fee
 - `4%` total max fee stack
 
+Boundary:
+
+- protocol fee lives in core SantaClawz runtime code
+- deployer/UI fee lives in the SDK and downstream frontend layer
+
 See:
 
 - `docs/protocol-owner-fee-split-spec.md`

@@ -1,5 +1,6 @@
 import {
   summarizeAgentProofBundle,
+  type AgentX402Plan,
   type AgentProofVerificationReport,
   type AgentTrustQuestionAnswer,
   type ClawzAgentDiscoveryDocument,
@@ -50,6 +51,11 @@ export interface LocalAgentVerificationResult {
   bundle: ClawzAgentProofBundle;
   report: AgentProofVerificationReport;
   question: AgentTrustQuestionAnswer;
+}
+
+export interface ClawzX402PlanQuery {
+  sessionId?: string;
+  agentId?: string;
 }
 
 let nextRpcId = 1;
@@ -184,6 +190,20 @@ export class ClawzAgentClient {
     input: ClawzAgentProofVerificationRequest = {}
   ): Promise<ClawzAgentProofVerificationResponse> {
     return this.postJson<ClawzAgentProofVerificationResponse>("/api/interop/verify", input);
+  }
+
+  async getX402Plan(input: ClawzX402PlanQuery = {}): Promise<AgentX402Plan> {
+    if (input.agentId) {
+      return this.readJson<AgentX402Plan>(
+        withQuery(this.baseUrl, `/api/agents/${encodeURIComponent(input.agentId)}/x402-plan`)
+      );
+    }
+
+    return this.readJson<AgentX402Plan>(
+      withQuery(this.baseUrl, "/api/x402/plan", {
+        ...(input.sessionId ? { sessionId: input.sessionId } : {})
+      })
+    );
   }
 
   async getDeployment(): Promise<unknown> {

@@ -63,6 +63,11 @@ The downstream deployer layer should own:
 - optional deployer fee
 - vertical-specific packaging and curation
 
+That boundary should stay explicit:
+
+- `1%` protocol fee lives in core SantaClawz runtime code
+- optional deployer/UI fee lives in the SDK and downstream frontend layer
+
 ## SDK recommendation
 
 SantaClawz should package the shared intelligence layer so forks do not need to reimplement it.
@@ -74,14 +79,11 @@ SantaClawz should package the shared intelligence layer so forks do not need to 
   - fetch proof bundles
   - verify proof surface data
   - inspect x402 plans
-  - inspect fee previews
+  - inspect protocol fee previews
+  - overlay deployer/UI fee previews
+  - validate protocol and deployer fee compatibility
 - future `@clawz/protocol-sdk`
-  - validate protocol fee floor
-  - validate deployer fee cap
-  - validate total fee cap
-  - compute seller/protocol/deployer split previews
-  - expose fork compatibility helpers
-  - expose shared marketplace plan builders
+  - only if the repo later wants a lower-level protocol utility package separate from the consumer SDK
 
 ### What the SDK should make easy
 

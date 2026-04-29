@@ -10,7 +10,9 @@ Its job is to keep downstream apps, forks, and white-label deployers on the same
 - proof bundle retrieval
 - proof verification helpers
 - x402 plan retrieval
-- fee preview inspection
+- protocol fee preview inspection
+- deployer/UI fee overlay helpers
+- compatibility checks for the SantaClawz fee stack
 - compatibility checks for SantaClawz-style agent surfaces
 
 ## Fee model expectation
@@ -21,7 +23,12 @@ Downstream consumers should treat the fee stack as:
 - `0%` to `3%` optional deployer / UI fee
 - `4%` total max fee stack
 
-The SDK should eventually expose helpers for:
+Important boundary:
+
+- the `1%` protocol fee belongs in core SantaClawz runtime code
+- the optional deployer/UI fee belongs in this SDK layer
+
+The SDK exposes helpers for:
 
 - reading protocol fee previews
 - reading deployer fee previews
@@ -36,3 +43,5 @@ import { createClawzAgentClient } from "@clawz/agent-sdk";
 ```
 
 That client is intended to be the stable surface other apps build against while the protocol and x402 rails continue to evolve underneath it.
+
+Additional helpers now live alongside it for deployer/UI fee overlays.

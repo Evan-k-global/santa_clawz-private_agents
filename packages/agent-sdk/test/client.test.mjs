@@ -6,7 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-const sdkEntry = fileURLToPath(new URL("../dist/index.js", import.meta.url));
+const sdkEntry = fileURLToPath(new URL("../dist/agent-sdk/src/index.js", import.meta.url));
 const serverEntry = fileURLToPath(new URL("../../../apps/indexer/dist/apps/indexer/src/server.js", import.meta.url));
 
 function startServer(workspaceDir, port) {
@@ -123,7 +123,9 @@ async function main() {
   try {
     const health = await waitForJson(`${baseUrl}/health`, 15000, server);
     assert.equal(health.service, "clawz-indexer");
-    const { createClawzAgentClient } = await import(pathToFileURL(sdkEntry).href);
+    const { createClawzAgentClient, buildClawzFeeStackPreview, validateClawzFeeCompatibility } = await import(
+      pathToFileURL(sdkEntry).href
+    );
     const client = createClawzAgentClient({ baseUrl });
 
     const discovery = await client.getDiscovery();
@@ -145,6 +147,10 @@ async function main() {
     assert.equal(remoteVerification.ok, true);
     assert.equal(remoteVerification.source.mode, "live-url");
 
+    const x402Plan = await client.getX402Plan();
+    assert.ok(Array.isArray(x402Plan.rails));
+    assert.ok(Array.isArray(x402Plan.feePreviewByRail ?? []));
+
     const localVerification = await client.verifyLiveProof();
     assert.equal(localVerification.report.ok, true);
     assert.equal(localVerification.question.authority.sessionId, bundle.authority.sessionId);
@@ -158,6 +164,51 @@ async function main() {
     const mcpVerification = await client.verifyAgentProofViaMcp();
     assert.equal(mcpVerification.ok, true);
     assert.equal(mcpVerification.summary.bundleDigestSha256, bundle.bundleDigest.sha256Hex);
+
+    const feePreview = buildClawzFeeStackPreview({
+      plan: {
+        protocolOwnerFeePolicy: {
+          enabled: true,
+          feeBps: 100,
+          settlementModel: "split-release-v1",
+          appliesTo: ["santaclawz-marketplace"],
+          recipientByRail: {
+            "base-usdc": "0xProtocol"
+          }
+        },
+        feePreviewByRail: [
+          {
+            rail: "base-usdc",
+            grossAmountUsd: "1",
+            sellerNetAmountUsd: "0.99",
+            protocolFeeAmountUsd: "0.01",
+            sellerPayTo: "0xSeller",
+            protocolFeeRecipient: "0xProtocol",
+            feeBps: 100
+          }
+        ]
+      },
+      deployerFee: {
+        enabled: true,
+        feeBps: 200,
+        label: "Acme UI",
+        recipientByRail: {
+          "base-usdc": "0xUi"
+        }
+      }
+    });
+    assert.equal(feePreview.length, 1);
+    assert.equal(feePreview[0].deployerFeeAmountUsd, "0.02");
+    assert.equal(feePreview[0].sellerNetAmountUsd, "0.97");
+    assert.equal(feePreview[0].totalFeeBps, 300);
+    assert.equal(feePreview[0].compatibility.compatible, true);
+
+    const incompatibleFeeStack = validateClawzFeeCompatibility({
+      protocolFeeBps: 100,
+      deployerFeeBps: 350
+    });
+    assert.equal(incompatibleFeeStack.compatible, false);
+    assert.equal(incompatibleFeeStack.deployerFeeCapSatisfied, false);
 
     console.log("ok - agent sdk discovers, verifies, and speaks MCP against a live ClawZ runtime");
   } finally {

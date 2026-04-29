@@ -552,9 +552,13 @@ A deployment should only describe itself as `SantaClawz-compatible` if it preser
 The current runtime work in this repo enforces the protocol fee path first.
 The deployer fee path is the next layer and should follow the same reserve-release enforcement model.
 
-### Additional schema for deployer fees
+### SDK-only deployer fee model
 
-Extend the protocol docs with a second policy object:
+Do **not** put deployer or UI fee policy into the core SantaClawz runtime model yet.
+The protocol fee belongs in core code.
+The deployer fee belongs in the SDK layer that downstream frontends use.
+
+That means the deployer fee should be modeled in SDK types such as:
 
 ```ts
 export interface DeployerFeePolicy {
@@ -565,7 +569,7 @@ export interface DeployerFeePolicy {
 }
 ```
 
-And extend `AgentFeePreview` so forks can surface the full stack:
+The SDK can then overlay that onto the core `AgentFeePreview` data so forks can surface the full stack:
 
 ```ts
 export interface AgentFeePreview {
@@ -583,23 +587,18 @@ export interface AgentFeePreview {
 }
 ```
 
-### Additional env vars for white-label deployers
+### No core env vars for deployer fee
 
-Document these as the supported downstream layer:
+The deployer fee should **not** be introduced as first-class SantaClawz runtime env vars in this pass.
 
-```text
-CLAWZ_DEPLOYER_FEE_ENABLED=true
-CLAWZ_DEPLOYER_FEE_BPS=300
-CLAWZ_DEPLOYER_FEE_BASE_RECIPIENT=0x...
-CLAWZ_DEPLOYER_FEE_ETHEREUM_RECIPIENT=0x...
-CLAWZ_DEPLOYER_FEE_LABEL=Acme Agent Marketplace
-```
+Instead:
 
-Validation rules:
-
-- reject configs where `CLAWZ_PROTOCOL_OWNER_FEE_BPS < 100`
-- reject configs where `CLAWZ_DEPLOYER_FEE_BPS > 300`
-- reject configs where the combined total exceeds `400`
+- SantaClawz indexer/runtime continues to expose the canonical protocol fee preview
+- downstream frontends or white-label deployers use the SDK to overlay their own fee
+- SDK-level compatibility helpers reject:
+  - protocol fee below `100`
+  - deployer fee above `300`
+  - total fee above `400`
 
 ### Settlement math with deployer fee
 
@@ -611,7 +610,7 @@ deployerFeeAmount = floor(grossAmount * deployerFeeBps / 10000)
 sellerNetAmount = grossAmount - protocolFeeAmount - deployerFeeAmount
 ```
 
-The fee metadata extension in `zeko-x402` should then expose:
+If and when deployer fee becomes enforceable onchain, the fee metadata extension in `zeko-x402` should expose:
 
 - protocol fee recipient
 - deployer fee recipient
@@ -629,7 +628,7 @@ This is important enough to document bluntly:
 That means the docs should treat:
 
 - the `1%` protocol fee as non-negotiable for compatibility
-- the extra `0%–3%` deployer fee as the extensible downstream layer
+- the extra `0%–3%` deployer fee as an SDK-level downstream layer until later enforcement work
 
 ## SDK packaging recommendation
 
@@ -643,11 +642,10 @@ Recommended package shape:
   - verifier access
   - x402 plan inspection
   - fee preview inspection
-- future `@clawz/protocol-sdk`
-  - fee policy validators
+  - deployer fee overlay helpers
   - fork compatibility helpers
-  - split preview utilities
-  - shared plan / quote builders
+- future `@clawz/protocol-sdk`
+  - only if we later want a lower-level shared protocol utility layer beyond the consumer SDK
 
 The goal is simple:
 
