@@ -2057,6 +2057,17 @@ export function App() {
                     <strong>Accept paid jobs</strong>
                     <p className="panel-copy">{paymentSectionLead}</p>
                   </div>
+                  {!paymentsEnabled ? (
+                    <button
+                      type="button"
+                      className="primary-button payment-inline-button"
+                      onClick={() => {
+                        enablePayments();
+                      }}
+                    >
+                      Start earning
+                    </button>
+                  ) : null}
                 </div>
 
                 <div className="payment-subcard-body">
@@ -2070,17 +2081,6 @@ export function App() {
                         <p className="panel-copy payment-enable-meta">
                           SantaClawz does not host the payment processor today. You bring your own x402 payment processor and payout wallet.
                         </p>
-                      </div>
-                      <div className="payment-enable-actions">
-                        <button
-                          type="button"
-                          className="primary-button"
-                          onClick={() => {
-                            enablePayments();
-                          }}
-                        >
-                          Start earning
-                        </button>
                       </div>
                     </div>
                   ) : (

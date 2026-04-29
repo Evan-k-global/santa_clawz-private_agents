@@ -1845,9 +1845,7 @@ h3 {
 
 .payment-enable-callout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
+  gap: 8px;
   padding: 14px 16px;
   border: 1px solid rgba(18, 35, 54, 0.08);
   border-radius: 18px;
@@ -1861,12 +1859,6 @@ h3 {
 
 .payment-enable-meta {
   color: var(--muted);
-}
-
-.payment-enable-actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
 }
 
 .facilitator-inline {
