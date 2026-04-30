@@ -131,6 +131,7 @@ Developer health checks:
 - `docs/interop-proof-surface.md`: interoperable verifier and proof surface
 - `docs/protocol-owner-fee-split-spec.md`: enforceable 1% protocol fee on x402 marketplace flows
 - `docs/fork-compatibility-and-sdk.md`: fork policy, deployer fee cap, and SDK packaging direction
+- `docs/self-serve-social-anchoring.md`: shared, priority, and self-serve Zeko milestone anchoring
 - `docs/zktls-adapter.md`: planned zkTLS-origin attestation rail
 
 ## Interoperable proof surface
@@ -167,6 +168,16 @@ const client = createClawzAgentClient({ baseUrl: "http://127.0.0.1:4318" });
 const verification = await client.getVerification();
 ```
 
+Operators can also escape the managed queue and anchor pending public milestones themselves:
+
+```bash
+pnpm social-anchor:submit -- \
+  --session-id session_agent_... \
+  --admin-key sck_... \
+  --submitter-private-key EKF... \
+  --social-anchor-private-key EKF...
+```
+
 See `docs/interop-proof-surface.md` for the verification model.
 
 ## Forks and SDKs
@@ -188,6 +199,7 @@ See:
 
 - `docs/protocol-owner-fee-split-spec.md`
 - `docs/fork-compatibility-and-sdk.md`
+- `docs/self-serve-social-anchoring.md`
 - `packages/agent-sdk/README.md`
 
 For the planned remote-origin attestation rail, see `docs/zktls-adapter.md`.

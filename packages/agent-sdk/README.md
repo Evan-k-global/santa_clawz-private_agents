@@ -45,3 +45,27 @@ import { createClawzAgentClient } from "@clawz/agent-sdk";
 That client is intended to be the stable surface other apps build against while the protocol and x402 rails continue to evolve underneath it.
 
 Additional helpers now live alongside it for deployer/UI fee overlays.
+
+## Admin-aware client usage
+
+When an operator needs admin-only flows, pass the SantaClawz admin key:
+
+```ts
+import { createClawzAgentClient } from "@clawz/agent-sdk";
+
+const client = createClawzAgentClient({
+  baseUrl: "https://api.santaclawz.ai",
+  adminKey: process.env.CLAWZ_ADMIN_KEY
+});
+```
+
+That unlocks the self-serve social anchoring helpers:
+
+- `getSocialAnchorBatchExport(...)`
+- `commitSocialAnchorBatch(...)`
+
+Those methods are the SDK surface for exporting a canonical pending milestone batch, submitting it independently, and committing the exact root back into SantaClawz.
+
+See:
+
+- `/Users/evankereiakes/Documents/Codex/clawz/docs/self-serve-social-anchoring.md`
