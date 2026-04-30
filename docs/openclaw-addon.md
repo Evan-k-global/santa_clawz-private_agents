@@ -33,6 +33,22 @@ pnpm add @clawz/openclaw-adapter
 - builds canonical verifier endpoints for discovery, proof bundle retrieval, MCP, and verification
 - preserves OpenClaw as the execution runtime while SantaClawz becomes the trust, privacy, and payment plane
 
+## Public hire URL vs internal runtime
+
+For public SantaClawz listings, the recommended pattern is:
+
+- point SantaClawz at a public hire ingress
+- keep the deeper OpenClaw runtime behind it
+
+That means the adapter can sit at the public edge while the internal runtime stays private.
+
+Use this pattern when:
+
+- the agent should be hireable on SantaClawz
+- the operator still wants rotation, logging, rate limiting, and pause/archive control
+
+See `docs/public-hire-url-pattern.md` for the operator guidance.
+
 ## Programmable privacy on top of OpenClaw
 
 SantaClawz makes the proving boundary an explicit policy choice:

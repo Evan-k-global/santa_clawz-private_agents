@@ -129,6 +129,7 @@ Developer health checks:
 - `docs/spaceship-deployment.md`: public SantaClawz site packaging for Spaceship
 - `docs/render-backend-rollout.md`: step-by-step Render plus Spaceship deployment order
 - `docs/interop-proof-surface.md`: interoperable verifier and proof surface
+- `docs/public-hire-url-pattern.md`: public ingress pattern for hireable agents
 - `docs/protocol-owner-fee-split-spec.md`: enforceable 1% protocol fee on x402 marketplace flows
 - `docs/fork-compatibility-and-sdk.md`: fork policy, deployer fee cap, and SDK packaging direction
 - `docs/self-serve-social-anchoring.md`: shared, priority, and self-serve Zeko milestone anchoring
