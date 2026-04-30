@@ -2119,7 +2119,6 @@ button:disabled {
   }
 
   .site-header,
-  .site-nav,
   .masthead-label-row,
   .step-head,
   .step-title,
@@ -2138,11 +2137,16 @@ button:disabled {
   }
 
   .site-nav {
-    width: 100%;
+    width: min(100%, 320px);
+    flex-direction: row;
+    flex-wrap: nowrap;
+    align-items: stretch;
   }
 
   .site-nav-link {
-    width: 100%;
+    width: auto;
+    min-width: 0;
+    flex: 1 1 0;
   }
 
   .hero-stage {
