@@ -91,7 +91,7 @@ export function buildProtocolOwnerFeePolicyFromEnv(): ProtocolOwnerFeePolicy {
   return {
     enabled: truthy(process.env.CLAWZ_PROTOCOL_OWNER_FEE_ENABLED),
     feeBps: parseFeeBps(process.env.CLAWZ_PROTOCOL_OWNER_FEE_BPS),
-    settlementModel: "split-release-v1",
+    settlementModel: "fee-on-reserve-v1",
     appliesTo: parseAppliesTo(process.env.CLAWZ_PROTOCOL_OWNER_FEE_APPLIES_TO),
     recipientByRail: {
       ...(baseRecipient ? { "base-usdc": baseRecipient } : {}),

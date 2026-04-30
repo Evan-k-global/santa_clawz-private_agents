@@ -1912,6 +1912,13 @@ h3 {
   margin-top: 0;
 }
 
+.payment-fee-disclosure {
+  margin: 0;
+  color: rgba(18, 35, 54, 0.7);
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
 @media (max-width: 900px) {
   .payment-head-controls {
     flex: 1 1 100%;

@@ -1,5 +1,7 @@
 # SantaClawz Protocol Owner Fee Split Spec
 
+> Update: the live direction now uses `fee-on-reserve-v1` with reserve-release `v4`. SantaClawz takes its protocol fee when the reservation is created, and only the seller net remains in escrow for later release or refund.
+
 This document defines the exact implementation shape for a SantaClawz protocol owner fee of `1%` on paid x402 marketplace flows.
 
 The goal is simple:
@@ -50,17 +52,18 @@ SantaClawz should enforce the fee through the **reserve-release contract path**,
 Why:
 
 - current exact EIP-3009 settlement sends one transfer to one `payTo`
-- the existing Base reserve-release contract already introduces a contract-controlled release leg
-- that release leg is the right place to split seller proceeds vs protocol fee
+- the reserve-release contract is already the right seller-risk boundary
+- SantaClawz should not take seller execution risk for the `1%` protocol fee
+- the cleanest model is to skim the fee at reservation time and leave only seller net in escrow
 
-So the v1 recommendation is:
+So the live recommendation is:
 
 - keep raw `x402-exact-evm-v1` available in `zeko-x402`
 - but for **SantaClawz fee-bearing paid jobs**, standardize on a new:
-  - `x402-base-usdc-reserve-release-v3`
-  - `x402-ethereum-mainnet-usdc-reserve-release-v3`
+  - `x402-base-usdc-reserve-release-v4`
+  - `x402-ethereum-mainnet-usdc-reserve-release-v4`
 
-This keeps the fee path enforceable without requiring two buyer signatures or a custodial SantaClawz wallet.
+That keeps the fee path enforceable without requiring two buyer signatures or a custodial SantaClawz wallet, while preserving the seller-only refund semantics SantaClawz wants.
 
 ## SantaClawz schema changes
 
@@ -74,7 +77,7 @@ In `/Users/evankereiakes/Documents/Codex/clawz/packages/protocol/src/runtime/con
 export interface ProtocolOwnerFeePolicy {
   enabled: boolean;
   feeBps: number;
-  settlementModel: "split-release-v1";
+  settlementModel: "split-release-v1" | "fee-on-reserve-v1";
   appliesTo: Array<"santaclawz-marketplace">;
   recipientByRail: Partial<Record<AgentPaymentRail, string>>;
 }

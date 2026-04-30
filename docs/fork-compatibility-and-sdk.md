@@ -108,7 +108,7 @@ That means:
 
 ## Recommended next implementation steps
 
-1. Keep the mandatory `1%` protocol fee in the shared x402 reserve-release path.
+1. Keep the mandatory `1%` protocol fee in the shared x402 reserve-release path, with SantaClawz taking that fee at reservation time before seller escrow release/refund.
 2. Add deployer fee schema and validation helpers.
 3. Export those helpers from a protocol SDK package.
 4. Make the SDK expose a single compatibility check for downstream platforms.

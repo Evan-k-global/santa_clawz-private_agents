@@ -53,6 +53,14 @@ type ZekoX402Module = {
     feeBps: number;
     facilitatorUrl?: string;
   }): unknown;
+  buildBaseMainnetUsdcReserveReleaseFeeOnReserveRail(input: {
+    payTo: string;
+    amount: string;
+    escrowContract: string;
+    protocolFeePayTo: string;
+    feeBps: number;
+    facilitatorUrl?: string;
+  }): unknown;
   buildBaseMainnetUsdcReserveReleaseRail(input: {
     payTo: string;
     amount: string;
@@ -62,6 +70,14 @@ type ZekoX402Module = {
   buildCatalog(input: JsonRecord): unknown;
   buildEthereumMainnetUsdcRail(input: { payTo: string; amount: string; facilitatorUrl?: string }): unknown;
   buildEthereumMainnetUsdcReserveReleaseFeeRail(input: {
+    payTo: string;
+    amount: string;
+    escrowContract: string;
+    protocolFeePayTo: string;
+    feeBps: number;
+    facilitatorUrl?: string;
+  }): unknown;
+  buildEthereumMainnetUsdcReserveReleaseFeeOnReserveRail(input: {
     payTo: string;
     amount: string;
     escrowContract: string;
@@ -231,7 +247,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const payTo = profile.payoutWallets.base?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
   const protocolFeeApplies = protocolOwnerFeeAppliesToRail(consoleState.protocolOwnerFeePolicy, "base-usdc");
-  const settleOnProof = settlementTrigger === "on-proof" || protocolFeeApplies;
+  const settleOnProof = settlementTrigger === "on-proof";
   const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
@@ -242,6 +258,10 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   }
 
   const pricing = pushPricingReadiness(profile, missing, notes);
+
+  if (protocolFeeApplies && !settleOnProof) {
+    missing.push("Use on-proof settlement to keep the SantaClawz protocol fee and refund behavior aligned.");
+  }
 
   if (!operatorFacilitatorUrl) {
     missing.push("Add a Base facilitator URL for this agent.");
@@ -256,7 +276,11 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   }
   if (protocolFeeApplies) {
     notes.push(`SantaClawz marketplace routing applies a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Base.`);
-    notes.push("This fee is enforced on the split reserve-release rail before seller payout release.");
+    notes.push(
+      settleOnProof
+        ? "Buyers see the gross price. SantaClawz keeps the protocol fee at reservation time, and only the seller net stays in escrow."
+        : "Buyers see the gross price and sellers net the protocol fee. Use on-proof settlement when you want seller funds held in escrow."
+    );
   }
 
   if (facilitatorUrl && settleOnProof) {
@@ -276,14 +300,14 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
     assetAddress: BASE_MAINNET.assetAddress,
     builderHint:
       settleOnProof && protocolFeeApplies
-        ? "buildBaseMainnetUsdcReserveReleaseFeeRail"
+        ? "buildBaseMainnetUsdcReserveReleaseFeeOnReserveRail"
         : settleOnProof
           ? "buildBaseMainnetUsdcReserveReleaseRail"
           : "buildBaseMainnetUsdcRail",
     facilitatorMode: settleOnProof ? "evm-reserve-release" : "x402-http",
     settlementModel:
       settleOnProof && protocolFeeApplies
-        ? "x402-base-usdc-reserve-release-v3"
+        ? "x402-base-usdc-reserve-release-v4"
         : settleOnProof
           ? "x402-base-usdc-reserve-release-v2"
           : "x402-exact-evm-v1",
@@ -305,7 +329,7 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const payTo = profile.payoutWallets.ethereum?.trim();
   const settlementTrigger = profile.paymentProfile.settlementTrigger;
   const protocolFeeApplies = protocolOwnerFeeAppliesToRail(consoleState.protocolOwnerFeePolicy, "ethereum-usdc");
-  const settleOnProof = settlementTrigger === "on-proof" || protocolFeeApplies;
+  const settleOnProof = settlementTrigger === "on-proof";
   const operatorFacilitatorUrl = profile.paymentProfile.ethereumFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
@@ -316,6 +340,10 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   }
 
   const pricing = pushPricingReadiness(profile, missing, notes);
+
+  if (protocolFeeApplies && !settleOnProof) {
+    missing.push("Use on-proof settlement to keep the SantaClawz protocol fee and refund behavior aligned.");
+  }
 
   if (!operatorFacilitatorUrl) {
     missing.push("Add an Ethereum facilitator URL for this agent.");
@@ -337,7 +365,11 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   }
   if (protocolFeeApplies) {
     notes.push(`SantaClawz marketplace routing applies a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Ethereum.`);
-    notes.push("This fee is enforced on the split reserve-release rail before seller payout release.");
+    notes.push(
+      settleOnProof
+        ? "Buyers see the gross price. SantaClawz keeps the protocol fee at reservation time, and only the seller net stays in escrow."
+        : "Buyers see the gross price and sellers net the protocol fee. Use on-proof settlement when you want seller funds held in escrow."
+    );
   }
 
   return {
@@ -350,14 +382,14 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     assetAddress: ETHEREUM_MAINNET.assetAddress,
     builderHint:
       settleOnProof && protocolFeeApplies
-        ? "buildEthereumMainnetUsdcReserveReleaseFeeRail"
+        ? "buildEthereumMainnetUsdcReserveReleaseFeeOnReserveRail"
         : settleOnProof
           ? "buildEthereumMainnetUsdcReserveReleaseRail"
           : "buildEthereumMainnetUsdcRail",
     facilitatorMode: settleOnProof ? "evm-reserve-release" : "x402-http",
     settlementModel:
       settleOnProof && protocolFeeApplies
-        ? "x402-ethereum-mainnet-usdc-reserve-release-v3"
+        ? "x402-ethereum-mainnet-usdc-reserve-release-v4"
         : settleOnProof
           ? "x402-ethereum-mainnet-usdc-reserve-release-v2"
           : "x402-exact-evm-v1",
@@ -529,7 +561,7 @@ function railAcceptPreview(plan: AgentX402Plan, rail: AgentX402RailPlan) {
                       feeBps: feePreview.feeBps,
                       ...(feePreview.protocolFeeRecipient ? { protocolFeePayTo: feePreview.protocolFeeRecipient } : {}),
                       ...(feePreview.sellerPayTo ? { sellerPayTo: feePreview.sellerPayTo } : {}),
-                      feeSettlementMode: "split-release-v1"
+                      feeSettlementMode: plan.protocolOwnerFeePolicy?.settlementModel ?? "fee-on-reserve-v1"
                     }
                   }
                 : {})
@@ -734,7 +766,7 @@ function buildLiveRail(plan: AgentX402Plan, rail: AgentX402RailPlan): JsonRecord
   if (rail.rail === "base-usdc") {
     if (rail.executionMode === "reserve-release") {
       if (feePreview?.protocolFeeRecipient && feePreview.feeBps > 0) {
-        return zekoX402Module.buildBaseMainnetUsdcReserveReleaseFeeRail({
+        return zekoX402Module.buildBaseMainnetUsdcReserveReleaseFeeOnReserveRail({
           payTo: rail.payTo,
           amount: rail.amountUsd,
           escrowContract: escrowContract!,
@@ -762,7 +794,7 @@ function buildLiveRail(plan: AgentX402Plan, rail: AgentX402RailPlan): JsonRecord
   if (rail.rail === "ethereum-usdc") {
     if (rail.executionMode === "reserve-release") {
       if (feePreview?.protocolFeeRecipient && feePreview.feeBps > 0) {
-        return zekoX402Module.buildEthereumMainnetUsdcReserveReleaseFeeRail({
+        return zekoX402Module.buildEthereumMainnetUsdcReserveReleaseFeeOnReserveRail({
           payTo: rail.payTo,
           amount: rail.amountUsd,
           escrowContract: escrowContract!,

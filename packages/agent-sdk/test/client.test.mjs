@@ -170,7 +170,7 @@ async function main() {
         protocolOwnerFeePolicy: {
           enabled: true,
           feeBps: 100,
-          settlementModel: "split-release-v1",
+          settlementModel: "fee-on-reserve-v1",
           appliesTo: ["santaclawz-marketplace"],
           recipientByRail: {
             "base-usdc": "0xProtocol"

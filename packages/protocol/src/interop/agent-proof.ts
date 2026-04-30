@@ -9,6 +9,7 @@ import type {
   AgentPricingMode,
   AgentSettlementTrigger,
   GovernancePolicy,
+  ProtocolOwnerFeeSettlementModel,
   SocialAnchorCandidateKind,
   TrustModeId,
   ZekoDeploymentMode
@@ -136,7 +137,7 @@ export interface AgentPaymentClaim {
     quoteUrl?: string;
     protocolOwnerFeeBps?: number;
     protocolFeeRecipientByRail?: Partial<Record<AgentPaymentRail, string>>;
-    feeSettlementMode?: "split-release-v1";
+    feeSettlementMode?: ProtocolOwnerFeeSettlementModel;
     feePreviewByRail?: Array<{
       rail: AgentPaymentRail;
       grossAmountUsd?: string;

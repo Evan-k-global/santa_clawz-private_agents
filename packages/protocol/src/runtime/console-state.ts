@@ -250,11 +250,12 @@ export type AgentPaymentRail = "base-usdc" | "ethereum-usdc" | "zeko-native";
 export type AgentPricingMode = "fixed-exact" | "capped-exact" | "quote-required" | "agent-negotiated";
 export type AgentSettlementTrigger = "upfront" | "on-proof";
 export type ProtocolOwnerFeeApplicability = "santaclawz-marketplace";
+export type ProtocolOwnerFeeSettlementModel = "split-release-v1" | "fee-on-reserve-v1";
 
 export interface ProtocolOwnerFeePolicy {
   enabled: boolean;
   feeBps: number;
-  settlementModel: "split-release-v1";
+  settlementModel: ProtocolOwnerFeeSettlementModel;
   appliesTo: ProtocolOwnerFeeApplicability[];
   recipientByRail: Partial<Record<AgentPaymentRail, string>>;
 }

@@ -405,6 +405,11 @@ function pricingModeLabel(mode: AgentProfileState["paymentProfile"]["pricingMode
   return "Negotiated by agent";
 }
 
+function formatBpsPercent(feeBps: number) {
+  const percent = feeBps / 100;
+  return Number.isInteger(percent) ? `${percent}` : percent.toFixed(2).replace(/\.?0+$/, "");
+}
+
 function paymentProfileSummary(
   paymentProfileReady: boolean,
   paymentProfile: AgentProfileState["paymentProfile"]
@@ -1142,6 +1147,17 @@ export function App() {
   const paymentSummaryMessage = !published
     ? "Publish on Zeko first to let buyers discover and pay this agent."
     : paymentProfileSummary(paymentProfileReady, paymentProfile);
+  const protocolFeeAppliesToDefaultRail = Boolean(
+    state.protocolOwnerFeePolicy.enabled &&
+      defaultPaymentRail &&
+      state.protocolOwnerFeePolicy.recipientByRail[defaultPaymentRail]
+  );
+  const protocolFeePercentLabel = formatBpsPercent(state.protocolOwnerFeePolicy.feeBps);
+  const sellerNetPercentLabel = formatBpsPercent(10_000 - state.protocolOwnerFeePolicy.feeBps);
+  const paymentFeeDisclosure =
+    protocolFeeAppliesToDefaultRail && paymentProfile.enabled
+      ? `Buyers pay the listed price. SantaClawz keeps ${protocolFeePercentLabel}%, sellers receive ${sellerNetPercentLabel}%, and expired escrow refunds return the seller portion to the buyer.`
+      : null;
   const mainPricingLabel =
     paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated"
       ? "Quote URL"
@@ -2285,6 +2301,9 @@ export function App() {
                         <p className="status-note status-note-compact payment-summary-note">
                           {paymentSummaryMessage}
                         </p>
+                        {paymentFeeDisclosure ? (
+                          <p className="panel-copy payment-fee-disclosure">{paymentFeeDisclosure}</p>
+                        ) : null}
                       </div>
 
                       <div className="payment-save-row">
