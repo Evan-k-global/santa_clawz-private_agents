@@ -1581,12 +1581,37 @@ h3 {
   grid-column: 1 / -1;
 }
 
-.field span {
+.field > span,
+.field-label-row > span {
   font-size: 0.76rem;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--muted);
   font-family: "IBM Plex Mono", monospace;
+}
+
+.field-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 14px;
+}
+
+.field-help-link {
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.2;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(18, 35, 54, 0.18);
+  transition:
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.field-help-link:hover {
+  color: var(--ink);
+  border-color: rgba(18, 35, 54, 0.36);
 }
 
 .text-input,

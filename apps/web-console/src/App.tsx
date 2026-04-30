@@ -59,6 +59,8 @@ const EXPLORE_FILTERS: Array<{ key: ExploreFilterKey; label: string }> = [
 ];
 const FACILITATOR_SETUP_GUIDE_URL =
   "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/host-x402-facilitator-on-render.md";
+const PUBLIC_HIRE_URL_GUIDE_URL =
+  "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/public-hire-url-pattern.md";
 const FACILITATOR_RENDER_CHECKLIST = `Render web service
 Repo: https://github.com/zeko-labs/x402-zeko
 Build: corepack enable && pnpm install --frozen-lockfile
@@ -1488,7 +1490,12 @@ export function App() {
             </label>
 
             <label className="field field-wide">
-              <span>OpenClaw agent URL</span>
+              <div className="field-label-row">
+                <span>OpenClaw agent URL</span>
+                <a className="field-help-link" href={PUBLIC_HIRE_URL_GUIDE_URL} target="_blank" rel="noreferrer">
+                  Why this URL is public
+                </a>
+              </div>
               <input
                 className="text-input"
                 value={profile.openClawUrl}
