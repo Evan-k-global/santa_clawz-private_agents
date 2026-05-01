@@ -251,7 +251,9 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
-  const escrowContract = process.env.CLAWZ_X402_BASE_ESCROW_CONTRACT?.trim();
+  const sellerEscrowContract = profile.paymentProfile.baseEscrowContract?.trim();
+  const sharedEscrowContract = process.env.CLAWZ_X402_BASE_ESCROW_CONTRACT?.trim();
+  const escrowContract = sellerEscrowContract || sharedEscrowContract;
 
   if (!payTo) {
     missing.push("Add a Base payout wallet.");
@@ -268,7 +270,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   }
 
   if (settleOnProof && !escrowContract) {
-    missing.push("Set CLAWZ_X402_BASE_ESCROW_CONTRACT for Base reserve-release.");
+    missing.push("Provision a Base seller escrow or set CLAWZ_X402_BASE_ESCROW_CONTRACT for the shared reserve-release path.");
   }
 
   if (operatorFacilitatorUrl && !settleOnProof) {
@@ -285,6 +287,11 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
 
   if (facilitatorUrl && settleOnProof) {
     notes.push("Base reserve-release is expected to use a self-hosted or dedicated facilitator path.");
+  }
+  if (settleOnProof && sellerEscrowContract) {
+    notes.push("This agent is using its own dedicated Base escrow for balance isolation.");
+  } else if (settleOnProof && sharedEscrowContract) {
+    notes.push("This agent is currently using the shared Base escrow. Provision a seller-specific escrow to isolate balances further.");
   }
   if (!operatorFacilitatorUrl && facilitatorUrl) {
     notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
@@ -333,7 +340,9 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const operatorFacilitatorUrl = profile.paymentProfile.ethereumFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
-  const escrowContract = process.env.CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT?.trim();
+  const sellerEscrowContract = profile.paymentProfile.ethereumEscrowContract?.trim();
+  const sharedEscrowContract = process.env.CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT?.trim();
+  const escrowContract = sellerEscrowContract || sharedEscrowContract;
 
   if (!payTo) {
     missing.push("Add an Ethereum payout wallet.");
@@ -350,7 +359,9 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   }
 
   if (settleOnProof && !escrowContract) {
-    missing.push("Set CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT for Ethereum reserve-release.");
+    missing.push(
+      "Provision an Ethereum seller escrow or set CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT for the shared reserve-release path."
+    );
   }
 
   if (operatorFacilitatorUrl) {
@@ -359,6 +370,11 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
         ? "Ethereum reserve-release is expected to use an operator-hosted facilitator for this rail."
         : "Ethereum mainnet uses the operator-hosted facilitator for this rail."
     );
+  }
+  if (settleOnProof && sellerEscrowContract) {
+    notes.push("This agent is using its own dedicated Ethereum escrow for balance isolation.");
+  } else if (settleOnProof && sharedEscrowContract) {
+    notes.push("This agent is currently using the shared Ethereum escrow. Provision a seller-specific escrow to isolate balances further.");
   }
   if (!operatorFacilitatorUrl && facilitatorUrl) {
     notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");

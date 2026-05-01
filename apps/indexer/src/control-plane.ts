@@ -772,6 +772,10 @@ function sanitizePaymentNotes(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 280) : undefined;
 }
 
+function sanitizeEvmContractAddress(value: unknown): string | undefined {
+  return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 80) : undefined;
+}
+
 function sanitizeSocialAnchorPolicy(
   input: Partial<AgentProfileState["socialAnchorPolicy"]> | undefined,
   fallback: AgentProfileState["socialAnchorPolicy"]
@@ -875,6 +879,21 @@ function sanitizePaymentProfile(
       ? {
           ethereumFacilitatorUrl:
             sanitizeUrl(input?.ethereumFacilitatorUrl) ?? sanitizeUrl(fallback.ethereumFacilitatorUrl)!
+        }
+      : {}),
+    ...(sanitizeEvmContractAddress(input?.baseEscrowContract) ?? sanitizeEvmContractAddress(fallback.baseEscrowContract)
+      ? {
+          baseEscrowContract:
+            sanitizeEvmContractAddress(input?.baseEscrowContract) ??
+            sanitizeEvmContractAddress(fallback.baseEscrowContract)!
+        }
+      : {}),
+    ...(sanitizeEvmContractAddress(input?.ethereumEscrowContract) ??
+    sanitizeEvmContractAddress(fallback.ethereumEscrowContract)
+      ? {
+          ethereumEscrowContract:
+            sanitizeEvmContractAddress(input?.ethereumEscrowContract) ??
+            sanitizeEvmContractAddress(fallback.ethereumEscrowContract)!
         }
       : {}),
     ...(sanitizePaymentNotes(input?.paymentNotes) ?? sanitizePaymentNotes(fallback.paymentNotes)
@@ -1394,6 +1413,15 @@ export class ClawzControlPlane {
     }
     if (profile.paymentProfile.ethereumFacilitatorUrl) {
       this.validatePublicHttpsUrl(profile.paymentProfile.ethereumFacilitatorUrl, "Ethereum facilitator URL");
+    }
+    if (profile.paymentProfile.baseEscrowContract && !looksLikeEvmAddress(profile.paymentProfile.baseEscrowContract)) {
+      throw new Error("Base escrow contract must be a valid EVM address.");
+    }
+    if (
+      profile.paymentProfile.ethereumEscrowContract &&
+      !looksLikeEvmAddress(profile.paymentProfile.ethereumEscrowContract)
+    ) {
+      throw new Error("Ethereum escrow contract must be a valid EVM address.");
     }
   }
 

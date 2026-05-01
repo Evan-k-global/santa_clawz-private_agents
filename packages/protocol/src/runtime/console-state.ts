@@ -281,6 +281,8 @@ export interface AgentPaymentProfile {
   settlementTrigger: AgentSettlementTrigger;
   baseFacilitatorUrl?: string;
   ethereumFacilitatorUrl?: string;
+  baseEscrowContract?: string;
+  ethereumEscrowContract?: string;
   paymentNotes?: string;
 }
 

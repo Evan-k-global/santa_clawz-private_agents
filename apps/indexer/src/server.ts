@@ -242,6 +242,10 @@ function parsePaymentProfile(value: unknown): Partial<AgentProfileState["payment
     ...(typeof value.ethereumFacilitatorUrl === "string"
       ? { ethereumFacilitatorUrl: value.ethereumFacilitatorUrl }
       : {}),
+    ...(typeof value.baseEscrowContract === "string" ? { baseEscrowContract: value.baseEscrowContract } : {}),
+    ...(typeof value.ethereumEscrowContract === "string"
+      ? { ethereumEscrowContract: value.ethereumEscrowContract }
+      : {}),
     ...(typeof value.paymentNotes === "string" ? { paymentNotes: value.paymentNotes } : {})
   };
 }
