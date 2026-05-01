@@ -420,6 +420,8 @@ export interface AgentProfileState {
   representedPrincipal: string;
   headline: string;
   openClawUrl: string;
+  availability: "active" | "archived";
+  archivedAtIso?: string;
   payoutWallets: AgentPayoutWallets;
   missionAuthOverlay: AgentMissionAuthOverlay;
   paymentProfile: AgentPaymentProfile;
@@ -450,6 +452,8 @@ export interface AgentRegistryEntry {
   paidJobsEnabled: boolean;
   missionAuthVerified: boolean;
   ownershipVerified: boolean;
+  availability: AgentProfileState["availability"];
+  archivedAtIso?: string;
   published: boolean;
   pendingSocialAnchorCount: number;
   anchoredSocialFactCount: number;

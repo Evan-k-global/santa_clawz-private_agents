@@ -2045,6 +2045,13 @@ h3 {
   color: var(--ink);
 }
 
+.warning-button {
+  border-color: rgba(185, 45, 34, 0.2);
+  background: rgba(255, 243, 240, 0.96);
+  color: #9c3027;
+  box-shadow: 0 10px 22px rgba(185, 45, 34, 0.1);
+}
+
 button:hover:not(:disabled) {
   transform: translateY(-1px);
 }

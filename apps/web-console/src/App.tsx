@@ -20,6 +20,7 @@ import {
   prepareRecoveryKit,
   registerAgent,
   runLiveSessionTurnFlow,
+  setAgentArchiveStatus,
   settleSocialAnchorBatch,
   storeAdminKey,
   sponsorWallet,
@@ -537,6 +538,10 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
     representedPrincipal: typeof input?.representedPrincipal === "string" ? input.representedPrincipal : "",
     headline: typeof input?.headline === "string" ? input.headline : "",
     openClawUrl: typeof input?.openClawUrl === "string" ? input.openClawUrl : "",
+    availability: input?.availability === "archived" ? "archived" : "active",
+    ...(typeof input?.archivedAtIso === "string" && input.archivedAtIso.trim().length > 0
+      ? { archivedAtIso: input.archivedAtIso }
+      : {}),
     payoutWallets: {
       ...(typeof input?.payoutWallets?.zeko === "string" && input.payoutWallets.zeko.trim().length > 0
         ? { zeko: input.payoutWallets.zeko }
@@ -1035,6 +1040,46 @@ export function App() {
     }
   }
 
+  async function setArchiveStatusAction(nextArchived: boolean) {
+    const targetAgentId = registeredAgentId ?? state?.agentId;
+    if (!targetAgentId) {
+      return;
+    }
+    if (
+      typeof window !== "undefined" &&
+      !window.confirm(
+        nextArchived
+          ? "Archive this agent on SantaClawz? It will be hidden from Explore and new hire requests will stop until you restore it."
+          : "Restore this agent on SantaClawz? It will become discoverable and hireable again."
+      )
+    ) {
+      return;
+    }
+
+    setPendingAction("set-agent-archive");
+    setError(null);
+
+    try {
+      const nextState = await setAgentArchiveStatus(targetAgentId, nextArchived, sessionId);
+      setState(nextState);
+      setProfile(normalizeProfileDraft(nextState.profile));
+      setSelectedSessionId(nextState.session.sessionId);
+      try {
+        setRegistry(await fetchAgentRegistry());
+      } catch (refreshError) {
+        console.warn(
+          `[clawz] archive status updated for ${targetAgentId}, but the registry refresh failed: ${
+            refreshError instanceof Error ? refreshError.message : String(refreshError)
+          }`
+        );
+      }
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not update the agent archive status.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   function showSection(nextSection: NavSectionKey) {
     setActiveSection(nextSection);
     if (typeof window !== "undefined") {
@@ -1228,6 +1273,11 @@ export function App() {
   const registeredAgentId = isRegisteredSession ? state.agentId : null;
   const published = Boolean(registeredAgentId) && (Boolean(activeTurn?.turnId) || state.liveFlow.status === "succeeded");
   const ownershipVerified = state.ownership.status === "verified";
+  const agentArchived = profile.availability === "archived";
+  const archivedAtLabel =
+    typeof profile.archivedAtIso === "string" && profile.archivedAtIso.trim().length > 0
+      ? ` on ${new Date(profile.archivedAtIso).toLocaleString()}`
+      : "";
   const connectReady =
     profile.agentName.trim().length > 0 && profile.openClawUrl.trim().length > 0 && profile.headline.trim().length > 0;
   const canPreparePublish = isRegisteredSession && connectReady;
@@ -1254,21 +1304,27 @@ export function App() {
     paymentProfile
   };
   const defaultPaymentRail = paymentProfile.defaultRail ?? paymentProfile.supportedRails[0] ?? "base-usdc";
-  const paidWorkStatusLabel = !published
-    ? "Publish first"
-    : !savedPaymentsEnabled
-      ? "Prepay setup"
-      : savedPaymentProfileReady
-        ? `Payouts live on ${railLabel(defaultPaymentRail)}`
-        : "Finish prepay setup";
-  const paymentSectionLead = !paymentsEnabled
-    ? "You're almost ready to earn."
-    : paymentProfileReady
-      ? "Prepay enabled. This agent can accept paid jobs."
-      : "Finish the required prepay details to start earning.";
-  const paymentSummaryMessage = !published
-    ? "Publish on Zeko first to let buyers discover and pay this agent."
-    : paymentProfileSummary(paymentProfileReady, paymentProfile);
+  const paidWorkStatusLabel = agentArchived
+    ? "Archived on SantaClawz"
+    : !published
+      ? "Publish first"
+      : !savedPaymentsEnabled
+        ? "Prepay setup"
+        : savedPaymentProfileReady
+          ? `Payouts live on ${railLabel(defaultPaymentRail)}`
+          : "Finish prepay setup";
+  const paymentSectionLead = agentArchived
+    ? "This agent is archived on SantaClawz."
+    : !paymentsEnabled
+      ? "You're almost ready to earn."
+      : paymentProfileReady
+        ? "Prepay enabled. This agent can accept paid jobs."
+        : "Finish the required prepay details to start earning.";
+  const paymentSummaryMessage = agentArchived
+    ? "Archived agents stay on their public URL for proof history, but SantaClawz hides them from Explore and disables new hire requests until restored."
+    : !published
+      ? "Publish on Zeko first to let buyers discover and pay this agent."
+      : paymentProfileSummary(paymentProfileReady, paymentProfile);
   const protocolFeeAppliesToDefaultRail = Boolean(
     state.protocolOwnerFeePolicy.enabled &&
       defaultPaymentRail &&
@@ -1404,17 +1460,20 @@ export function App() {
   ].join(" ");
   const canSubmitHire =
     Boolean(sharedAgentId) &&
+    !agentArchived &&
     published &&
     profile.openClawUrl.trim().length > 0 &&
     hireDraft.taskPrompt.trim().length > 0 &&
     hireDraft.requesterContact.trim().length > 0;
-  const hireStatusCopy = !published
-    ? "This agent still needs to publish on Zeko before it can accept work."
-    : savedPaymentsEnabled && !savedPaymentProfileReady
-      ? "This agent has started payout setup, but it still needs its facilitator, selected rail, or price details completed."
-      : savedPaymentsEnabled && paidJobsEnabled
-        ? `Payouts are live on ${railLabel(defaultPaymentRail)} and work routes to ${profile.openClawUrl}.`
-        : `Hire requests route to ${profile.openClawUrl}.`
+  const hireStatusCopy = agentArchived
+    ? `This agent is archived on SantaClawz${archivedAtLabel}. Its public proof history stays online, but new hire requests are disabled.`
+    : !published
+      ? "This agent still needs to publish on Zeko before it can accept work."
+      : savedPaymentsEnabled && !savedPaymentProfileReady
+        ? "This agent has started payout setup, but it still needs its facilitator, selected rail, or price details completed."
+        : savedPaymentsEnabled && paidJobsEnabled
+          ? `Payouts are live on ${railLabel(defaultPaymentRail)} and work routes to ${profile.openClawUrl}.`
+          : `Hire requests route to ${profile.openClawUrl}.`
   ;
   const missionAuthStatusCopy = !missionAuthEnabled
     ? "Add this if the agent uses an Auth0, Okta, or custom OIDC sidecar for mission approvals and portable Web2 receipts."
@@ -2125,7 +2184,9 @@ export function App() {
 
             {published ? (
               <p className="status-banner status-banner-success">
-                This agent is live on Zeko and listed in Explore.
+                {agentArchived
+                  ? `This agent is live on Zeko and archived on SantaClawz${archivedAtLabel}.`
+                  : "This agent is live on Zeko and listed in Explore."}
               </p>
             ) : null}
 
@@ -2133,9 +2194,11 @@ export function App() {
               <div className="share-copy">
                 <strong>Share your live agent</strong>
                 <p className="panel-copy">
-                  {publicAgentUrl
-                    ? "Once the agent is published, you can share it immediately. Get paid can come next."
-                    : "After Publish on Zeko, SantaClawz will generate the public URL here."}
+                  {agentArchived
+                    ? "This public URL stays online for proof history, but SantaClawz hides the agent from Explore and new hire requests while it is archived."
+                    : publicAgentUrl
+                      ? "Once the agent is published, you can share it immediately. Get paid can come next."
+                      : "After Publish on Zeko, SantaClawz will generate the public URL here."}
                 </p>
                 <div className={`share-url-placeholder${publicAgentUrl ? " live" : ""}`}>
                   {publicAgentUrl ?? "https://santaclawz.ai/explore/your-agent-id"}
@@ -2153,7 +2216,7 @@ export function App() {
                 >
                   {copiedKey === "public-agent-url" ? "Copied" : "Copy public URL"}
                 </button>
-                {shareOnXUrl ? (
+                {shareOnXUrl && !agentArchived ? (
                   <a className="primary-button" href={shareOnXUrl} target="_blank" rel="noreferrer">
                     Share on X
                   </a>
@@ -2167,16 +2230,45 @@ export function App() {
 
             <div className="action-row">
               <div>
+                <strong>{agentArchived ? "Agent archived on SantaClawz" : "Listing is live on SantaClawz"}</strong>
+                <p className="panel-copy">
+                  {agentArchived
+                    ? `Archived${archivedAtLabel}. This keeps the public proof URL online, hides the agent from Explore, and stops new SantaClawz hire requests until you restore it.`
+                    : "This agent is discoverable in Explore and can keep accepting SantaClawz hires while it stays active."}
+                </p>
+              </div>
+              <div className="action-side">
+                <button
+                  type="button"
+                  className={`secondary-button${agentArchived ? "" : " warning-button"}`}
+                  disabled={!isRegisteredSession || !hasAdminAccess || pendingAction === "set-agent-archive"}
+                  onClick={() => {
+                    void setArchiveStatusAction(!agentArchived);
+                  }}
+                >
+                  {pendingAction === "set-agent-archive"
+                    ? agentArchived
+                      ? "Restoring..."
+                      : "Archiving..."
+                    : agentArchived
+                      ? "Restore agent"
+                      : "Archive agent"}
+                </button>
+              </div>
+            </div>
+
+            <div className="action-row">
+              <div>
                 <strong>Lock public milestones on Zeko</strong>
                 <p className="panel-copy">
                   {currentSocialAnchorQueue.pendingCount > 0
-                    ? `${currentSocialAnchorQueue.pendingCount} public milestone${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} waiting in the shared batch.`
+                    ? `${currentSocialAnchorQueue.pendingCount} public milestone${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} waiting for the next shared batch.`
                     : currentSocialAnchorQueue.anchoredCount > 0
                       ? `${currentSocialAnchorQueue.anchoredCount} public milestone${currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"} already anchored.`
-                      : "Publish, verification, payment, and hire milestones will queue here until the next proof batch is anchored."}
+                      : "Publish, verification, payment, and hire milestones will queue here until the next shared proof batch is anchored."}
                 </p>
                 <p className="panel-copy anchor-mode-help">
-                  SantaClawz keeps public milestones in the shared batch on testnet and anchors them from there.
+                  SantaClawz keeps public milestones in the shared batch on testnet and checks the queue every 10 seconds.
                 </p>
                 {latestSocialAnchorBatch ? (
                   <div className="share-url-placeholder live">
@@ -2597,10 +2689,15 @@ export function App() {
               <article id="agent-profile-top" className="explore-card explore-card-featured">
                 <div className="explore-card-head">
                   <strong>{profile.agentName}</strong>
-                  <span className="subtle-pill">{paidJobsEnabled ? "Payouts live" : published ? "Published" : "Registered"}</span>
+                  <span className="subtle-pill">{agentArchived ? "Archived" : paidJobsEnabled ? "Payouts live" : published ? "Published" : "Registered"}</span>
                 </div>
                 <p className="panel-copy">{profile.headline}</p>
                 <p className="panel-copy">{paidWorkStatusLabel}</p>
+                {agentArchived ? (
+                  <p className="panel-copy">
+                    Archived on SantaClawz{archivedAtLabel}. This public profile and proof history stay online, but Explore listing and new hire requests are disabled.
+                  </p>
+                ) : null}
                 {missionAuthVerified ? (
                   <p className="panel-copy">
                     Mission auth overlay verified via {formatMissionAuthProviders(missionAuthOverlay)}. Portable mission bundles and checkpointed Web2 actions can be proven from this agent&apos;s sidecar.
@@ -2705,87 +2802,98 @@ export function App() {
                     </div>
                   ) : null}
 
-                  <div id="hire-this-agent" className="action-row action-row-form">
-                    <div>
-                      <strong>Hire this agent</strong>
-                      <p className="panel-copy">{hireStatusCopy}</p>
+                  {agentArchived ? (
+                    <div id="hire-this-agent" className="action-row">
+                      <div>
+                        <strong>This agent is archived</strong>
+                        <p className="panel-copy">
+                          SantaClawz is preserving the public proof history here, but it is not routing new hire requests or payment flows to this agent right now.
+                        </p>
+                      </div>
                     </div>
-                    <div className="action-form-stack hire-form-stack">
-                      <label className="field">
-                        <span>Task prompt</span>
-                        <textarea
-                          className="text-area compact-text-area"
-                          value={hireDraft.taskPrompt}
-                          onChange={(event: ValueInputEvent) => {
-                            setHireDraft({
-                              ...hireDraft,
-                              taskPrompt: event.target.value
-                            });
-                          }}
-                          placeholder="Ask the agent what you want done."
-                        />
-                      </label>
-                      <div className="field-grid compact-field-grid">
+                  ) : (
+                    <div id="hire-this-agent" className="action-row action-row-form">
+                      <div>
+                        <strong>Hire this agent</strong>
+                        <p className="panel-copy">{hireStatusCopy}</p>
+                      </div>
+                      <div className="action-form-stack hire-form-stack">
                         <label className="field">
-                          <span>Budget (optional)</span>
-                          <input
-                            className="text-input"
-                            value={hireDraft.budgetMina}
+                          <span>Task prompt</span>
+                          <textarea
+                            className="text-area compact-text-area"
+                            value={hireDraft.taskPrompt}
                             onChange={(event: ValueInputEvent) => {
                               setHireDraft({
                                 ...hireDraft,
-                                budgetMina: event.target.value
+                                taskPrompt: event.target.value
                               });
                             }}
-                            placeholder="0.50"
+                            placeholder="Ask the agent what you want done."
                           />
                         </label>
-                        <label className="field">
-                          <span>Reply contact</span>
-                          <input
-                            className="text-input"
-                            value={hireDraft.requesterContact}
-                            onChange={(event: ValueInputEvent) => {
-                              setHireDraft({
-                                ...hireDraft,
-                                requesterContact: event.target.value
-                              });
+                        <div className="field-grid compact-field-grid">
+                          <label className="field">
+                            <span>Budget (optional)</span>
+                            <input
+                              className="text-input"
+                              value={hireDraft.budgetMina}
+                              onChange={(event: ValueInputEvent) => {
+                                setHireDraft({
+                                  ...hireDraft,
+                                  budgetMina: event.target.value
+                                });
+                              }}
+                              placeholder="0.50"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Reply contact</span>
+                            <input
+                              className="text-input"
+                              value={hireDraft.requesterContact}
+                              onChange={(event: ValueInputEvent) => {
+                                setHireDraft({
+                                  ...hireDraft,
+                                  requesterContact: event.target.value
+                                });
+                              }}
+                              placeholder="name@example.com or callback URL"
+                            />
+                          </label>
+                        </div>
+                        <div className="action-side">
+                          <button
+                            className="primary-button"
+                            disabled={pendingAction === "hire-request" || !canSubmitHire}
+                            onClick={() => {
+                              if (!sharedAgentId) {
+                                return;
+                              }
+                              setPendingAction("hire-request");
+                              setError(null);
+                              void submitHireRequest(sharedAgentId, {
+                                taskPrompt: hireDraft.taskPrompt,
+                                requesterContact: hireDraft.requesterContact,
+                                ...(hireDraft.budgetMina.trim().length > 0 ? { budgetMina: hireDraft.budgetMina } : {})
+                              })
+                                .then((receipt) => {
+                                  setHireReceipt(receipt);
+                                })
+                                .catch((nextError: Error) => {
+                                  setError(nextError.message);
+                                })
+                                .finally(() => {
+                                  setPendingAction(null);
+                                });
                             }}
-                            placeholder="name@example.com or callback URL"
-                          />
-                        </label>
-                      </div>
-                      <div className="action-side">
-                        <button
-                          className="primary-button"
-                          disabled={pendingAction === "hire-request" || !canSubmitHire}
-                          onClick={() => {
-                            if (!sharedAgentId) {
-                              return;
-                            }
-                            setPendingAction("hire-request");
-                            setError(null);
-                            void submitHireRequest(sharedAgentId, {
-                              taskPrompt: hireDraft.taskPrompt,
-                              requesterContact: hireDraft.requesterContact,
-                              ...(hireDraft.budgetMina.trim().length > 0 ? { budgetMina: hireDraft.budgetMina } : {})
-                            })
-                              .then((receipt) => {
-                                setHireReceipt(receipt);
-                              })
-                              .catch((nextError: Error) => {
-                                setError(nextError.message);
-                              })
-                              .finally(() => {
-                                setPendingAction(null);
-                              });
-                          }}
-                        >
-                          {pendingAction === "hire-request" ? "Sending..." : "Send hire request"}
-                        </button>
+                          >
+                            {pendingAction === "hire-request" ? "Sending..." : "Send hire request"}
+                          </button>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </div>
                 {hireReceipt ? (
                   <p className="status-banner status-banner-success">

@@ -179,6 +179,10 @@ function buildAdminContext(sessionId?: string, agentId?: string): AdminKeyContex
 function normalizeConsoleStateResponse(payload: ConsoleStateResponse): ConsoleStateResponse {
   const normalizedProfile = {
     ...payload.profile,
+    availability: payload.profile?.availability === "archived" ? "archived" as const : "active" as const,
+    ...(typeof payload.profile?.archivedAtIso === "string" && payload.profile.archivedAtIso.trim().length > 0
+      ? { archivedAtIso: payload.profile.archivedAtIso }
+      : {}),
     missionAuthOverlay: payload.profile?.missionAuthOverlay ?? {
       enabled: false,
       status: "disabled" as const,
@@ -407,6 +411,20 @@ export function updateAgentProfile(
       ...(sessionId ? { sessionId } : {})
     })
   }, buildAdminContext(sessionId)).then(normalizeConsoleStateResponse);
+}
+
+export function setAgentArchiveStatus(
+  agentId: string,
+  archived: boolean,
+  sessionId?: string
+): Promise<ConsoleStateResponse> {
+  return request<ConsoleStateResponse>(`/api/agents/${encodeURIComponent(agentId)}/archive`, {
+    method: "POST",
+    body: JSON.stringify({
+      archived,
+      ...(sessionId ? { sessionId } : {})
+    })
+  }, buildAdminContext(sessionId, agentId)).then(normalizeConsoleStateResponse);
 }
 
 export function issueOwnershipChallenge(sessionId?: string, agentId?: string): Promise<OwnershipChallengeIssueResponse> {

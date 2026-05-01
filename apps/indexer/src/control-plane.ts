@@ -321,6 +321,13 @@ interface OwnershipActionOptions {
   adminKey?: string;
 }
 
+interface AgentArchiveOptions {
+  sessionId?: string;
+  agentId?: string;
+  archived: boolean;
+  adminKey?: string;
+}
+
 type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile" | "socialAnchorPolicy" | "missionAuthOverlay">> & {
   missionAuthOverlay?: Partial<AgentProfileState["missionAuthOverlay"]>;
   paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
@@ -703,6 +710,7 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
     representedPrincipal: "Existing OpenClaw operator",
     headline: "Private, verifiable agent work on Zeko.",
     openClawUrl: "",
+    availability: "active",
     payoutWallets: {},
     missionAuthOverlay: {
       enabled: false,
@@ -1070,12 +1078,16 @@ function hasReadyPaymentProfile(profile: AgentProfileState): boolean {
   return true;
 }
 
+function isArchivedProfile(profile: AgentProfileState): boolean {
+  return profile.availability === "archived";
+}
+
 function computePaidJobsEnabled(
   profile: AgentProfileState,
   published: boolean,
   deployment: Pick<ZekoDeploymentState, "networkId" | "mode">
 ): boolean {
-  return published && hasReadyPaymentProfile(profile) && (!isMainnetNetwork(deployment) || hasPayoutAddress(profile));
+  return !isArchivedProfile(profile) && published && hasReadyPaymentProfile(profile) && (!isMainnetNetwork(deployment) || hasPayoutAddress(profile));
 }
 
 export class ClawzControlPlane {
@@ -1096,6 +1108,9 @@ export class ClawzControlPlane {
   private readonly blobStore: SealedBlobStore;
   private liveFlowRunPromise: Promise<ConsoleStateResponse> | null = null;
   private sponsorQueueRunPromise: Promise<void> | null = null;
+  private sharedSocialAnchorRunPromise: Promise<void> | null = null;
+  private sharedSocialAnchorIntervalHandle: ReturnType<typeof setInterval> | null = null;
+  private readonly sharedSocialAnchorIntervalMs: number;
   private readonly prioritySocialAnchorRuns = new Map<string, Promise<void>>();
 
   constructor(private readonly baseDir: string) {
@@ -1117,6 +1132,10 @@ export class ClawzControlPlane {
     this.sponsorQueuePath = path.join(baseDir, "state", "wallet-sponsor-queue.json");
     this.hireRequestPath = path.join(baseDir, "state", "hire-requests.json");
     this.socialAnchorQueuePath = path.join(baseDir, "state", "social-anchor-queue.json");
+    const configuredSharedAnchorIntervalMs = Number(process.env.CLAWZ_SHARED_SOCIAL_ANCHOR_INTERVAL_MS ?? "10000");
+    this.sharedSocialAnchorIntervalMs = Number.isFinite(configuredSharedAnchorIntervalMs)
+      ? Math.max(1000, Math.min(configuredSharedAnchorIntervalMs, 60000))
+      : 10000;
     this.keyBroker = createTenantKeyBroker({
       baseDir: path.join(baseDir, "kms"),
       wrappedKeyDir: path.join(baseDir, "kms", "wrapped-keys")
@@ -1132,6 +1151,20 @@ export class ClawzControlPlane {
     const controlPlane = new ClawzControlPlane(baseDir);
     await controlPlane.ensureBootstrapped();
     return controlPlane;
+  }
+
+  startSharedSocialAnchorDrainer(): void {
+    if (this.sharedSocialAnchorIntervalHandle) {
+      return;
+    }
+
+    this.sharedSocialAnchorIntervalHandle = setInterval(() => {
+      void this.runSharedSocialAnchorBatchCycle();
+    }, this.sharedSocialAnchorIntervalMs);
+    const intervalHandleWithUnref = this.sharedSocialAnchorIntervalHandle as { unref?: () => void } | null;
+    intervalHandleWithUnref?.unref?.();
+
+    void this.runSharedSocialAnchorBatchCycle();
   }
 
   private async ensureDirs() {
@@ -1307,6 +1340,18 @@ export class ClawzControlPlane {
         ? process.env.CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY.trim()
         : undefined)
     );
+  }
+
+  private canAutoAnchorSharedBatches(deployment: Pick<ZekoDeploymentState, "contracts">): boolean {
+    const hasSubmitterKey =
+      (typeof process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY === "string" &&
+        process.env.CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY.trim().length > 0) ||
+      (typeof process.env.DEPLOYER_PRIVATE_KEY === "string" && process.env.DEPLOYER_PRIVATE_KEY.trim().length > 0);
+    const hasSocialAnchorPrivateKey =
+      (typeof process.env.SOCIAL_ANCHOR_PRIVATE_KEY === "string" && process.env.SOCIAL_ANCHOR_PRIVATE_KEY.trim().length > 0) ||
+      (typeof process.env.CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY === "string" &&
+        process.env.CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY.trim().length > 0);
+    return Boolean(this.configuredSocialAnchorContractAddress(deployment) && hasSubmitterKey && hasSocialAnchorPrivateKey);
   }
 
   private async submitSocialAnchorBatchToZeko(options: {
@@ -1822,6 +1867,14 @@ export class ClawzControlPlane {
         ? input.preferredProvingLocation
         : fallback.preferredProvingLocation;
     const legacyPayoutAddress = (input as { payoutAddress?: unknown }).payoutAddress;
+    const availability =
+      input.availability === "archived" || input.availability === "active" ? input.availability : fallback.availability;
+    const archivedAtIso =
+      availability === "archived"
+        ? typeof input.archivedAtIso === "string" && input.archivedAtIso.trim().length > 0
+          ? input.archivedAtIso.trim().slice(0, 40)
+          : fallback.archivedAtIso
+        : undefined;
 
     return {
       agentName: typeof input.agentName === "string" ? input.agentName.trim().slice(0, 120) : fallback.agentName,
@@ -1831,6 +1884,8 @@ export class ClawzControlPlane {
           : fallback.representedPrincipal,
       headline: typeof input.headline === "string" ? input.headline.trim().slice(0, 280) : fallback.headline,
       openClawUrl: typeof input.openClawUrl === "string" ? input.openClawUrl.trim().slice(0, 280) : fallback.openClawUrl,
+      availability,
+      ...(archivedAtIso ? { archivedAtIso } : {}),
       payoutWallets: sanitizePayoutWallets(input.payoutWallets, fallback.payoutWallets, legacyPayoutAddress),
       missionAuthOverlay: sanitizeMissionAuthOverlay(input.missionAuthOverlay, fallback.missionAuthOverlay),
       paymentProfile: sanitizePaymentProfile(input.paymentProfile, fallback.paymentProfile),
@@ -2499,6 +2554,53 @@ export class ClawzControlPlane {
     );
 
     return this.getSocialAnchorQueueState(sessionId);
+  }
+
+  private async runSharedSocialAnchorBatchCycle(): Promise<void> {
+    if (this.sharedSocialAnchorRunPromise) {
+      return this.sharedSocialAnchorRunPromise;
+    }
+
+    const run = (async () => {
+      try {
+        const [state, queue, deployment] = await Promise.all([
+          this.loadState(),
+          this.loadSocialAnchorQueueFile(),
+          this.getDeploymentState()
+        ]);
+        if (!this.canAutoAnchorSharedBatches(deployment)) {
+          return;
+        }
+        const pendingSessionIds = [...new Set(
+          queue.items
+            .filter((item) => item.status === "pending")
+            .map((item) => item.sessionId)
+            .filter((sessionId) => {
+              const profile = this.profileForSession(state, sessionId);
+              return effectiveSocialAnchorMode(profile.socialAnchorPolicy.mode, deployment) === "shared-batched";
+            })
+        )];
+
+        for (const sessionId of pendingSessionIds) {
+          try {
+            await this.settleSocialAnchorBatchForSession(sessionId, {
+              operatorNote: "Shared 10s batch"
+            });
+          } catch (error) {
+            console.warn(
+              `[clawz] shared social anchor settlement skipped for ${sessionId}: ${
+                error instanceof Error ? error.message : String(error)
+              }`
+            );
+          }
+        }
+      } finally {
+        this.sharedSocialAnchorRunPromise = null;
+      }
+    })();
+
+    this.sharedSocialAnchorRunPromise = run;
+    return run;
   }
 
   private async runPrioritySocialAnchorBatchForSession(sessionId: string): Promise<void> {
@@ -3519,6 +3621,8 @@ export class ClawzControlPlane {
           paidJobsEnabled: computePaidJobsEnabled(profile, published, deployment),
           missionAuthVerified: profile.missionAuthOverlay.status === "verified",
           ownershipVerified: ownership.status === "verified",
+          availability: profile.availability,
+          ...(profile.archivedAtIso ? { archivedAtIso: profile.archivedAtIso } : {}),
           published,
           pendingSocialAnchorCount: sessionAnchors.filter((item) => item.status === "pending").length,
           anchoredSocialFactCount: sessionAnchors.filter((item) => item.status === "anchored").length,
@@ -3526,7 +3630,13 @@ export class ClawzControlPlane {
           ...(lastUpdatedAtIso ? { lastUpdatedAtIso } : {})
         } satisfies AgentRegistryEntry;
       })
-      .filter((entry) => entry.openClawUrl.trim().length > 0 && entry.agentName.trim().length > 0 && entry.headline.trim().length > 0)
+      .filter(
+        (entry) =>
+          entry.availability !== "archived" &&
+          entry.openClawUrl.trim().length > 0 &&
+          entry.agentName.trim().length > 0 &&
+          entry.headline.trim().length > 0
+      )
       .sort((left, right) => {
         if (left.published !== right.published) {
           return Number(right.published) - Number(left.published);
@@ -3860,6 +3970,9 @@ export class ClawzControlPlane {
     const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
     const trustModeId = this.resolveSessionTrustMode(events, sessionId, state.activeMode);
     const profile = this.profileForSession(state, sessionId, trustModeId);
+    if (isArchivedProfile(profile)) {
+      throw new Error("This agent is archived on SantaClawz and is not accepting new hire requests.");
+    }
     const published = liveFlowTargets.turns.some((target) => target.sessionId === sessionId);
     if (!published) {
       throw new Error("This agent needs to publish on Zeko before it can accept hire requests.");
@@ -4046,6 +4159,51 @@ export class ClawzControlPlane {
       });
     }
     return this.getConsoleState({ sessionId: focus.sessionId, ...(adminKey ? { adminKey } : {}) });
+  }
+
+  async setAgentArchiveStatus(options: AgentArchiveOptions): Promise<ConsoleStateResponse> {
+    const state = await this.loadState();
+    const events = await this.loadEvents();
+    const liveFlow = await this.getLiveFlowState();
+    const liveFlowTargets = this.buildLiveFlowTargets(events, liveFlow);
+    const requestedSessionId =
+      typeof options.sessionId === "string" && options.sessionId.trim().length > 0
+        ? options.sessionId.trim()
+        : typeof options.agentId === "string" && options.agentId.trim().length > 0
+          ? this.resolveSessionIdFromAgentId(state, options.agentId.trim())
+          : undefined;
+    const focus = this.resolveSessionFocus(state, events, liveFlowTargets, liveFlow, requestedSessionId);
+    this.assertAdminAccess(state, focus.sessionId, options.adminKey);
+    const trustModeId = focus.trustModeId;
+    const currentProfile = this.profileForSession(state, focus.sessionId, trustModeId);
+    const nextArchivedAtIso = options.archived ? new Date().toISOString() : undefined;
+    const nextProfile: AgentProfileState = {
+      ...currentProfile,
+      availability: options.archived ? "archived" : "active",
+      ...(nextArchivedAtIso ? { archivedAtIso: nextArchivedAtIso } : {})
+    };
+    if (!nextArchivedAtIso) {
+      delete (nextProfile as { archivedAtIso?: string }).archivedAtIso;
+    }
+
+    const nextState: ConsolePersistenceState = {
+      ...this.applyFocusedSession(state, focus.sessionId, trustModeId),
+      profilesBySession: {
+        ...state.profilesBySession,
+        [focus.sessionId]: nextProfile
+      }
+    };
+    await this.saveState(nextState);
+    await this.appendEvent(
+      "SessionCheckpointed",
+      {
+        sessionId: focus.sessionId,
+        agentArchived: options.archived,
+        agentAvailability: nextProfile.availability
+      },
+      nextArchivedAtIso ?? new Date().toISOString()
+    );
+    return this.getConsoleState({ sessionId: focus.sessionId, ...(options.adminKey ? { adminKey: options.adminKey } : {}) });
   }
 
   async sponsorWallet(options: SponsorWalletOptions = {}): Promise<ConsoleStateResponse> {

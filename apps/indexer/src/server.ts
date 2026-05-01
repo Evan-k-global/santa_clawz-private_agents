@@ -90,6 +90,7 @@ app.use(apiAuthMiddleware(securityConfig));
 app.use(express.json());
 
 const controlPlane = await ClawzControlPlane.boot(process.env.CLAWZ_DATA_DIR?.trim() || undefined);
+controlPlane.startSharedSocialAnchorDrainer();
 const REGISTRATION_WINDOW_MS = 15 * 60 * 1000;
 const REGISTRATION_LIMIT = 5;
 const registrationAttempts = new Map<string, { count: number; resetAt: number }>();
@@ -1415,6 +1416,32 @@ app.post("/api/agents/:agentId/hire", route(async (request, response) => {
   } catch (error) {
     response.status(400).json({
       error: error instanceof Error ? error.message : "Unable to submit hire request."
+    });
+  }
+}));
+
+app.post("/api/agents/:agentId/archive", route(async (request, response) => {
+  const agentId = request.params.agentId;
+  if (!agentId) {
+    response.status(400).json({ error: "agentId is required." });
+    return;
+  }
+
+  const body = isRecord(request.body) ? request.body : {};
+  try {
+    response.json(
+      await controlPlane.setAgentArchiveStatus({
+        agentId,
+        archived: typeof body.archived === "boolean" ? body.archived : true,
+        ...(typeof body.sessionId === "string" && body.sessionId.trim().length > 0
+          ? { sessionId: body.sessionId.trim() }
+          : {}),
+        ...(adminKeyHeader(request) ? { adminKey: adminKeyHeader(request)! } : {})
+      })
+    );
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to update agent archive status."
     });
   }
 }));

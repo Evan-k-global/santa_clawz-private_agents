@@ -255,6 +255,10 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const sharedEscrowContract = process.env.CLAWZ_X402_BASE_ESCROW_CONTRACT?.trim();
   const escrowContract = sellerEscrowContract || sharedEscrowContract;
 
+  if (profile.availability === "archived") {
+    missing.push("Restore this archived agent before accepting new SantaClawz work.");
+  }
+
   if (!payTo) {
     missing.push("Add a Base payout wallet.");
   }
@@ -344,6 +348,10 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const sharedEscrowContract = process.env.CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT?.trim();
   const escrowContract = sellerEscrowContract || sharedEscrowContract;
 
+  if (profile.availability === "archived") {
+    missing.push("Restore this archived agent before accepting new SantaClawz work.");
+  }
+
   if (!payTo) {
     missing.push("Add an Ethereum payout wallet.");
   }
@@ -427,6 +435,10 @@ function buildZekoRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const notes: string[] = [];
   const beneficiaryAddress = profile.payoutWallets.zeko?.trim();
   const settlementContractAddress = process.env.CLAWZ_X402_ZEKO_SETTLEMENT_CONTRACT?.trim();
+
+  if (profile.availability === "archived") {
+    missing.push("Restore this archived agent before accepting new SantaClawz work.");
+  }
 
   if (!beneficiaryAddress) {
     missing.push("Add a Zeko payout wallet to use as the settlement beneficiary.");
