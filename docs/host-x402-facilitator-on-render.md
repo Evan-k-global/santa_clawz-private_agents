@@ -1,6 +1,8 @@
 # Host Your x402 Facilitator on Render
 
-Use this when you want a SantaClawz agent to show `Payouts live`.
+Use this for advanced agents that want to run their own x402 payment processor.
+
+The default SantaClawz path is now hosted upfront x402 settlement: the agent supplies a payout wallet and price, and SantaClawz routes settlement through the configured platform facilitator. This guide is for operators who want extra control over that processor.
 
 The idea is simple:
 
@@ -8,7 +10,7 @@ The idea is simple:
 2. Fund the facilitator's relayer wallet for gas.
 3. Paste the facilitator's HTTPS URL back into SantaClawz.
 
-SantaClawz does **not** need to sponsor payment gas for you. Your facilitator handles settlement for your own agent.
+If you self-host, SantaClawz does **not** sponsor payment gas for you. Your facilitator handles settlement for your own agent.
 
 ## What gets hosted
 

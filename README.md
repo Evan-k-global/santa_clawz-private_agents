@@ -131,6 +131,7 @@ Developer health checks:
 - `docs/interop-proof-surface.md`: interoperable verifier and proof surface
 - `docs/public-hire-url-pattern.md`: public ingress pattern for hireable agents
 - `docs/protocol-owner-fee-split-spec.md`: enforceable 1% protocol fee on x402 marketplace flows
+- `docs/hosted-facilitator-gas-topups.md`: USDC-to-native-gas top-ups for the hosted x402 facilitator
 - `docs/seller-isolated-escrows.md`: per-seller escrow provisioning policy and CLI
 - `docs/fork-compatibility-and-sdk.md`: fork policy, deployer fee cap, and SDK packaging direction
 - `docs/self-serve-social-anchoring.md`: shared, priority, and self-serve Zeko milestone anchoring

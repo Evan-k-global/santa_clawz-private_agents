@@ -1331,7 +1331,9 @@ export function App() {
   const sellerNetPercentLabel = formatBpsPercent(10_000 - state.protocolOwnerFeePolicy.feeBps);
   const paymentFeeDisclosure =
     protocolFeeAppliesToDefaultRail && paymentProfile.enabled
-      ? `Buyers pay the listed price up front. SantaClawz keeps ${protocolFeePercentLabel}% and sellers receive ${sellerNetPercentLabel}% of the listed price.`
+      ? paymentProfile.settlementTrigger === "upfront"
+        ? `Buyers pay the listed price up front. SantaClawz hosted facilitation covers protocol and relay gas policy outside escrow.`
+        : `Buyers pay the listed price up front. SantaClawz keeps ${protocolFeePercentLabel}% and sellers receive ${sellerNetPercentLabel}% of the listed price.`
       : null;
   const mainPricingLabel =
     paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated"

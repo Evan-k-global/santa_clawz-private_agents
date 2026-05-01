@@ -18,6 +18,7 @@ export const X402_SETTLE_ROUTE = "/api/x402/settle";
 const X402_PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
 const X402_PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
 const X402_PAYMENT_RESPONSE_HEADER = "PAYMENT-RESPONSE";
+const USD_SCALE = 1_000_000n;
 
 const BASE_MAINNET = {
   networkId: "eip155:8453",
@@ -197,6 +198,60 @@ function isQuotedPricing(mode: AgentPricingMode): boolean {
   return mode === "quote-required" || mode === "agent-negotiated";
 }
 
+function parseUsdAtomic(value: string | undefined): bigint | null {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    return null;
+  }
+  const match = trimmed.match(/^(\d+)(?:\.(\d{1,6}))?$/);
+  if (!match) {
+    return null;
+  }
+  return BigInt(match[1] ?? "0") * USD_SCALE + BigInt((match[2] ?? "").padEnd(6, "0"));
+}
+
+function minHostedFacilitatorPaymentUsd(rail: AgentPaymentRail): string {
+  if (rail === "ethereum-usdc") {
+    return (
+      process.env.CLAWZ_X402_ETHEREUM_MIN_PAYMENT_USD?.trim() ||
+      process.env.CLAWZ_X402_HOSTED_FACILITATOR_MIN_PAYMENT_USD?.trim() ||
+      "5"
+    );
+  }
+
+  return (
+    process.env.CLAWZ_X402_BASE_MIN_PAYMENT_USD?.trim() ||
+    process.env.CLAWZ_X402_HOSTED_FACILITATOR_MIN_PAYMENT_USD?.trim() ||
+    "0.10"
+  );
+}
+
+function pushHostedFacilitatorFloor(input: {
+  rail: AgentPaymentRail;
+  profile: ConsoleStateResponse["profile"];
+  hostedFacilitator: boolean;
+  missing: string[];
+  notes: string[];
+}) {
+  if (!input.hostedFacilitator || input.profile.paymentProfile.pricingMode !== "fixed-exact") {
+    return;
+  }
+
+  const minPaymentUsd = minHostedFacilitatorPaymentUsd(input.rail);
+  const minAtomic = parseUsdAtomic(minPaymentUsd);
+  const amountAtomic = parseUsdAtomic(input.profile.paymentProfile.fixedAmountUsd);
+  if (minAtomic === null || amountAtomic === null) {
+    return;
+  }
+
+  input.notes.push(
+    `SantaClawz hosted facilitation requires at least $${minPaymentUsd} on ${input.rail === "ethereum-usdc" ? "Ethereum" : "Base"} to cover relay gas and abuse controls.`
+  );
+  if (amountAtomic < minAtomic) {
+    input.missing.push(`Set the fixed price to at least $${minPaymentUsd} for hosted facilitator settlement.`);
+  }
+}
+
 function executionMode(trigger: ConsoleStateResponse["profile"]["paymentProfile"]["settlementTrigger"]): AgentX402RailPlan["executionMode"] {
   return trigger === "on-proof" ? "reserve-release" : "settle-first";
 }
@@ -251,6 +306,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
+  const hostedFacilitator = Boolean(!operatorFacilitatorUrl && facilitatorUrl && !settleOnProof);
   const sellerEscrowContract = profile.paymentProfile.baseEscrowContract?.trim();
   const sharedEscrowContract = process.env.CLAWZ_X402_BASE_ESCROW_CONTRACT?.trim();
   const escrowContract = sellerEscrowContract || sharedEscrowContract;
@@ -265,13 +321,16 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
 
   const pricing = pushPricingReadiness(profile, missing, notes);
 
-  if (protocolFeeApplies && !settleOnProof) {
-    missing.push("Use on-proof settlement to keep the SantaClawz protocol fee and refund behavior aligned.");
-  }
-
   if (!facilitatorUrl) {
     missing.push("Set CLAWZ_X402_BASE_FACILITATOR_URL or add a Base facilitator URL for this agent.");
   }
+  pushHostedFacilitatorFloor({
+    rail: "base-usdc",
+    profile,
+    hostedFacilitator,
+    missing,
+    notes
+  });
 
   if (settleOnProof && !escrowContract) {
     missing.push("Provision a Base seller escrow or set CLAWZ_X402_BASE_ESCROW_CONTRACT for the shared reserve-release path.");
@@ -285,7 +344,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
     notes.push(
       settleOnProof
         ? "Buyers see the gross price. SantaClawz keeps the protocol fee at reservation time, and only the seller net stays in escrow."
-        : "Buyers see the gross price and sellers net the protocol fee. Use on-proof settlement when you want seller funds held in escrow."
+        : "Upfront payments settle directly to the seller wallet. SantaClawz hosted facilitation and gas recovery are handled outside escrow."
     );
   }
 
@@ -344,6 +403,7 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
   const operatorFacilitatorUrl = profile.paymentProfile.ethereumFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL?.trim();
+  const hostedFacilitator = Boolean(!operatorFacilitatorUrl && facilitatorUrl && !settleOnProof);
   const sellerEscrowContract = profile.paymentProfile.ethereumEscrowContract?.trim();
   const sharedEscrowContract = process.env.CLAWZ_X402_ETHEREUM_ESCROW_CONTRACT?.trim();
   const escrowContract = sellerEscrowContract || sharedEscrowContract;
@@ -358,13 +418,16 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
 
   const pricing = pushPricingReadiness(profile, missing, notes);
 
-  if (protocolFeeApplies && !settleOnProof) {
-    missing.push("Use on-proof settlement to keep the SantaClawz protocol fee and refund behavior aligned.");
-  }
-
   if (!facilitatorUrl) {
     missing.push("Set CLAWZ_X402_ETHEREUM_FACILITATOR_URL or add an Ethereum facilitator URL for this agent.");
   }
+  pushHostedFacilitatorFloor({
+    rail: "ethereum-usdc",
+    profile,
+    hostedFacilitator,
+    missing,
+    notes
+  });
 
   if (settleOnProof && !escrowContract) {
     missing.push(
@@ -392,7 +455,7 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     notes.push(
       settleOnProof
         ? "Buyers see the gross price. SantaClawz keeps the protocol fee at reservation time, and only the seller net stays in escrow."
-        : "Buyers see the gross price and sellers net the protocol fee. Use on-proof settlement when you want seller funds held in escrow."
+        : "Upfront payments settle directly to the seller wallet. SantaClawz hosted facilitation and gas recovery are handled outside escrow."
     );
   }
 
