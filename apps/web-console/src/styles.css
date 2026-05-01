@@ -778,6 +778,12 @@ pre,
   justify-content: flex-end;
 }
 
+.mission-auth-head-actions .subtle-pill {
+  white-space: nowrap;
+  min-width: fit-content;
+  flex-shrink: 0;
+}
+
 .mission-auth-body {
   display: grid;
   gap: 14px;
