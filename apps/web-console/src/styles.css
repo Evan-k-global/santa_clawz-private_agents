@@ -1708,63 +1708,8 @@ h3 {
   margin-top: 8px;
 }
 
-.anchor-mode-block {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-}
-
-.anchor-mode-toggle {
-  width: fit-content;
-}
-
-.anchor-mode-toggle .inline-toggle-button.active {
-  background: var(--accent);
-  color: #fff5ec;
-  box-shadow: 0 10px 24px rgba(185, 45, 34, 0.16);
-}
-
-.anchor-mode-summary {
-  display: grid;
-  gap: 8px;
-  margin-top: 10px;
-  padding: 12px 14px;
-  border: 1px solid rgba(18, 35, 54, 0.08);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.anchor-mode-summary.shared {
-  border-color: rgba(18, 35, 54, 0.08);
-  background: rgba(255, 255, 255, 0.72);
-}
-
-.anchor-mode-summary.priority {
-  border-color: rgba(185, 45, 34, 0.16);
-  background: rgba(185, 45, 34, 0.08);
-}
-
-.anchor-mode-summary-head {
-  display: grid;
-  gap: 5px;
-}
-
-.anchor-mode-summary-label {
-  display: inline-flex;
-  align-items: center;
-  width: fit-content;
-  padding: 4px 10px;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--accent);
-  background: rgba(185, 45, 34, 0.12);
-}
-
 .anchor-mode-help {
-  margin-top: 0;
+  margin-top: 10px;
 }
 
 .adapter-help {

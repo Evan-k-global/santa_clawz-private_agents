@@ -649,7 +649,7 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
         : {})
     },
     socialAnchorPolicy: {
-      mode: input?.socialAnchorPolicy?.mode === "priority-self-funded" ? "priority-self-funded" : "shared-batched"
+      mode: "shared-batched"
     },
     preferredProvingLocation:
       input?.preferredProvingLocation === "client" || input?.preferredProvingLocation === "sovereign-rollup"
@@ -1311,24 +1311,9 @@ export function App() {
   const currentAdminKey = getStoredAdminKey(sessionId, registeredAgentId ?? state.agentId);
   const currentSocialAnchorQueue = state.socialAnchorQueue;
   const latestSocialAnchorBatch = currentSocialAnchorQueue.recentBatches[0];
-  const socialAnchorMode = profile.socialAnchorPolicy.mode;
-  const priorityAnchoringEnabled = socialAnchorMode === "priority-self-funded";
   const socialAnchorActionLabel = pendingAction === "settle-social-anchors"
     ? "Anchoring..."
-    : priorityAnchoringEnabled
-      ? "Anchor now"
-      : "Anchor queued milestones";
-  const socialAnchorSummaryLabel = priorityAnchoringEnabled ? "Priority lane active" : "Shared batch active";
-  const socialAnchorSummaryTitle = priorityAnchoringEnabled
-    ? "New milestones auto-submit in the background."
-    : "Milestones wait in the shared batch by default.";
-  const socialAnchorSummaryCopy = priorityAnchoringEnabled
-    ? currentSocialAnchorQueue.pendingCount > 0
-      ? "This agent already has queued milestones. SantaClawz will try to fast-track them instead of waiting for the shared queue."
-      : "The next publish, verification, payment, or hire milestone will trigger a priority anchor attempt as soon as it queues."
-    : currentSocialAnchorQueue.pendingCount > 0
-      ? "These queued milestones will stay in the shared batch until you anchor them manually or the next shared proof batch runs."
-      : "New milestones will queue here until you anchor them manually or the next shared proof batch runs.";
+    : "Anchor queued milestones";
   const normalizedExploreQuery = exploreQuery.trim().toLowerCase();
   const filteredRegistry = registry.filter(
     (agent) => matchesExploreFilter(agent, exploreFilter) && matchesExploreQuery(agent, normalizedExploreQuery)
@@ -1415,9 +1400,6 @@ export function App() {
       : []),
     ...(paymentProfile.paymentNotes?.trim().length
       ? [`--payment-notes ${shellQuote(paymentProfile.paymentNotes)}`]
-      : []),
-    ...(profile.socialAnchorPolicy.mode === "priority-self-funded"
-      ? [`--anchor-mode ${shellQuote(profile.socialAnchorPolicy.mode)}`]
       : [])
   ].join(" ");
   const canSubmitHire =
@@ -2188,55 +2170,14 @@ export function App() {
                 <strong>Lock public milestones on Zeko</strong>
                 <p className="panel-copy">
                   {currentSocialAnchorQueue.pendingCount > 0
-                    ? priorityAnchoringEnabled
-                      ? `${currentSocialAnchorQueue.pendingCount} public milestone${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} queued in the priority lane.`
-                      : `${currentSocialAnchorQueue.pendingCount} public milestone${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} waiting in the shared batch.`
+                    ? `${currentSocialAnchorQueue.pendingCount} public milestone${currentSocialAnchorQueue.pendingCount === 1 ? "" : "s"} waiting in the shared batch.`
                     : currentSocialAnchorQueue.anchoredCount > 0
                       ? `${currentSocialAnchorQueue.anchoredCount} public milestone${currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"} already anchored.`
                       : "Publish, verification, payment, and hire milestones will queue here until the next proof batch is anchored."}
                 </p>
-                <div className="anchor-mode-block">
-                  <span className="eyebrow">Anchoring mode</span>
-                  <div className="inline-toggle compact-inline-toggle anchor-mode-toggle" role="tablist" aria-label="Anchoring mode">
-                    <button
-                      type="button"
-                      className={`inline-toggle-button${socialAnchorMode === "shared-batched" ? " active" : ""}`}
-                      aria-selected={socialAnchorMode === "shared-batched"}
-                      onClick={() => {
-                        setProfile({
-                          ...profile,
-                          socialAnchorPolicy: {
-                            mode: "shared-batched"
-                          }
-                        });
-                      }}
-                    >
-                      Shared
-                    </button>
-                    <button
-                      type="button"
-                      className={`inline-toggle-button${socialAnchorMode === "priority-self-funded" ? " active" : ""}`}
-                      aria-selected={socialAnchorMode === "priority-self-funded"}
-                      onClick={() => {
-                        setProfile({
-                          ...profile,
-                          socialAnchorPolicy: {
-                            mode: "priority-self-funded"
-                          }
-                        });
-                      }}
-                    >
-                      Priority
-                    </button>
-                  </div>
-                </div>
-                <div className={`anchor-mode-summary${priorityAnchoringEnabled ? " priority" : " shared"}`}>
-                  <div className="anchor-mode-summary-head">
-                    <span className="anchor-mode-summary-label">{socialAnchorSummaryLabel}</span>
-                    <strong>{socialAnchorSummaryTitle}</strong>
-                  </div>
-                  <p className="panel-copy anchor-mode-help">{socialAnchorSummaryCopy}</p>
-                </div>
+                <p className="panel-copy anchor-mode-help">
+                  SantaClawz keeps public milestones in the shared batch on testnet and anchors them from there.
+                </p>
                 {latestSocialAnchorBatch ? (
                   <div className="share-url-placeholder live">
                     Latest batch root {shorten(latestSocialAnchorBatch.rootDigestSha256, 14, 12)}
