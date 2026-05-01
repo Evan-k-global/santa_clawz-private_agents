@@ -226,6 +226,14 @@ function minHostedFacilitatorPaymentUsd(rail: AgentPaymentRail): string | undefi
   );
 }
 
+function hasBaseCdpFacilitatorCredentials(): boolean {
+  return Boolean(
+    process.env.CLAWZ_X402_BASE_FACILITATOR_BEARER_TOKEN?.trim() ||
+      process.env.CLAWZ_X402_CDP_BEARER_TOKEN?.trim() ||
+      process.env.COINBASE_CDP_API_BEARER_TOKEN?.trim()
+  );
+}
+
 function pushHostedFacilitatorFloor(input: {
   rail: AgentPaymentRail;
   profile: ConsoleStateResponse["profile"];
@@ -313,7 +321,9 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   const operatorFacilitatorUrl = profile.paymentProfile.baseFacilitatorUrl?.trim();
   const facilitatorUrl =
     operatorFacilitatorUrl || process.env.CLAWZ_X402_BASE_FACILITATOR_URL?.trim();
-  const hostedFacilitator = Boolean(!operatorFacilitatorUrl && facilitatorUrl && !settleOnProof);
+  const baseCdpFacilitatorConfigured = hasBaseCdpFacilitatorCredentials();
+  const baseHostedFacilitatorConfigured = Boolean(facilitatorUrl || baseCdpFacilitatorConfigured);
+  const hostedFacilitator = Boolean(!operatorFacilitatorUrl && baseHostedFacilitatorConfigured && !settleOnProof);
   const sellerEscrowContract = profile.paymentProfile.baseEscrowContract?.trim();
   const sharedEscrowContract = process.env.CLAWZ_X402_BASE_ESCROW_CONTRACT?.trim();
   const escrowContract = sellerEscrowContract || sharedEscrowContract;
@@ -328,8 +338,8 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
 
   const pricing = pushPricingReadiness(profile, missing, notes);
 
-  if (!facilitatorUrl) {
-    missing.push("Set CLAWZ_X402_BASE_FACILITATOR_URL or add a Base facilitator URL for this agent.");
+  if (!baseHostedFacilitatorConfigured) {
+    missing.push("Set CLAWZ_X402_BASE_FACILITATOR_URL, configure CDP x402 credentials, or add a Base facilitator URL for this agent.");
   }
   pushHostedFacilitatorFloor({
     rail: "base-usdc",
@@ -363,8 +373,12 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
   } else if (settleOnProof && sharedEscrowContract) {
     notes.push("This agent is currently using the shared Base escrow. Provision a seller-specific escrow to isolate balances further.");
   }
-  if (!operatorFacilitatorUrl && facilitatorUrl) {
-    notes.push("SantaClawz is using the hosted Base x402 facilitator for upfront payment settlement.");
+  if (!operatorFacilitatorUrl && baseHostedFacilitatorConfigured) {
+    notes.push(
+      facilitatorUrl
+        ? "SantaClawz is using the hosted Base x402 facilitator for upfront payment settlement."
+        : "SantaClawz is using the CDP x402 facilitator for upfront Base payment settlement."
+    );
   }
 
   return {
