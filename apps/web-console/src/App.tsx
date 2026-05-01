@@ -468,7 +468,9 @@ function paymentProfileSummary(
     defaultRail ? railLabel(defaultRail) : "selected rail"
   }`;
   if (!facilitatorUrl?.trim()) {
-    return `${summary}. Add the payment processor URL for this payout rail to go live.`;
+    return paymentProfileReady
+      ? `${summary}. SantaClawz hosted x402 will settle upfront payments for this rail.`
+      : `${summary}. SantaClawz will use the hosted x402 payment processor when it is configured.`;
   }
   return paymentProfileReady
     ? `${summary}. This agent can now accept paid jobs.`
@@ -489,12 +491,7 @@ function paymentProfileDraftReady(
     defaultRail === "ethereum-usdc"
       ? Boolean(profile.payoutWallets.ethereum?.trim())
       : Boolean(profile.payoutWallets.base?.trim());
-  const hasFacilitator =
-    defaultRail === "ethereum-usdc"
-      ? Boolean(paymentProfile.ethereumFacilitatorUrl?.trim())
-      : Boolean(paymentProfile.baseFacilitatorUrl?.trim());
-
-  if (!hasWallet || !hasFacilitator) {
+  if (!hasWallet) {
     return false;
   }
 
@@ -2429,52 +2426,15 @@ export function App() {
                           Start the payment setup when you&apos;re ready and SantaClawz will walk you through payout routing, payment URLs, and the default price buyers see.
                         </p>
                         <p className="panel-copy payment-enable-meta">
-                          SantaClawz does not host the payment processor today. You bring your own x402 payment processor and payout wallet.
+                          SantaClawz can process upfront x402 payments for agents with a payout wallet and price. Advanced operators can still bring their own payment processor.
                         </p>
                       </div>
                     </div>
                   ) : (
                     <>
-                      <div className="field-grid compact-field-grid payment-main-grid">
-                        <label className="field">
-                          <span>Base payment URL</span>
-                          <input
-                            className="text-input payment-compact-input"
-                            value={paymentProfile.baseFacilitatorUrl ?? ""}
-                            onChange={(event: ValueInputEvent) => {
-                              setProfile({
-                                ...profile,
-                                paymentProfile: {
-                                  ...profile.paymentProfile,
-                                  baseFacilitatorUrl: event.target.value
-                                }
-                              });
-                            }}
-                            placeholder="https://payments.your-agent-domain.com"
-                          />
-                        </label>
-                        <label className="field">
-                          <span>Ethereum payment URL</span>
-                          <input
-                            className="text-input payment-compact-input"
-                            value={paymentProfile.ethereumFacilitatorUrl ?? ""}
-                            onChange={(event: ValueInputEvent) => {
-                              setProfile({
-                                ...profile,
-                                paymentProfile: {
-                                  ...profile.paymentProfile,
-                                  ethereumFacilitatorUrl: event.target.value
-                                }
-                              });
-                            }}
-                            placeholder="https://ethereum-payments.your-agent-domain.com"
-                          />
-                        </label>
-                      </div>
-
                       <div className="facilitator-inline">
                         <p className="panel-copy facilitator-inline-copy">
-                          Bring your own x402 payment processor. Paste the public payment URL for each rail you want to turn on.
+                          SantaClawz uses its hosted x402 payment processor for upfront payments. Use advanced settings only if this agent runs its own processor.
                         </p>
                         <div className="facilitator-actions">
                           <a
@@ -2602,6 +2562,40 @@ export function App() {
                               <option value="quote-required">Quote required</option>
                               <option value="agent-negotiated">Negotiated by agent</option>
                             </select>
+                          </label>
+                          <label className="field">
+                            <span>Base processor URL</span>
+                            <input
+                              className="text-input payment-compact-input"
+                              value={paymentProfile.baseFacilitatorUrl ?? ""}
+                              onChange={(event: ValueInputEvent) => {
+                                setProfile({
+                                  ...profile,
+                                  paymentProfile: {
+                                    ...profile.paymentProfile,
+                                    baseFacilitatorUrl: event.target.value
+                                  }
+                                });
+                              }}
+                              placeholder="Optional self-hosted URL"
+                            />
+                          </label>
+                          <label className="field">
+                            <span>Ethereum processor URL</span>
+                            <input
+                              className="text-input payment-compact-input"
+                              value={paymentProfile.ethereumFacilitatorUrl ?? ""}
+                              onChange={(event: ValueInputEvent) => {
+                                setProfile({
+                                  ...profile,
+                                  paymentProfile: {
+                                    ...profile.paymentProfile,
+                                    ethereumFacilitatorUrl: event.target.value
+                                  }
+                                });
+                              }}
+                              placeholder="Optional self-hosted URL"
+                            />
                           </label>
                         </div>
 

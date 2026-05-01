@@ -959,10 +959,13 @@ function facilitatorUrlForRail(
   rail: AgentProfileState["paymentProfile"]["supportedRails"][number]
 ): string | undefined {
   if (rail === "base-usdc") {
-    return sanitizeUrl(profile.paymentProfile.baseFacilitatorUrl);
+    return sanitizeUrl(profile.paymentProfile.baseFacilitatorUrl) ?? sanitizeUrl(process.env.CLAWZ_X402_BASE_FACILITATOR_URL);
   }
   if (rail === "ethereum-usdc") {
-    return sanitizeUrl(profile.paymentProfile.ethereumFacilitatorUrl);
+    return (
+      sanitizeUrl(profile.paymentProfile.ethereumFacilitatorUrl) ??
+      sanitizeUrl(process.env.CLAWZ_X402_ETHEREUM_FACILITATOR_URL)
+    );
   }
   return undefined;
 }

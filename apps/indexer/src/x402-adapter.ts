@@ -269,8 +269,8 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
     missing.push("Use on-proof settlement to keep the SantaClawz protocol fee and refund behavior aligned.");
   }
 
-  if (!operatorFacilitatorUrl) {
-    missing.push("Add a Base facilitator URL for this agent.");
+  if (!facilitatorUrl) {
+    missing.push("Set CLAWZ_X402_BASE_FACILITATOR_URL or add a Base facilitator URL for this agent.");
   }
 
   if (settleOnProof && !escrowContract) {
@@ -298,7 +298,7 @@ function buildBaseRailPlan(consoleState: ConsoleStateResponse): AgentX402RailPla
     notes.push("This agent is currently using the shared Base escrow. Provision a seller-specific escrow to isolate balances further.");
   }
   if (!operatorFacilitatorUrl && facilitatorUrl) {
-    notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
+    notes.push("SantaClawz is using the hosted Base x402 facilitator for upfront payment settlement.");
   }
 
   return {
@@ -362,8 +362,8 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     missing.push("Use on-proof settlement to keep the SantaClawz protocol fee and refund behavior aligned.");
   }
 
-  if (!operatorFacilitatorUrl) {
-    missing.push("Add an Ethereum facilitator URL for this agent.");
+  if (!facilitatorUrl) {
+    missing.push("Set CLAWZ_X402_ETHEREUM_FACILITATOR_URL or add an Ethereum facilitator URL for this agent.");
   }
 
   if (settleOnProof && !escrowContract) {
@@ -385,7 +385,7 @@ function buildEthereumRailPlan(consoleState: ConsoleStateResponse): AgentX402Rai
     notes.push("This agent is currently using the shared Ethereum escrow. Provision a seller-specific escrow to isolate balances further.");
   }
   if (!operatorFacilitatorUrl && facilitatorUrl) {
-    notes.push("A platform-level fallback facilitator is configured, but this agent still needs its own facilitator URL for payouts-live status.");
+    notes.push("SantaClawz is using the hosted Ethereum x402 facilitator for upfront payment settlement.");
   }
   if (protocolFeeApplies) {
     notes.push(`SantaClawz marketplace routing applies a ${consoleState.protocolOwnerFeePolicy.feeBps / 100}% protocol owner fee on Ethereum.`);
