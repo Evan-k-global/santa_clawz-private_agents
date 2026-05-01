@@ -420,7 +420,7 @@ function formatBpsPercent(feeBps: number) {
 
 function missionAuthStatusLabel(overlay: AgentProfileState["missionAuthOverlay"]) {
   if (!overlay.enabled) {
-    return "Needs check";
+    return "Optional";
   }
   if (overlay.status === "verified") {
     return "Verified";
@@ -1691,7 +1691,7 @@ export function App() {
                       });
                     }}
                   >
-                    Add overlay
+                    Add auth
                   </button>
                 ) : null}
               </div>
