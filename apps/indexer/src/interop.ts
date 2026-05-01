@@ -651,6 +651,53 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
     claimDigest: canonicalDigest(socialWithoutDigest)
   };
 
+  const missionAuthWithoutDigest = input.consoleState.profile.missionAuthOverlay.enabled
+    ? {
+        enabled: input.consoleState.profile.missionAuthOverlay.enabled,
+        status: input.consoleState.profile.missionAuthOverlay.status,
+        ...(input.consoleState.profile.missionAuthOverlay.authorityBaseUrl
+          ? { authorityBaseUrl: input.consoleState.profile.missionAuthOverlay.authorityBaseUrl }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.providerHint
+          ? { providerHint: input.consoleState.profile.missionAuthOverlay.providerHint }
+          : {}),
+        scopeHints: input.consoleState.profile.missionAuthOverlay.scopeHints,
+        ...(input.consoleState.profile.missionAuthOverlay.protocol
+          ? { protocol: input.consoleState.profile.missionAuthOverlay.protocol }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.authorityName
+          ? { authorityName: input.consoleState.profile.missionAuthOverlay.authorityName }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.discoveryUrl
+          ? { discoveryUrl: input.consoleState.profile.missionAuthOverlay.discoveryUrl }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.jwksUrl
+          ? { jwksUrl: input.consoleState.profile.missionAuthOverlay.jwksUrl }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.providersUrl
+          ? { providersUrl: input.consoleState.profile.missionAuthOverlay.providersUrl }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.verifyCheckpointUrl
+          ? { verifyCheckpointUrl: input.consoleState.profile.missionAuthOverlay.verifyCheckpointUrl }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.exportBundleUrl
+          ? { exportBundleUrl: input.consoleState.profile.missionAuthOverlay.exportBundleUrl }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.supportedProviders
+          ? { supportedProviders: input.consoleState.profile.missionAuthOverlay.supportedProviders }
+          : {}),
+        ...(input.consoleState.profile.missionAuthOverlay.lastVerifiedAtIso
+          ? { lastVerifiedAtIso: input.consoleState.profile.missionAuthOverlay.lastVerifiedAtIso }
+          : {})
+      }
+    : undefined;
+  const missionAuth = missionAuthWithoutDigest
+    ? {
+        ...missionAuthWithoutDigest,
+        claimDigest: canonicalDigest(missionAuthWithoutDigest)
+      }
+    : undefined;
+
   const generatedAtIso =
     [
       input.consoleState.session.lastEventAtIso,
@@ -692,6 +739,17 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
     ...activePrivacyExceptions.map((exception) =>
       buildEvidenceObject("privacy-exception", exception.exceptionId, discovery.endpoints.privacyExceptions, exception, exception.expiresAtIso)
     ),
+    ...(missionAuth
+      ? [
+          buildEvidenceObject(
+            "mission-auth-overlay",
+            input.consoleState.session.sessionId,
+            discovery.endpoints.proofBundle,
+            missionAuthWithoutDigest as StableJsonValue,
+            input.consoleState.profile.missionAuthOverlay.lastVerifiedAtIso
+          )
+        ]
+      : []),
     ...unique([...sessionEvents, ...turnEvents].map((event) => event.id)).map((eventId) => {
       const event = [...sessionEvents, ...turnEvents].find((entry) => entry.id === eventId)!;
       return buildEvidenceObject("event", event.id, discovery.endpoints.events, event as unknown as Record<string, unknown>, event.occurredAtIso);
@@ -760,6 +818,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
     payment,
     privacy,
     social,
+    ...(missionAuth ? { missionAuth } : {}),
     ...(originProofs.length > 0 ? { originProofs } : {}),
     exampleToolReceipt,
     evidence,

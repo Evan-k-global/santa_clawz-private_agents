@@ -2,6 +2,7 @@ import { canonicalDigest } from "../hashing/digest.js";
 
 import type {
   AgentAuthorityClaim,
+  AgentMissionAuthClaim,
   AgentOwnershipClaim,
   AgentPaymentClaim,
   AgentPrivacyClaim,
@@ -102,6 +103,18 @@ export interface AgentTrustQuestionAnswer {
     sealedArtifactCount: number;
     selectedProvingLocation: AgentPrivacyClaim["programmablePrivacy"]["selectedLocation"];
     availableProvingLocations: AgentPrivacyClaim["programmablePrivacy"]["options"][number]["location"][];
+  };
+  missionAuth?: {
+    enabled: boolean;
+    status: AgentMissionAuthClaim["status"];
+    authorityBaseUrl?: string;
+    providerHint?: AgentMissionAuthClaim["providerHint"];
+    authorityName?: string;
+    supportedProviders?: string[];
+    verifyCheckpointUrl?: string;
+    exportBundleUrl?: string;
+    lastVerifiedAtIso?: string;
+    verified: boolean;
   };
   origin: {
     proofCount: number;
@@ -220,6 +233,13 @@ function verifyPayment(payment: AgentPaymentClaim): VerificationCheck[] {
 
 function verifyPrivacy(privacy: AgentPrivacyClaim): VerificationCheck[] {
   return [compareDigest("privacy.claimDigest", privacy.claimDigest, stripDigest(privacy))];
+}
+
+function verifyMissionAuth(missionAuth: AgentMissionAuthClaim | undefined): VerificationCheck[] {
+  if (!missionAuth) {
+    return [];
+  }
+  return [compareDigest("missionAuth.claimDigest", missionAuth.claimDigest, stripDigest(missionAuth))];
 }
 
 function findOriginVerifierAnchor(bundle: ClawzAgentProofBundle, proof: ZkTlsOriginProof) {
@@ -424,6 +444,24 @@ export function summarizeAgentProofBundle(bundle: ClawzAgentProofBundle): AgentT
       selectedProvingLocation: bundle.privacy.programmablePrivacy.selectedLocation,
       availableProvingLocations: bundle.privacy.programmablePrivacy.options.map((option) => option.location)
     },
+    ...(bundle.missionAuth
+      ? {
+          missionAuth: {
+            enabled: bundle.missionAuth.enabled,
+            status: bundle.missionAuth.status,
+            ...(bundle.missionAuth.authorityBaseUrl ? { authorityBaseUrl: bundle.missionAuth.authorityBaseUrl } : {}),
+            ...(bundle.missionAuth.providerHint ? { providerHint: bundle.missionAuth.providerHint } : {}),
+            ...(bundle.missionAuth.authorityName ? { authorityName: bundle.missionAuth.authorityName } : {}),
+            ...(bundle.missionAuth.supportedProviders ? { supportedProviders: bundle.missionAuth.supportedProviders } : {}),
+            ...(bundle.missionAuth.verifyCheckpointUrl
+              ? { verifyCheckpointUrl: bundle.missionAuth.verifyCheckpointUrl }
+              : {}),
+            ...(bundle.missionAuth.exportBundleUrl ? { exportBundleUrl: bundle.missionAuth.exportBundleUrl } : {}),
+            ...(bundle.missionAuth.lastVerifiedAtIso ? { lastVerifiedAtIso: bundle.missionAuth.lastVerifiedAtIso } : {}),
+            verified: bundle.missionAuth.status === "verified"
+          }
+        }
+      : {}),
     origin: {
       proofCount: bundle.originProofs?.length ?? 0,
       hosts: [...new Set((bundle.originProofs ?? []).map((proof) => proof.host))],
@@ -493,6 +531,7 @@ export function verifyAgentProofBundle(
     ...verifyAuthority(bundle.authority),
     ...verifyPayment(bundle.payment),
     ...verifyPrivacy(bundle.privacy),
+    ...verifyMissionAuth(bundle.missionAuth),
     ...verifyOriginProofs(bundle),
     ...verifyEvidenceDigests(bundle.evidence),
     ...verifyCrossClaimConsistency(bundle),

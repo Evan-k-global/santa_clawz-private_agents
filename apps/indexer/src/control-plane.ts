@@ -300,6 +300,7 @@ interface RegisterAgentOptions {
   headline: string;
   openClawUrl: string;
   payoutWallets?: AgentProfileState["payoutWallets"];
+  missionAuthOverlay?: Partial<AgentProfileState["missionAuthOverlay"]>;
   paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
   socialAnchorPolicy?: Partial<AgentProfileState["socialAnchorPolicy"]>;
   payoutAddress?: string;
@@ -313,7 +314,8 @@ interface OwnershipActionOptions {
   adminKey?: string;
 }
 
-type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile" | "socialAnchorPolicy">> & {
+type AgentProfileInput = Partial<Omit<AgentProfileState, "paymentProfile" | "socialAnchorPolicy" | "missionAuthOverlay">> & {
+  missionAuthOverlay?: Partial<AgentProfileState["missionAuthOverlay"]>;
   paymentProfile?: Partial<AgentProfileState["paymentProfile"]>;
   socialAnchorPolicy?: Partial<AgentProfileState["socialAnchorPolicy"]>;
   payoutAddress?: unknown;
@@ -628,6 +630,65 @@ function normalizeComparableUrl(rawUrl: string) {
   return `${protocol}//${hostname}${port ? `:${port}` : ""}${pathname}${parsed.search}`;
 }
 
+function normalizeHostedServiceBaseUrl(rawUrl: string, label: string) {
+  let parsed: URL;
+  try {
+    parsed = new URL(rawUrl);
+  } catch (_error) {
+    throw new Error(`${label} must be a valid URL.`);
+  }
+
+  const isProductionValidation = process.env.NODE_ENV === "production";
+  const usesSecureProtocol = parsed.protocol === "https:";
+  const isLocalHttp = parsed.protocol === "http:" && isPrivateHostname(parsed.hostname) && !isProductionValidation;
+
+  if (!usesSecureProtocol && !isLocalHttp) {
+    throw new Error(`${label} must use https in public deployments.`);
+  }
+  if (isProductionValidation && isPrivateHostname(parsed.hostname)) {
+    throw new Error(`${label} must be publicly reachable.`);
+  }
+  if (isPlaceholderHostname(parsed.hostname)) {
+    throw new Error(`${label} still looks like placeholder copy.`);
+  }
+
+  const pathname = parsed.pathname.replace(/\/+$/, "");
+  return `${parsed.origin}${pathname === "/" ? "" : pathname}`;
+}
+
+function hostedServiceUrlFor(baseUrl: string, relativePath: string) {
+  const normalizedBase = baseUrl.endsWith("/") ? baseUrl : `${baseUrl}/`;
+  const normalizedPath = relativePath.replace(/^\/+/, "");
+  return new URL(normalizedPath, normalizedBase).toString();
+}
+
+async function fetchJsonWithTimeout<T>(url: string, label: string, timeoutMs = 8000): Promise<T> {
+  let response: Response;
+  try {
+    response = await fetch(url, {
+      method: "GET",
+      headers: {
+        accept: "application/json,text/plain,*/*"
+      },
+      redirect: "follow",
+      signal: AbortSignal.timeout(timeoutMs)
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "network request failed";
+    throw new Error(`${label} could not be reached (${message}).`);
+  }
+
+  if (!response.ok) {
+    throw new Error(`${label} returned ${response.status}.`);
+  }
+
+  try {
+    return (await response.json()) as T;
+  } catch (_error) {
+    throw new Error(`${label} did not return valid JSON.`);
+  }
+}
+
 function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
   const trustMode = TRUST_MODE_PRESETS.find((mode) => mode.id === trustModeId) ?? TRUST_MODE_PRESETS[0]!;
   return {
@@ -636,6 +697,11 @@ function buildDefaultProfile(trustModeId: TrustModeId): AgentProfileState {
     headline: "Private, verifiable agent work on Zeko.",
     openClawUrl: "",
     payoutWallets: {},
+    missionAuthOverlay: {
+      enabled: false,
+      status: "disabled",
+      scopeHints: []
+    },
     paymentProfile: {
       enabled: false,
       supportedRails: ["base-usdc"],
@@ -774,6 +840,53 @@ function sanitizePaymentNotes(value: unknown): string | undefined {
 
 function sanitizeEvmContractAddress(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim().slice(0, 80) : undefined;
+}
+
+function sanitizeMissionScopeHints(input: unknown, fallback: string[] = []): string[] {
+  const source = Array.isArray(input) ? input : fallback;
+  return Array.from(
+    new Set(
+      source
+        .filter((value): value is string => typeof value === "string")
+        .map((value) => value.trim().slice(0, 120))
+        .filter((value) => value.length > 0)
+    )
+  ).slice(0, 12);
+}
+
+function sanitizeMissionAuthOverlay(
+  input: Partial<AgentProfileState["missionAuthOverlay"]> | undefined,
+  fallback: AgentProfileState["missionAuthOverlay"]
+): AgentProfileState["missionAuthOverlay"] {
+  const enabled = typeof input?.enabled === "boolean" ? input.enabled : fallback.enabled;
+  const authorityBaseUrl = sanitizeUrl(input?.authorityBaseUrl) ?? sanitizeUrl(fallback.authorityBaseUrl);
+  const providerHint =
+    input?.providerHint === "auth0" || input?.providerHint === "okta" || input?.providerHint === "custom-oidc"
+      ? input.providerHint
+      : fallback.providerHint;
+  const scopeHints = sanitizeMissionScopeHints(input?.scopeHints, fallback.scopeHints);
+  const authorityChanged = authorityBaseUrl !== sanitizeUrl(fallback.authorityBaseUrl);
+  const enabledChanged = enabled !== fallback.enabled;
+  const preserveVerifiedState = !authorityChanged && !enabledChanged && fallback.status === "verified";
+
+  return {
+    enabled,
+    status: !enabled ? "disabled" : preserveVerifiedState ? "verified" : "configured",
+    ...(authorityBaseUrl ? { authorityBaseUrl } : {}),
+    ...(providerHint ? { providerHint } : {}),
+    scopeHints,
+    ...(preserveVerifiedState && fallback.protocol ? { protocol: fallback.protocol } : {}),
+    ...(preserveVerifiedState && fallback.authorityName ? { authorityName: fallback.authorityName } : {}),
+    ...(preserveVerifiedState && fallback.discoveryUrl ? { discoveryUrl: fallback.discoveryUrl } : {}),
+    ...(preserveVerifiedState && fallback.jwksUrl ? { jwksUrl: fallback.jwksUrl } : {}),
+    ...(preserveVerifiedState && fallback.providersUrl ? { providersUrl: fallback.providersUrl } : {}),
+    ...(preserveVerifiedState && fallback.verifyCheckpointUrl
+      ? { verifyCheckpointUrl: fallback.verifyCheckpointUrl }
+      : {}),
+    ...(preserveVerifiedState && fallback.exportBundleUrl ? { exportBundleUrl: fallback.exportBundleUrl } : {}),
+    ...(preserveVerifiedState && fallback.supportedProviders ? { supportedProviders: fallback.supportedProviders } : {}),
+    ...(preserveVerifiedState && fallback.lastVerifiedAtIso ? { lastVerifiedAtIso: fallback.lastVerifiedAtIso } : {})
+  };
 }
 
 function sanitizeSocialAnchorPolicy(
@@ -1423,6 +1536,9 @@ export class ClawzControlPlane {
     ) {
       throw new Error("Ethereum escrow contract must be a valid EVM address.");
     }
+    if (profile.missionAuthOverlay.authorityBaseUrl) {
+      this.validateMissionAuthBaseUrl(profile.missionAuthOverlay.authorityBaseUrl);
+    }
   }
 
   private validatePublicHttpsUrl(rawUrl: string, label: string) {
@@ -1464,6 +1580,95 @@ export class ClawzControlPlane {
     }
 
     return normalizeComparableUrl(parsed.toString());
+  }
+
+  private validateMissionAuthBaseUrl(rawUrl: string) {
+    return normalizeHostedServiceBaseUrl(rawUrl, "Mission auth authority URL");
+  }
+
+  async checkMissionAuthOverlay(
+    input: Partial<AgentProfileState["missionAuthOverlay"]> | undefined
+  ): Promise<AgentProfileState["missionAuthOverlay"]> {
+    const fallback = buildDefaultProfile("private").missionAuthOverlay;
+    const draft = sanitizeMissionAuthOverlay(input, fallback);
+    if (!draft.enabled) {
+      throw new Error("Turn on the enterprise auth overlay first.");
+    }
+    if (!draft.authorityBaseUrl) {
+      throw new Error("Add the public mission auth authority URL first.");
+    }
+
+    const authorityBaseUrl = this.validateMissionAuthBaseUrl(draft.authorityBaseUrl);
+    const discoveryUrl = hostedServiceUrlFor(authorityBaseUrl, "/.well-known/agent-authorization.json");
+    const discovery = await fetchJsonWithTimeout<Record<string, unknown>>(
+      discoveryUrl,
+      "Mission auth discovery document"
+    );
+    if (discovery.protocol !== "zk-mission-auth") {
+      throw new Error("Mission auth discovery must advertise protocol zk-mission-auth.");
+    }
+
+    const endpoints = isRecord(discovery.endpoints) ? discovery.endpoints : {};
+    const jwksUrl =
+      typeof endpoints.missionAuthorityJwks === "string" && endpoints.missionAuthorityJwks.trim().length > 0
+        ? endpoints.missionAuthorityJwks.trim()
+        : hostedServiceUrlFor(authorityBaseUrl, "/.well-known/mission-authority-jwks.json");
+    const jwks = await fetchJsonWithTimeout<Record<string, unknown>>(jwksUrl, "Mission authority JWKS");
+    if (!Array.isArray(jwks.keys) || jwks.keys.length === 0) {
+      throw new Error("Mission authority JWKS did not include any signing keys.");
+    }
+
+    const providersUrl =
+      typeof endpoints.oauthProviders === "string" && endpoints.oauthProviders.trim().length > 0
+        ? endpoints.oauthProviders.trim()
+        : undefined;
+    let supportedProviders: string[] | undefined;
+    if (providersUrl) {
+      try {
+        const providers = await fetchJsonWithTimeout<Record<string, unknown>>(providersUrl, "Mission auth providers");
+        if (Array.isArray(providers.providers)) {
+          supportedProviders = Array.from(
+            new Set(
+              providers.providers
+                .map((provider) => {
+                  if (typeof provider === "string") {
+                    return provider.trim();
+                  }
+                  if (isRecord(provider) && typeof provider.provider === "string") {
+                    return provider.provider.trim();
+                  }
+                  return "";
+                })
+                .filter((provider) => provider.length > 0)
+            )
+          ).slice(0, 8);
+        }
+      } catch (_error) {
+        supportedProviders = undefined;
+      }
+    }
+
+    return {
+      ...draft,
+      enabled: true,
+      status: "verified",
+      authorityBaseUrl,
+      protocol: "zk-mission-auth",
+      ...(typeof discovery.name === "string" && discovery.name.trim().length > 0
+        ? { authorityName: discovery.name.trim().slice(0, 160) }
+        : {}),
+      discoveryUrl,
+      jwksUrl,
+      ...(providersUrl ? { providersUrl } : {}),
+      ...(typeof endpoints.verifyCheckpoint === "string" && endpoints.verifyCheckpoint.trim().length > 0
+        ? { verifyCheckpointUrl: endpoints.verifyCheckpoint.trim() }
+        : {}),
+      ...(typeof endpoints.exportBundle === "string" && endpoints.exportBundle.trim().length > 0
+        ? { exportBundleUrl: endpoints.exportBundle.trim() }
+        : {}),
+      ...(supportedProviders && supportedProviders.length > 0 ? { supportedProviders } : {}),
+      lastVerifiedAtIso: new Date().toISOString()
+    };
   }
 
   private async validateOpenClawAgentHealth(rawUrl: string) {
@@ -1605,6 +1810,7 @@ export class ClawzControlPlane {
       headline: typeof input.headline === "string" ? input.headline.trim().slice(0, 280) : fallback.headline,
       openClawUrl: typeof input.openClawUrl === "string" ? input.openClawUrl.trim().slice(0, 280) : fallback.openClawUrl,
       payoutWallets: sanitizePayoutWallets(input.payoutWallets, fallback.payoutWallets, legacyPayoutAddress),
+      missionAuthOverlay: sanitizeMissionAuthOverlay(input.missionAuthOverlay, fallback.missionAuthOverlay),
       paymentProfile: sanitizePaymentProfile(input.paymentProfile, fallback.paymentProfile),
       socialAnchorPolicy: sanitizeSocialAnchorPolicy(input.socialAnchorPolicy, fallback.socialAnchorPolicy),
       preferredProvingLocation
@@ -3257,6 +3463,7 @@ export class ClawzControlPlane {
           payoutAddressConfigured: hasPayoutAddress(profile),
           paymentProfileReady: hasReadyPaymentProfile(profile),
           paidJobsEnabled: computePaidJobsEnabled(profile, published, deployment),
+          missionAuthVerified: profile.missionAuthOverlay.status === "verified",
           ownershipVerified: ownership.status === "verified",
           published,
           pendingSocialAnchorCount: sessionAnchors.filter((item) => item.status === "pending").length,
@@ -3318,6 +3525,7 @@ export class ClawzControlPlane {
         headline: options.headline,
         openClawUrl: options.openClawUrl,
         ...(options.payoutWallets ? { payoutWallets: options.payoutWallets } : {}),
+        ...(options.missionAuthOverlay ? { missionAuthOverlay: options.missionAuthOverlay } : {}),
         ...(options.paymentProfile ? { paymentProfile: options.paymentProfile } : {}),
         ...(options.socialAnchorPolicy ? { socialAnchorPolicy: options.socialAnchorPolicy } : {}),
         ...(options.payoutAddress ? { payoutAddress: options.payoutAddress } : {}),

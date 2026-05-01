@@ -4,6 +4,8 @@ import type { ArtifactVisibility, PrivacyPreset, ProgrammablePrivacyPolicy } fro
 import type { ToolReceipt } from "../receipts/tool-receipt.js";
 import type { RetentionPolicy } from "../retention/types.js";
 import type {
+  AgentMissionAuthOverlayStatus,
+  AgentMissionAuthProviderHint,
   AgentSocialAnchorMode,
   AgentPaymentRail,
   AgentPricingMode,
@@ -26,7 +28,8 @@ export interface InteropEvidenceObject {
     | "privacy-exception"
     | "artifact"
     | "receipt"
-    | "origin-proof";
+    | "origin-proof"
+    | "mission-auth-overlay";
   id: string;
   route: string;
   object: StableJsonValue;
@@ -186,6 +189,24 @@ export interface AgentSocialClaim {
   claimDigest: CanonicalDigest;
 }
 
+export interface AgentMissionAuthClaim {
+  enabled: boolean;
+  status: AgentMissionAuthOverlayStatus;
+  authorityBaseUrl?: string;
+  providerHint?: AgentMissionAuthProviderHint;
+  scopeHints: string[];
+  protocol?: "zk-mission-auth";
+  authorityName?: string;
+  discoveryUrl?: string;
+  jwksUrl?: string;
+  providersUrl?: string;
+  verifyCheckpointUrl?: string;
+  exportBundleUrl?: string;
+  supportedProviders?: string[];
+  lastVerifiedAtIso?: string;
+  claimDigest: CanonicalDigest;
+}
+
 export interface ZkTlsOriginProof {
   originProofId: string;
   sessionId: string;
@@ -235,6 +256,7 @@ export interface ClawzAgentProofBundle {
   payment: AgentPaymentClaim;
   privacy: AgentPrivacyClaim;
   social: AgentSocialClaim;
+  missionAuth?: AgentMissionAuthClaim;
   originProofs?: ZkTlsOriginProof[];
   exampleToolReceipt?: ToolReceipt;
   evidence: InteropEvidenceObject[];

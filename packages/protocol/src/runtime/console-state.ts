@@ -270,6 +270,26 @@ export interface AgentFeePreview {
   feeBps: number;
 }
 
+export type AgentMissionAuthProviderHint = "auth0" | "okta" | "custom-oidc";
+export type AgentMissionAuthOverlayStatus = "disabled" | "configured" | "verified";
+
+export interface AgentMissionAuthOverlay {
+  enabled: boolean;
+  status: AgentMissionAuthOverlayStatus;
+  authorityBaseUrl?: string;
+  providerHint?: AgentMissionAuthProviderHint;
+  scopeHints: string[];
+  protocol?: "zk-mission-auth";
+  authorityName?: string;
+  discoveryUrl?: string;
+  jwksUrl?: string;
+  providersUrl?: string;
+  verifyCheckpointUrl?: string;
+  exportBundleUrl?: string;
+  supportedProviders?: string[];
+  lastVerifiedAtIso?: string;
+}
+
 export interface AgentPaymentProfile {
   enabled: boolean;
   supportedRails: AgentPaymentRail[];
@@ -401,6 +421,7 @@ export interface AgentProfileState {
   headline: string;
   openClawUrl: string;
   payoutWallets: AgentPayoutWallets;
+  missionAuthOverlay: AgentMissionAuthOverlay;
   paymentProfile: AgentPaymentProfile;
   socialAnchorPolicy: AgentSocialAnchorPolicy;
   preferredProvingLocation: PrivacyProvingLocation;
@@ -427,6 +448,7 @@ export interface AgentRegistryEntry {
   payoutAddressConfigured: boolean;
   paymentProfileReady: boolean;
   paidJobsEnabled: boolean;
+  missionAuthVerified: boolean;
   ownershipVerified: boolean;
   published: boolean;
   pendingSocialAnchorCount: number;

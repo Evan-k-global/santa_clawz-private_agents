@@ -747,6 +747,50 @@ pre,
   padding-top: 18px;
 }
 
+.mission-auth-card {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding: 16px 18px;
+  border-radius: 24px;
+  border: 1px solid rgba(18, 35, 54, 0.08);
+  background: rgba(255, 252, 247, 0.58);
+}
+
+.mission-auth-head,
+.mission-auth-actions {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: start;
+}
+
+.mission-auth-copy strong {
+  display: block;
+  margin-bottom: 4px;
+}
+
+.mission-auth-head-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.mission-auth-body {
+  display: grid;
+  gap: 14px;
+}
+
+.mission-auth-grid {
+  align-items: end;
+}
+
+.mission-auth-summary {
+  width: min(100%, 42rem);
+}
+
 .register-flow-head,
 .payment-subcard-head {
   display: flex;
@@ -2155,6 +2199,8 @@ button:disabled {
   .step-head,
   .step-title,
   .register-flow-head,
+  .mission-auth-head,
+  .mission-auth-actions,
   .payment-subcard-head,
   .action-row,
   .action-side,
@@ -2241,6 +2287,11 @@ button:disabled {
 
   .ownership-reclaim-note {
     grid-template-columns: 1fr;
+  }
+
+  .mission-auth-head-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .share-row {

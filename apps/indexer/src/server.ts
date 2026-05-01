@@ -99,6 +99,7 @@ type RegisterAgentRequestBody = {
   openClawUrl?: unknown;
   payoutAddress?: unknown;
   payoutWallets?: unknown;
+  missionAuthOverlay?: unknown;
   paymentProfile?: unknown;
   socialAnchorPolicy?: unknown;
   trustModeId?: unknown;
@@ -111,10 +112,14 @@ type ProfileRequestBody = {
   openClawUrl?: unknown;
   payoutAddress?: unknown;
   payoutWallets?: unknown;
+  missionAuthOverlay?: unknown;
   paymentProfile?: unknown;
   socialAnchorPolicy?: unknown;
   preferredProvingLocation?: unknown;
   sessionId?: unknown;
+};
+type MissionAuthOverlayRequestBody = {
+  missionAuthOverlay?: unknown;
 };
 type OwnershipActionRequestBody = {
   sessionId?: unknown;
@@ -250,6 +255,28 @@ function parsePaymentProfile(value: unknown): Partial<AgentProfileState["payment
   };
 }
 
+function parseMissionAuthOverlay(value: unknown): Partial<AgentProfileState["missionAuthOverlay"]> | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  return {
+    ...(typeof value.enabled === "boolean" ? { enabled: value.enabled } : {}),
+    ...(value.status === "disabled" || value.status === "configured" || value.status === "verified"
+      ? { status: value.status }
+      : {}),
+    ...(typeof value.authorityBaseUrl === "string" ? { authorityBaseUrl: value.authorityBaseUrl } : {}),
+    ...(value.providerHint === "auth0" || value.providerHint === "okta" || value.providerHint === "custom-oidc"
+      ? { providerHint: value.providerHint }
+      : {}),
+    ...(Array.isArray(value.scopeHints)
+      ? {
+          scopeHints: value.scopeHints.filter((scope): scope is string => typeof scope === "string")
+        }
+      : {})
+  };
+}
+
 function parseSocialAnchorPolicy(value: unknown): Partial<AgentProfileState["socialAnchorPolicy"]> | undefined {
   if (!isRecord(value)) {
     return undefined;
@@ -278,6 +305,7 @@ function parseRegisterAgentRequest(body: unknown): RegisterAgentRequestBody {
         openClawUrl: body.openClawUrl,
         payoutAddress: body.payoutAddress,
         payoutWallets: body.payoutWallets,
+        missionAuthOverlay: body.missionAuthOverlay,
         paymentProfile: body.paymentProfile,
         socialAnchorPolicy: body.socialAnchorPolicy,
         trustModeId: body.trustModeId,
@@ -295,11 +323,20 @@ function parseProfileRequest(body: unknown): ProfileRequestBody {
           openClawUrl: body.openClawUrl,
           payoutAddress: body.payoutAddress,
           payoutWallets: body.payoutWallets,
+          missionAuthOverlay: body.missionAuthOverlay,
           paymentProfile: body.paymentProfile,
           socialAnchorPolicy: body.socialAnchorPolicy,
           preferredProvingLocation: body.preferredProvingLocation,
           sessionId: body.sessionId
         }
+    : {};
+}
+
+function parseMissionAuthOverlayRequest(body: unknown): MissionAuthOverlayRequestBody {
+  return isRecord(body)
+    ? {
+        missionAuthOverlay: body.missionAuthOverlay
+      }
     : {};
 }
 
@@ -779,6 +816,21 @@ app.get("/api/agents", route(async (_request, response) => {
   response.json(await controlPlane.listRegisteredAgents());
 }));
 
+app.post("/api/mission-auth/check", route(async (request, response) => {
+  try {
+    const parsed = parseMissionAuthOverlayRequest(request.body);
+    response.json({
+      missionAuthOverlay: await controlPlane.checkMissionAuthOverlay(
+        parseMissionAuthOverlay(parsed.missionAuthOverlay)
+      )
+    });
+  } catch (error) {
+    response.status(400).json({
+      error: error instanceof Error ? error.message : "Unable to verify the mission auth overlay."
+    });
+  }
+}));
+
 app.get("/api/x402/plan", route(async (request, response) => {
   try {
     const { plan } = await buildX402PlanFromQuery(request);
@@ -1181,6 +1233,7 @@ app.post("/api/console/trust-mode", route(async (request, response) => {
 app.post("/api/console/register", route(async (request, response) => {
   const body = parseRegisterAgentRequest(request.body ?? null);
   const payoutWallets = parsePayoutWallets(body.payoutWallets);
+  const missionAuthOverlay = parseMissionAuthOverlay(body.missionAuthOverlay);
   const paymentProfile = parsePaymentProfile(body.paymentProfile);
   const socialAnchorPolicy = parseSocialAnchorPolicy(body.socialAnchorPolicy);
   const trustModeId =
@@ -1206,6 +1259,7 @@ app.post("/api/console/register", route(async (request, response) => {
         openClawUrl: typeof body.openClawUrl === "string" ? body.openClawUrl : "",
         ...(typeof body.payoutAddress === "string" ? { payoutAddress: body.payoutAddress } : {}),
         ...(payoutWallets ? { payoutWallets } : {}),
+        ...(missionAuthOverlay ? { missionAuthOverlay } : {}),
         ...(paymentProfile ? { paymentProfile } : {}),
         ...(socialAnchorPolicy ? { socialAnchorPolicy } : {}),
         ...(typeof body.representedPrincipal === "string" ? { representedPrincipal: body.representedPrincipal } : {}),
@@ -1244,6 +1298,7 @@ app.post("/api/console/profile", route(async (request, response) => {
   const body = parseProfileRequest(request.body ?? null);
   const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
   const payoutWallets = parsePayoutWallets(body.payoutWallets);
+  const missionAuthOverlay = parseMissionAuthOverlay(body.missionAuthOverlay);
   const paymentProfile = parsePaymentProfile(body.paymentProfile);
   const socialAnchorPolicy = parseSocialAnchorPolicy(body.socialAnchorPolicy);
   const preferredProvingLocation =
@@ -1258,6 +1313,7 @@ app.post("/api/console/profile", route(async (request, response) => {
     ...(typeof body.headline === "string" ? { headline: body.headline } : {}),
     ...(typeof body.openClawUrl === "string" ? { openClawUrl: body.openClawUrl } : {}),
     ...(payoutWallets ? { payoutWallets } : {}),
+    ...(missionAuthOverlay ? { missionAuthOverlay } : {}),
     ...(paymentProfile ? { paymentProfile } : {}),
     ...(socialAnchorPolicy ? { socialAnchorPolicy } : {}),
     ...(typeof body.payoutAddress === "string"

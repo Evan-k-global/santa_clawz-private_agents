@@ -10,6 +10,7 @@ import type {
 
 import {
   ApiError,
+  checkMissionAuthOverlay,
   fetchAgentRegistry,
   fetchConsoleState,
   getStoredAdminKey,
@@ -61,6 +62,8 @@ const FACILITATOR_SETUP_GUIDE_URL =
   "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/host-x402-facilitator-on-render.md";
 const PUBLIC_HIRE_URL_GUIDE_URL =
   "https://github.com/Evan-k-global/santa_clawz-private_agents/blob/main/docs/public-hire-url-pattern.md";
+const MISSION_AUTH_GUIDE_URL =
+  "https://github.com/Evan-k-global/agent-mission-bound-auth/blob/main/docs/integration-guide.md";
 const FACILITATOR_RENDER_CHECKLIST = `Render web service
 Repo: https://github.com/zeko-labs/x402-zeko
 Build: corepack enable && pnpm install --frozen-lockfile
@@ -277,6 +280,7 @@ function matchesExploreQuery(agent: AgentRegistryEntry, query: string) {
     agent.headline,
     agent.trustModeLabel,
     agent.paymentRail ? railLabel(agent.paymentRail) : "",
+    agent.missionAuthVerified ? "mission auth oauth enterprise web2" : "",
     deriveExploreTopic(agent).replace(/-/g, " ")
   ].some((value) => value.toLowerCase().includes(query));
 }
@@ -314,13 +318,14 @@ function dispatchLineForAgent(agent: AgentRegistryEntry) {
 function socialProofLineForAgent(agent: AgentRegistryEntry) {
   const anchored = agent.anchoredSocialFactCount;
   const pending = agent.pendingSocialAnchorCount;
+  const missionAuthTail = agent.missionAuthVerified ? " Mission-backed Web2 actions are also verified." : "";
   if (agent.ownershipVerified && agent.proofLevel === "proof-backed") {
-    return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Ownership verified, proof-backed, and ready for public trust.`;
+    return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Ownership verified, proof-backed, and ready for public trust.${missionAuthTail}`;
   }
   if (agent.ownershipVerified) {
-    return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Ownership verified and visible to both humans and other agents.`;
+    return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Ownership verified and visible to both humans and other agents.${missionAuthTail}`;
   }
-  return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Public profile live with operator details and hire routing.`;
+  return `${anchored} anchored facts${pending ? ` • ${pending} pending` : ""}. Public profile live with operator details and hire routing.${missionAuthTail}`;
 }
 
 function agentInitials(name: string) {
@@ -344,6 +349,9 @@ function featuredAgentScore(agent: AgentRegistryEntry) {
   }
   if (agent.ownershipVerified) {
     score += 16;
+  }
+  if (agent.missionAuthVerified) {
+    score += 8;
   }
   if (agent.proofLevel === "proof-backed") {
     score += 10;
@@ -410,6 +418,36 @@ function formatBpsPercent(feeBps: number) {
   return Number.isInteger(percent) ? `${percent}` : percent.toFixed(2).replace(/\.?0+$/, "");
 }
 
+function missionAuthStatusLabel(overlay: AgentProfileState["missionAuthOverlay"]) {
+  if (!overlay.enabled) {
+    return "Optional";
+  }
+  if (overlay.status === "verified") {
+    return "Verified";
+  }
+  return "Needs check";
+}
+
+function missionAuthProviderLabel(provider: NonNullable<AgentProfileState["missionAuthOverlay"]["providerHint"]>) {
+  if (provider === "auth0") {
+    return "Auth0";
+  }
+  if (provider === "okta") {
+    return "Okta";
+  }
+  return "Custom OIDC";
+}
+
+function formatMissionAuthProviders(overlay: AgentProfileState["missionAuthOverlay"]) {
+  if (overlay.supportedProviders?.length) {
+    return overlay.supportedProviders.join(", ");
+  }
+  if (overlay.providerHint) {
+    return missionAuthProviderLabel(overlay.providerHint);
+  }
+  return "Custom OIDC";
+}
+
 function paymentProfileSummary(
   paymentProfileReady: boolean,
   paymentProfile: AgentProfileState["paymentProfile"]
@@ -472,13 +510,20 @@ function paymentProfileDraftReady(
 
 function effectivePaymentProfile(profile: AgentProfileState): AgentProfileState["paymentProfile"] {
   const supportedRails: AgentProfileState["paymentProfile"]["supportedRails"] = [...derivedSupportedRails(profile.payoutWallets)];
-  const defaultRail = profile.paymentProfile.defaultRail === "ethereum-usdc" ? "ethereum-usdc" : "base-usdc";
+  const defaultRail =
+    profile.paymentProfile.defaultRail === "base-usdc" || profile.paymentProfile.defaultRail === "ethereum-usdc"
+      ? profile.paymentProfile.defaultRail
+      : profile.payoutWallets.ethereum?.trim().length || profile.paymentProfile.ethereumFacilitatorUrl?.trim().length
+        ? "ethereum-usdc"
+        : profile.payoutWallets.base?.trim().length || profile.paymentProfile.baseFacilitatorUrl?.trim().length
+          ? "base-usdc"
+      : "ethereum-usdc";
 
   return {
     ...profile.paymentProfile,
     supportedRails,
     defaultRail,
-    settlementTrigger: "on-proof"
+    settlementTrigger: profile.paymentProfile.settlementTrigger === "on-proof" ? "on-proof" : "upfront"
   };
 }
 
@@ -505,6 +550,60 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
         ? { ethereum: input.payoutWallets.ethereum }
         : {})
     },
+    missionAuthOverlay: {
+      enabled: typeof input?.missionAuthOverlay?.enabled === "boolean" ? input.missionAuthOverlay.enabled : false,
+      status:
+        input?.missionAuthOverlay?.status === "verified" || input?.missionAuthOverlay?.status === "configured"
+          ? input.missionAuthOverlay.status
+          : "disabled",
+      ...(typeof input?.missionAuthOverlay?.authorityBaseUrl === "string" &&
+      input.missionAuthOverlay.authorityBaseUrl.trim().length > 0
+        ? { authorityBaseUrl: input.missionAuthOverlay.authorityBaseUrl }
+        : {}),
+      ...(input?.missionAuthOverlay?.providerHint === "auth0" ||
+      input?.missionAuthOverlay?.providerHint === "okta" ||
+      input?.missionAuthOverlay?.providerHint === "custom-oidc"
+        ? { providerHint: input.missionAuthOverlay.providerHint }
+        : {}),
+      scopeHints: Array.isArray(input?.missionAuthOverlay?.scopeHints)
+        ? input.missionAuthOverlay.scopeHints.filter((scope): scope is string => typeof scope === "string")
+        : [],
+      ...(typeof input?.missionAuthOverlay?.protocol === "string" ? { protocol: input.missionAuthOverlay.protocol } : {}),
+      ...(typeof input?.missionAuthOverlay?.authorityName === "string" &&
+      input.missionAuthOverlay.authorityName.trim().length > 0
+        ? { authorityName: input.missionAuthOverlay.authorityName }
+        : {}),
+      ...(typeof input?.missionAuthOverlay?.discoveryUrl === "string" && input.missionAuthOverlay.discoveryUrl.trim().length > 0
+        ? { discoveryUrl: input.missionAuthOverlay.discoveryUrl }
+        : {}),
+      ...(typeof input?.missionAuthOverlay?.jwksUrl === "string" && input.missionAuthOverlay.jwksUrl.trim().length > 0
+        ? { jwksUrl: input.missionAuthOverlay.jwksUrl }
+        : {}),
+      ...(typeof input?.missionAuthOverlay?.providersUrl === "string" &&
+      input.missionAuthOverlay.providersUrl.trim().length > 0
+        ? { providersUrl: input.missionAuthOverlay.providersUrl }
+        : {}),
+      ...(typeof input?.missionAuthOverlay?.verifyCheckpointUrl === "string" &&
+      input.missionAuthOverlay.verifyCheckpointUrl.trim().length > 0
+        ? { verifyCheckpointUrl: input.missionAuthOverlay.verifyCheckpointUrl }
+        : {}),
+      ...(typeof input?.missionAuthOverlay?.exportBundleUrl === "string" &&
+      input.missionAuthOverlay.exportBundleUrl.trim().length > 0
+        ? { exportBundleUrl: input.missionAuthOverlay.exportBundleUrl }
+        : {}),
+      ...(Array.isArray(input?.missionAuthOverlay?.supportedProviders) &&
+      input.missionAuthOverlay.supportedProviders.length > 0
+        ? {
+            supportedProviders: input.missionAuthOverlay.supportedProviders.filter(
+              (provider): provider is string => typeof provider === "string"
+            )
+          }
+        : {}),
+      ...(typeof input?.missionAuthOverlay?.lastVerifiedAtIso === "string" &&
+      input.missionAuthOverlay.lastVerifiedAtIso.trim().length > 0
+        ? { lastVerifiedAtIso: input.missionAuthOverlay.lastVerifiedAtIso }
+        : {})
+    },
     paymentProfile: {
       enabled: typeof input?.paymentProfile?.enabled === "boolean" ? input.paymentProfile.enabled : false,
       supportedRails:
@@ -514,11 +613,10 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
                 rail === "base-usdc" || rail === "ethereum-usdc"
             )
           : ["base-usdc", "ethereum-usdc"],
-      defaultRail:
-        input?.paymentProfile?.defaultRail === "base-usdc" ||
-        input?.paymentProfile?.defaultRail === "ethereum-usdc"
-          ? input.paymentProfile.defaultRail
-          : "base-usdc",
+      ...(input?.paymentProfile?.defaultRail === "base-usdc" ||
+      input?.paymentProfile?.defaultRail === "ethereum-usdc"
+        ? { defaultRail: input.paymentProfile.defaultRail }
+        : {}),
       pricingMode:
         input?.paymentProfile?.pricingMode === "fixed-exact" ||
         input?.paymentProfile?.pricingMode === "capped-exact" ||
@@ -538,7 +636,7 @@ function normalizeProfileDraft(input?: Partial<AgentProfileState> | null): Agent
       settlementTrigger:
         input?.paymentProfile?.settlementTrigger === "upfront" || input?.paymentProfile?.settlementTrigger === "on-proof"
           ? input.paymentProfile.settlementTrigger
-          : "on-proof",
+          : "upfront",
       ...(typeof input?.paymentProfile?.baseFacilitatorUrl === "string" && input.paymentProfile.baseFacilitatorUrl.trim().length > 0
         ? { baseFacilitatorUrl: input.paymentProfile.baseFacilitatorUrl }
         : {}),
@@ -842,6 +940,25 @@ export function App() {
     setIssuedOwnershipChallenge(null);
   }
 
+  async function checkMissionAuthOverlayAction() {
+    setPendingAction("check-mission-auth");
+    setError(null);
+
+    try {
+      const result = await checkMissionAuthOverlay({
+        missionAuthOverlay: profile.missionAuthOverlay
+      });
+      setProfile({
+        ...profile,
+        missionAuthOverlay: result.missionAuthOverlay
+      });
+    } catch (nextError) {
+      setError(nextError instanceof Error ? nextError.message : "Could not verify the mission auth overlay.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   async function registerAgentInBrowser() {
     setPendingAction("register-agent");
     setError(null);
@@ -856,6 +973,7 @@ export function App() {
         ...(Object.keys(profileForSave.payoutWallets).length > 0
           ? { payoutWallets: profileForSave.payoutWallets }
           : {}),
+        missionAuthOverlay: profileForSave.missionAuthOverlay,
         paymentProfile: profileForSave.paymentProfile,
         socialAnchorPolicy: profileForSave.socialAnchorPolicy,
         preferredProvingLocation: profileForSave.preferredProvingLocation
@@ -1118,9 +1236,13 @@ export function App() {
   const savedPaymentsEnabled = state.paymentsEnabled;
   const savedPaymentProfileReady = state.paymentProfileReady;
   const paidJobsEnabled = state.paidJobsEnabled;
+  const missionAuthOverlay = profile.missionAuthOverlay;
+  const missionAuthEnabled = missionAuthOverlay.enabled;
+  const missionAuthVerified = missionAuthOverlay.status === "verified";
   const paymentProfile = effectivePaymentProfile(profile);
   const paymentsEnabled = paymentProfile.enabled;
   const paymentProfileReady = paymentProfileDraftReady(published, profile);
+  const escrowConfiguredOutsideConsole = paymentProfile.settlementTrigger === "on-proof";
   const configuredPayoutWallets = ([
     ["base", profile.payoutWallets.base],
     ["ethereum", profile.payoutWallets.ethereum],
@@ -1135,15 +1257,15 @@ export function App() {
   const paidWorkStatusLabel = !published
     ? "Publish first"
     : !savedPaymentsEnabled
-      ? "Custom terms"
+      ? "Prepay setup"
       : savedPaymentProfileReady
         ? `Payouts live on ${railLabel(defaultPaymentRail)}`
-        : "Host facilitator and finish setup";
+        : "Finish prepay setup";
   const paymentSectionLead = !paymentsEnabled
     ? "You're almost ready to earn."
     : paymentProfileReady
-      ? "Payments enabled. This agent can accept paid jobs."
-      : "Finish the required payment details to start earning.";
+      ? "Prepay enabled. This agent can accept paid jobs."
+      : "Finish the required prepay details to start earning.";
   const paymentSummaryMessage = !published
     ? "Publish on Zeko first to let buyers discover and pay this agent."
     : paymentProfileSummary(paymentProfileReady, paymentProfile);
@@ -1156,7 +1278,7 @@ export function App() {
   const sellerNetPercentLabel = formatBpsPercent(10_000 - state.protocolOwnerFeePolicy.feeBps);
   const paymentFeeDisclosure =
     protocolFeeAppliesToDefaultRail && paymentProfile.enabled
-      ? `Buyers pay the listed price. SantaClawz keeps ${protocolFeePercentLabel}%, sellers receive ${sellerNetPercentLabel}%, and expired escrow refunds return the seller portion to the buyer.`
+      ? `Buyers pay the listed price up front. SantaClawz keeps ${protocolFeePercentLabel}% and sellers receive ${sellerNetPercentLabel}% of the listed price.`
       : null;
   const mainPricingLabel =
     paymentProfile.pricingMode === "quote-required" || paymentProfile.pricingMode === "agent-negotiated"
@@ -1295,6 +1417,11 @@ export function App() {
         ? `Payouts are live on ${railLabel(defaultPaymentRail)} and work routes to ${profile.openClawUrl}.`
         : `Hire requests route to ${profile.openClawUrl}.`
   ;
+  const missionAuthStatusCopy = !missionAuthEnabled
+    ? "Optional. Add this if the agent uses an Auth0, Okta, or custom OIDC sidecar for mission approvals and portable Web2 receipts."
+    : missionAuthVerified
+      ? `${missionAuthOverlay.authorityName ?? "Mission auth overlay"} verified${missionAuthOverlay.lastVerifiedAtIso ? ` on ${new Date(missionAuthOverlay.lastVerifiedAtIso).toLocaleString()}` : ""}.`
+      : "Paste the public sidecar URL, then check its discovery document and mission authority JWKS.";
 
   function savePayoutWallet() {
     const trimmedValue = draftPayoutWalletValue.trim();
@@ -1540,6 +1667,152 @@ export function App() {
               />
             </label>
 
+          </div>
+
+          <div className="mission-auth-card">
+            <div className="mission-auth-head">
+              <div className="mission-auth-copy">
+                <strong>Enterprise auth overlay</strong>
+                <p className="panel-copy">{missionAuthStatusCopy}</p>
+              </div>
+              <div className="mission-auth-head-actions">
+                <span className="subtle-pill">{missionAuthStatusLabel(missionAuthOverlay)}</span>
+                {!missionAuthEnabled ? (
+                  <button
+                    type="button"
+                    className="secondary-button"
+                    onClick={() => {
+                      setProfile({
+                        ...profile,
+                        missionAuthOverlay: {
+                          ...profile.missionAuthOverlay,
+                          enabled: true,
+                          status: "configured"
+                        }
+                      });
+                    }}
+                  >
+                    Add overlay
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {missionAuthEnabled ? (
+              <div className="mission-auth-body">
+                <div className="field-grid compact-field-grid mission-auth-grid">
+                  <label className="field field-wide">
+                    <span>Mission auth URL</span>
+                    <input
+                      className="text-input"
+                      value={missionAuthOverlay.authorityBaseUrl ?? ""}
+                      onChange={(event: ValueInputEvent) => {
+                        setProfile({
+                          ...profile,
+                          missionAuthOverlay: {
+                            ...profile.missionAuthOverlay,
+                            authorityBaseUrl: event.target.value,
+                            status: "configured"
+                          }
+                        });
+                      }}
+                      placeholder="https://auth-sidecar.example.com"
+                    />
+                  </label>
+
+                  <label className="field">
+                    <span>Provider</span>
+                    <select
+                      className="text-input"
+                      value={missionAuthOverlay.providerHint ?? "custom-oidc"}
+                      onChange={(event: ValueInputEvent) => {
+                        setProfile({
+                          ...profile,
+                          missionAuthOverlay: {
+                            ...profile.missionAuthOverlay,
+                            providerHint: event.target.value as NonNullable<AgentProfileState["missionAuthOverlay"]["providerHint"]>
+                          }
+                        });
+                      }}
+                    >
+                      <option value="custom-oidc">Custom OIDC</option>
+                      <option value="auth0">Auth0</option>
+                      <option value="okta">Okta</option>
+                    </select>
+                  </label>
+
+                  <label className="field">
+                    <span>Scope hints</span>
+                    <input
+                      className="text-input"
+                      value={missionAuthOverlay.scopeHints.join(", ")}
+                      onChange={(event: ValueInputEvent) => {
+                        setProfile({
+                          ...profile,
+                          missionAuthOverlay: {
+                            ...profile.missionAuthOverlay,
+                            scopeHints: event.target.value
+                              .split(",")
+                              .map((scope) => scope.trim())
+                              .filter((scope) => scope.length > 0)
+                          }
+                        });
+                      }}
+                      placeholder="drive.readonly, github:repo, compute:clinical"
+                    />
+                  </label>
+                </div>
+
+                <div className="mission-auth-actions">
+                  <p className="panel-copy">
+                    SantaClawz verifies the published discovery document and mission authority JWKS here. OAuth login, mission approval, and bundle export stay on your sidecar.
+                  </p>
+                  <div className="action-side">
+                    <a className="secondary-button" href={MISSION_AUTH_GUIDE_URL} target="_blank" rel="noreferrer">
+                      Open setup guide
+                    </a>
+                    <button
+                      type="button"
+                      className="secondary-button"
+                      disabled={pendingAction === "check-mission-auth"}
+                      onClick={() => {
+                        void checkMissionAuthOverlayAction();
+                      }}
+                    >
+                      {pendingAction === "check-mission-auth" ? "Checking..." : "Check overlay"}
+                    </button>
+                    <button
+                      type="button"
+                      className="mini-button"
+                      onClick={() => {
+                        setProfile({
+                          ...profile,
+                          missionAuthOverlay: {
+                            enabled: false,
+                            status: "disabled",
+                            scopeHints: []
+                          }
+                        });
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                </div>
+
+                {missionAuthVerified ? (
+                  <div className="share-url-placeholder live mission-auth-summary">
+                    {missionAuthOverlay.authorityName ?? "Mission auth"} verified
+                    {missionAuthOverlay.supportedProviders?.length
+                      ? ` • ${missionAuthOverlay.supportedProviders.join(", ")}`
+                      : missionAuthOverlay.providerHint
+                        ? ` • ${missionAuthProviderLabel(missionAuthOverlay.providerHint)}`
+                        : ""}
+                    {missionAuthOverlay.exportBundleUrl ? " • portable bundle export ready" : ""}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
           </div>
 
           <div className="register-divider" />
@@ -2304,6 +2577,11 @@ export function App() {
                         {paymentFeeDisclosure ? (
                           <p className="panel-copy payment-fee-disclosure">{paymentFeeDisclosure}</p>
                         ) : null}
+                        {escrowConfiguredOutsideConsole ? (
+                          <p className="panel-copy payment-fee-disclosure">
+                            Escrow settlement is configured outside the web console. This page keeps the public payout and price terms in sync while the backend or CLI manages the reserve-release flow.
+                          </p>
+                        ) : null}
                       </div>
 
                       <div className="payment-save-row">
@@ -2361,6 +2639,11 @@ export function App() {
                 </div>
                 <p className="panel-copy">{profile.headline}</p>
                 <p className="panel-copy">{paidWorkStatusLabel}</p>
+                {missionAuthVerified ? (
+                  <p className="panel-copy">
+                    Mission auth overlay verified via {formatMissionAuthProviders(missionAuthOverlay)}. Portable mission bundles and checkpointed Web2 actions can be proven from this agent&apos;s sidecar.
+                  </p>
+                ) : null}
                 <p className="panel-copy">
                   {currentSocialAnchorQueue.anchoredCount} anchored fact{currentSocialAnchorQueue.anchoredCount === 1 ? "" : "s"}
                   {currentSocialAnchorQueue.pendingCount > 0
@@ -2652,6 +2935,7 @@ export function App() {
                               <span className="explore-tag">{deriveExploreTopic(highlightAgent).replace(/-/g, " ")}</span>
                               <span className="explore-tag">{highlightAgent.proofLevel}</span>
                               {highlightAgent.paymentRail ? <span className="explore-tag">{railLabel(highlightAgent.paymentRail)}</span> : null}
+                              {highlightAgent.missionAuthVerified ? <span className="explore-tag">mission auth</span> : null}
                             </div>
                             <div className="explore-action-row">
                               <button
@@ -2712,6 +2996,7 @@ export function App() {
                                 <span className="explore-tag">{deriveExploreTopic(agent).replace(/-/g, " ")}</span>
                                 {agent.paymentRail ? <span className="explore-tag">{railLabel(agent.paymentRail)}</span> : null}
                                 {agent.ownershipVerified ? <span className="explore-tag">ownership verified</span> : null}
+                                {agent.missionAuthVerified ? <span className="explore-tag">mission auth</span> : null}
                               </div>
                               <div className="explore-card-foot">
                                 <span>{activityLineForAgent(agent)}</span>

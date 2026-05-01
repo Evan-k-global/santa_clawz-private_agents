@@ -179,6 +179,11 @@ function buildAdminContext(sessionId?: string, agentId?: string): AdminKeyContex
 function normalizeConsoleStateResponse(payload: ConsoleStateResponse): ConsoleStateResponse {
   const normalizedProfile = {
     ...payload.profile,
+    missionAuthOverlay: payload.profile?.missionAuthOverlay ?? {
+      enabled: false,
+      status: "disabled" as const,
+      scopeHints: []
+    },
     socialAnchorPolicy: payload.profile?.socialAnchorPolicy ?? {
       mode: "shared-batched" as const
     }
@@ -277,12 +282,22 @@ export function fetchAgentRegistry(): Promise<AgentRegistryEntry[]> {
   return request<AgentRegistryEntry[]>("/api/agents");
 }
 
+export function checkMissionAuthOverlay(input: {
+  missionAuthOverlay: AgentProfileState["missionAuthOverlay"];
+}): Promise<{ missionAuthOverlay: AgentProfileState["missionAuthOverlay"] }> {
+  return request<{ missionAuthOverlay: AgentProfileState["missionAuthOverlay"] }>("/api/mission-auth/check", {
+    method: "POST",
+    body: JSON.stringify(input)
+  });
+}
+
 export function registerAgent(input: {
   agentName: string;
   representedPrincipal?: string;
   headline: string;
   openClawUrl: string;
   payoutWallets?: AgentProfileState["payoutWallets"];
+  missionAuthOverlay?: AgentProfileState["missionAuthOverlay"];
   paymentProfile?: AgentProfileState["paymentProfile"];
   socialAnchorPolicy?: AgentProfileState["socialAnchorPolicy"];
   trustModeId?: TrustModeId;
