@@ -132,6 +132,13 @@ export class DuplicateOpenClawUrlError extends Error {
   }
 }
 
+export class SelfServeSocialAnchoringDisabledError extends Error {
+  constructor(message = "Self-serve social anchoring is disabled on testnet deployments.") {
+    super(message);
+    this.name = "SelfServeSocialAnchoringDisabledError";
+  }
+}
+
 interface OwnershipChallengeIssueResult {
   state: ConsoleStateResponse;
   issuedOwnershipChallenge: {
@@ -820,6 +827,21 @@ function isMainnetNetwork(deployment: Pick<ZekoDeploymentState, "networkId" | "m
     return false;
   }
   return networkId.includes("mainnet") && !networkId.includes("testnet");
+}
+
+function allowTestnetSelfServeSocialAnchor(): boolean {
+  const value = process.env.CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR?.trim().toLowerCase();
+  return value === "1" || value === "true" || value === "yes";
+}
+
+function effectiveSocialAnchorMode(
+  mode: AgentProfileState["socialAnchorPolicy"]["mode"],
+  deployment: Pick<ZekoDeploymentState, "networkId" | "mode">
+): AgentProfileState["socialAnchorPolicy"]["mode"] {
+  if (mode === "priority-self-funded" && (isMainnetNetwork(deployment) || allowTestnetSelfServeSocialAnchor())) {
+    return "priority-self-funded";
+  }
+  return "shared-batched";
 }
 
 function sanitizePayoutWalletValue(value: unknown): string | undefined {
@@ -2324,7 +2346,7 @@ export class ClawzControlPlane {
   private buildCanonicalSocialAnchorBatchExport(input: {
     state: ConsolePersistenceState;
     queue: SocialAnchorQueueFile;
-    deployment: Pick<ZekoDeploymentState, "networkId" | "contracts">;
+    deployment: Pick<ZekoDeploymentState, "networkId" | "mode" | "contracts">;
     sessionId: string;
     limit?: number;
   }): SocialAnchorBatchExport {
@@ -2344,7 +2366,10 @@ export class ClawzControlPlane {
     }
 
     const agentId = this.agentIdForSession(input.state, input.sessionId);
-    const anchorMode = this.profileForSession(input.state, input.sessionId).socialAnchorPolicy.mode;
+    const anchorMode = effectiveSocialAnchorMode(
+      this.profileForSession(input.state, input.sessionId).socialAnchorPolicy.mode,
+      input.deployment
+    );
     const rootDigestSha256 = canonicalDigest({
       sessionId: input.sessionId,
       agentId,
@@ -2512,8 +2537,12 @@ export class ClawzControlPlane {
   }): Promise<void> {
     const state = await this.loadState();
     const queue = await this.loadSocialAnchorQueueFile();
+    const deployment = await this.getDeploymentState();
     const agentId = this.agentIdForSession(state, input.sessionId);
-    const anchorMode = this.profileForSession(state, input.sessionId).socialAnchorPolicy.mode;
+    const anchorMode = effectiveSocialAnchorMode(
+      this.profileForSession(state, input.sessionId).socialAnchorPolicy.mode,
+      deployment
+    );
     const occurredAtIso = input.occurredAtIso ?? new Date().toISOString();
     const payloadDigestSha256 = canonicalDigest({
       kind: input.kind,
@@ -2549,6 +2578,31 @@ export class ClawzControlPlane {
         void this.runPrioritySocialAnchorBatchForSession(input.sessionId);
       });
     }
+  }
+
+  private assertSelfServeSocialAnchoringEnabled(deployment: Pick<ZekoDeploymentState, "networkId" | "mode">) {
+    if (isMainnetNetwork(deployment) || allowTestnetSelfServeSocialAnchor()) {
+      return;
+    }
+
+    throw new SelfServeSocialAnchoringDisabledError();
+  }
+
+  private coerceProfileForDeployment(
+    profile: AgentProfileState,
+    deployment: Pick<ZekoDeploymentState, "networkId" | "mode">
+  ): AgentProfileState {
+    const nextMode = effectiveSocialAnchorMode(profile.socialAnchorPolicy.mode, deployment);
+    if (nextMode === profile.socialAnchorPolicy.mode) {
+      return profile;
+    }
+
+    return {
+      ...profile,
+      socialAnchorPolicy: {
+        mode: nextMode
+      }
+    };
   }
 
   private async runSponsorQueue(): Promise<void> {
@@ -3513,12 +3567,13 @@ export class ClawzControlPlane {
 
   async registerAgent(options: RegisterAgentOptions): Promise<ConsoleStateResponse> {
     const state = await this.loadState();
+    const deployment = await this.getDeploymentState();
     const registeredAtIso = new Date().toISOString();
     const trustModeId = options.trustModeId ?? "private";
     const sessionSlug = randomUUID().replace(/-/g, "").slice(0, 12);
     const sessionId = `session_agent_${sessionSlug}`;
     const fallbackProfile = buildDefaultProfile(trustModeId);
-    const profile = this.sanitizeProfileInput(
+    const profile = this.coerceProfileForDeployment(this.sanitizeProfileInput(
       trustModeId,
       {
         agentName: options.agentName,
@@ -3533,7 +3588,7 @@ export class ClawzControlPlane {
         ...(options.preferredProvingLocation ? { preferredProvingLocation: options.preferredProvingLocation } : {})
       },
       fallbackProfile
-    );
+    ), deployment);
 
     if (profile.agentName.trim().length === 0 || profile.headline.trim().length === 0 || profile.openClawUrl.trim().length === 0) {
       throw new Error("agentName, headline, and openClawUrl are required.");
@@ -3866,12 +3921,25 @@ export class ClawzControlPlane {
     const sessionId = this.resolveOwnedSessionId(state, options);
     this.assertAdminAccess(state, sessionId, options.adminKey);
     const [queue, deployment] = await Promise.all([this.loadSocialAnchorQueueFile(), this.getDeploymentState()]);
+    this.assertSelfServeSocialAnchoringEnabled(deployment);
     return this.buildCanonicalSocialAnchorBatchExport({
       state,
       queue,
       deployment,
       sessionId,
       ...(typeof options.limit === "number" ? { limit: options.limit } : {})
+    });
+  }
+
+  async commitExternalSocialAnchorBatch(options: SocialAnchorSettleOptions = {}): Promise<SocialAnchorQueueState> {
+    const state = await this.loadState();
+    const sessionId = this.resolveOwnedSessionId(state, options);
+    this.assertAdminAccess(state, sessionId, options.adminKey);
+    const deployment = await this.getDeploymentState();
+    this.assertSelfServeSocialAnchoringEnabled(deployment);
+    return this.settleSocialAnchorBatchForSession(sessionId, {
+      ...options,
+      localOnly: true
     });
   }
 
@@ -3923,12 +3991,13 @@ export class ClawzControlPlane {
     const trustModeId = focus.trustModeId;
     const fallbackProfile = buildDefaultProfile(trustModeId);
     const currentProfile = this.profileForSession(state, focus.sessionId, trustModeId);
+    const deployment = await this.getDeploymentState();
     const wasPublished = liveFlowTargets.turns.some((target) => target.sessionId === focus.sessionId);
-    const wasPaymentReady = computePaidJobsEnabled(currentProfile, wasPublished, await this.getDeploymentState());
-    const nextProfile = this.sanitizeProfileInput(trustModeId, input, {
+    const wasPaymentReady = computePaidJobsEnabled(currentProfile, wasPublished, deployment);
+    const nextProfile = this.coerceProfileForDeployment(this.sanitizeProfileInput(trustModeId, input, {
       ...fallbackProfile,
       ...currentProfile
-    });
+    }), deployment);
     await this.assertAgentProfileIsValid(state, nextProfile, focus.sessionId);
     if (nextProfile.openClawUrl !== currentProfile.openClawUrl) {
       await this.validateOpenClawAgentHealth(nextProfile.openClawUrl);

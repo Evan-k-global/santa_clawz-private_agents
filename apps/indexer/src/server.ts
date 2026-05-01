@@ -14,7 +14,11 @@ import {
   verifyAgentProofBundle
 } from "@clawz/protocol";
 
-import { ClawzControlPlane, DuplicateOpenClawUrlError } from "./control-plane.js";
+import {
+  ClawzControlPlane,
+  DuplicateOpenClawUrlError,
+  SelfServeSocialAnchoringDisabledError
+} from "./control-plane.js";
 import { buildAgentProofBundle, buildDiscoveryDocument, buildMcpToolDefinitions } from "./interop.js";
 import {
   apiAuthMiddleware,
@@ -1455,7 +1459,7 @@ app.get("/api/social/anchors/export", route(async (request, response) => {
       })
     );
   } catch (error) {
-    response.status(400).json({
+    response.status(error instanceof SelfServeSocialAnchoringDisabledError ? 403 : 400).json({
       error: error instanceof Error ? error.message : "Unable to export social anchor batch."
     });
   }
@@ -1490,11 +1494,10 @@ app.post("/api/social/anchors/commit", route(async (request, response) => {
     const sessionId = optionalString(body.sessionId) ?? queryString(request.query, "sessionId");
     const agentId = optionalString(body.agentId) ?? queryString(request.query, "agentId");
     response.json(
-      await controlPlane.settleSocialAnchorBatch({
+      await controlPlane.commitExternalSocialAnchorBatch({
         ...(sessionId ? { sessionId } : {}),
         ...(agentId ? { agentId } : {}),
         ...(typeof body.limit === "number" ? { limit: body.limit } : {}),
-        localOnly: true,
         ...(typeof body.txHash === "string" ? { txHash: body.txHash } : {}),
         ...(typeof body.expectedBatchId === "string" ? { expectedBatchId: body.expectedBatchId } : {}),
         ...(typeof body.expectedRootDigestSha256 === "string"
@@ -1505,7 +1508,7 @@ app.post("/api/social/anchors/commit", route(async (request, response) => {
       })
     );
   } catch (error) {
-    response.status(400).json({
+    response.status(error instanceof SelfServeSocialAnchoringDisabledError ? 403 : 400).json({
       error: error instanceof Error ? error.message : "Unable to commit external social anchor batch."
     });
   }

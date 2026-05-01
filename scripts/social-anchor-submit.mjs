@@ -1,10 +1,20 @@
-import { createClawzAgentClient } from "@clawz/agent-sdk";
-import { submitSocialAnchorBatchOnZeko } from "@clawz/contracts";
+import { createClawzAgentClient } from "../packages/agent-sdk/dist/index.js";
+import { submitSocialAnchorBatchOnZeko } from "../packages/contracts/dist/contracts/src/shared/social-anchor-live.js";
 
 const DEFAULT_API_BASE = process.env.CLAWZ_API_BASE?.trim() || "https://api.santaclawz.ai";
 const DEFAULT_NETWORK_ID = process.env.ZEKO_NETWORK_ID?.trim() || "testnet";
 const DEFAULT_MINA = process.env.ZEKO_GRAPHQL?.trim() || "https://testnet.zeko.io/graphql";
 const DEFAULT_ARCHIVE = process.env.ZEKO_ARCHIVE?.trim() || "https://archive.testnet.zeko.io/graphql";
+const TESTNET_SELF_SERVE_OVERRIDE = process.env.CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR?.trim().toLowerCase();
+const ALLOW_TESTNET_SELF_SERVE =
+  TESTNET_SELF_SERVE_OVERRIDE === "1" ||
+  TESTNET_SELF_SERVE_OVERRIDE === "true" ||
+  TESTNET_SELF_SERVE_OVERRIDE === "yes";
+
+function isMainnetNetworkId(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized.includes("mainnet") && !normalized.includes("testnet");
+}
 
 function printUsage() {
   console.error(`Usage:
@@ -103,6 +113,12 @@ const batch = await client.getSocialAnchorBatchExport({
   ...(sessionId ? { sessionId } : {}),
   ...(agentId ? { agentId } : {})
 });
+
+if (!ALLOW_TESTNET_SELF_SERVE && !isMainnetNetworkId(batch.networkId)) {
+  throw new Error(
+    `Self-serve social anchoring is disabled for ${batch.networkId}. Use the shared batch on testnet, or set CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR=true for a local dev override.`
+  );
+}
 
 const submission = await submitSocialAnchorBatchOnZeko({
   batchId: batch.batchId,

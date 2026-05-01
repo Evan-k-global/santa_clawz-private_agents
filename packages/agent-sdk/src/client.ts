@@ -76,6 +76,14 @@ function normalizeBaseUrl(value: string): string {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
 
+function extractErrorMessage(payload: unknown): string | null {
+  if (!isRecord(payload)) {
+    return null;
+  }
+
+  return typeof payload.error === "string" && payload.error.trim().length > 0 ? payload.error : null;
+}
+
 function withQuery(baseUrl: string, route: string, query?: Record<string, string | undefined>): string {
   const url = new URL(`${normalizeBaseUrl(baseUrl)}${route}`);
   if (query) {
@@ -126,7 +134,19 @@ export class ClawzAgentClient {
       headers
     });
     if (!response.ok) {
-      throw new Error(`Request failed for ${url}: ${response.status}`);
+      let detail: string | null = null;
+      try {
+        const payload = (await response.json()) as unknown;
+        detail = extractErrorMessage(payload);
+      } catch (_error) {
+        try {
+          const bodyText = await response.text();
+          detail = bodyText.trim().length > 0 ? bodyText.trim() : null;
+        } catch (_nestedError) {
+          detail = null;
+        }
+      }
+      throw new Error(detail ?? `Request failed for ${url}: ${response.status}`);
     }
 
     return (await response.json()) as T;
