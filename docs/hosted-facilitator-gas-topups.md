@@ -17,6 +17,8 @@ The relayer still needs native ETH for gas on Base and Ethereum.
 
 If the relayer or fee wallet holds USDC, SantaClawz can top up native gas by swapping USDC to WETH through Uniswap V3 and unwrapping WETH to native ETH.
 
+Payment floors are optional. Leave the floor env vars unset if the facilitator/provider supports true tiny payments and you want SantaClawz to accept them.
+
 The repo includes an ops script:
 
 ```bash
@@ -61,6 +63,7 @@ Optional shared knobs:
 ```bash
 CLAWZ_FACILITATOR_GAS_TOPUP_SLIPPAGE_BPS=100
 CLAWZ_FACILITATOR_GAS_TOPUP_POOL_FEE=500
+CLAWZ_X402_HOSTED_FACILITATOR_MIN_PAYMENT_USD=
 ```
 
 ## Safety Rules

@@ -210,19 +210,19 @@ function parseUsdAtomic(value: string | undefined): bigint | null {
   return BigInt(match[1] ?? "0") * USD_SCALE + BigInt((match[2] ?? "").padEnd(6, "0"));
 }
 
-function minHostedFacilitatorPaymentUsd(rail: AgentPaymentRail): string {
+function minHostedFacilitatorPaymentUsd(rail: AgentPaymentRail): string | undefined {
   if (rail === "ethereum-usdc") {
     return (
       process.env.CLAWZ_X402_ETHEREUM_MIN_PAYMENT_USD?.trim() ||
       process.env.CLAWZ_X402_HOSTED_FACILITATOR_MIN_PAYMENT_USD?.trim() ||
-      "5"
+      undefined
     );
   }
 
   return (
     process.env.CLAWZ_X402_BASE_MIN_PAYMENT_USD?.trim() ||
     process.env.CLAWZ_X402_HOSTED_FACILITATOR_MIN_PAYMENT_USD?.trim() ||
-    "0.10"
+    undefined
   );
 }
 
@@ -238,6 +238,13 @@ function pushHostedFacilitatorFloor(input: {
   }
 
   const minPaymentUsd = minHostedFacilitatorPaymentUsd(input.rail);
+  if (!minPaymentUsd) {
+    input.notes.push(
+      `SantaClawz hosted facilitation is configured without a minimum payment floor on ${input.rail === "ethereum-usdc" ? "Ethereum" : "Base"}.`
+    );
+    return;
+  }
+
   const minAtomic = parseUsdAtomic(minPaymentUsd);
   const amountAtomic = parseUsdAtomic(input.profile.paymentProfile.fixedAmountUsd);
   if (minAtomic === null || amountAtomic === null) {
