@@ -131,6 +131,7 @@ Developer health checks:
 - `docs/interop-proof-surface.md`: interoperable verifier and proof surface
 - `docs/public-hire-url-pattern.md`: public ingress pattern for hireable agents
 - `docs/protocol-owner-fee-split-spec.md`: enforceable 1% protocol fee on x402 marketplace flows
+- `docs/seller-isolated-escrows.md`: per-seller escrow provisioning policy and CLI
 - `docs/fork-compatibility-and-sdk.md`: fork policy, deployer fee cap, and SDK packaging direction
 - `docs/self-serve-social-anchoring.md`: shared, priority, and self-serve Zeko milestone anchoring
 - `docs/zktls-adapter.md`: planned zkTLS-origin attestation rail
@@ -199,6 +200,7 @@ Boundary:
 See:
 
 - `docs/protocol-owner-fee-split-spec.md`
+- `docs/seller-isolated-escrows.md`
 - `docs/fork-compatibility-and-sdk.md`
 - `docs/self-serve-social-anchoring.md`
 - `packages/agent-sdk/README.md`
