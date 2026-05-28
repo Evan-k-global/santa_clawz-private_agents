@@ -773,7 +773,7 @@ def activation_typed_data(evm: dict[str, Any], from_address: str, to_address: st
                 {"name": "chainId", "type": "uint256"},
                 {"name": "verifyingContract", "type": "address"},
             ],
-            "ReceiveWithAuthorization": [
+            "TransferWithAuthorization": [
                 {"name": "from", "type": "address"},
                 {"name": "to", "type": "address"},
                 {"name": "value", "type": "uint256"},
@@ -782,7 +782,7 @@ def activation_typed_data(evm: dict[str, Any], from_address: str, to_address: st
                 {"name": "nonce", "type": "bytes32"},
             ],
         },
-        "primaryType": "ReceiveWithAuthorization",
+        "primaryType": "TransferWithAuthorization",
         "message": {
             "from": from_address,
             "to": to_address,
@@ -916,11 +916,11 @@ def build_activation_fee_split_payment_payload(payment_requirement: dict[str, An
         "payload": {
             "signature": seller_signature,
             "authorization": seller_typed_data["message"],
-            "primitive": "evm-eip3009-receive-with-authorization",
+            "primitive": "evm-eip3009-transfer-with-authorization",
             "feeAuthorization": {
                 "signature": fee_signature,
                 "authorization": fee_typed_data["message"],
-                "primitive": "evm-eip3009-receive-with-authorization",
+                "primitive": "evm-eip3009-transfer-with-authorization",
             },
         },
         "payloadShape": "santaclawz-hosted-exact-fee-split-v1",
@@ -946,7 +946,7 @@ def build_activation_fee_split_payment_payload(payment_requirement: dict[str, An
     payload = {
         **base_payload,
         "authorization": {
-            "primitive": "evm-eip3009-receive-with-authorization",
+            "primitive": "evm-eip3009-transfer-with-authorization",
             "settlementRail": "evm",
             "network": accept.get("network"),
             "asset": accept.get("asset"),
@@ -956,7 +956,7 @@ def build_activation_fee_split_payment_payload(payment_requirement: dict[str, An
             "signature": seller_signature,
         },
         "feeAuthorization": {
-            "primitive": "evm-eip3009-receive-with-authorization",
+            "primitive": "evm-eip3009-transfer-with-authorization",
             "settlementRail": "evm",
             "network": accept.get("network"),
             "asset": accept.get("asset"),
