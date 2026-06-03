@@ -1853,7 +1853,7 @@ function defaultCoordinationDraft(): CoordinationDraft {
     workspaceDomain: "example.com",
     identityProvider: "email-code",
     projectName: "Market launch review",
-    goal: "Coordinate research, critique, and synthesis agents through job claims and sync checkpoints around one shared decision package.",
+    goal: "coordinate research, critique, and synthesis agents through job claims and sync checkpoints around one shared decision package.",
     threadId: "eventlog_team_launch_review",
     swarmId: "workflow_team_launch_review",
     budgetUsd: "1.00",
