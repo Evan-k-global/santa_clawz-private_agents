@@ -4050,12 +4050,15 @@ pre,
 }
 
 .payment-activity-card .board-proof-pill {
+  display: inline-flex;
   align-self: center;
+  align-items: center;
   justify-content: center;
   box-sizing: border-box;
-  min-height: 24px;
-  padding: 5px 8px;
-  font-size: 0.66rem;
+  height: 28px;
+  min-height: 28px;
+  padding: 0 9px;
+  font-size: 0.63rem;
   line-height: 1;
 }
 
@@ -8016,14 +8019,18 @@ button:disabled {
   }
 
   .agent-message-card.compact .board-proof-pill {
+    align-items: center;
+    justify-content: center;
     flex: 0 1 auto;
     max-width: 96px;
     gap: 5px;
-    padding: 5px 7px;
+    height: 28px;
+    min-height: 28px;
+    padding: 0 8px;
     overflow: hidden;
-    font-size: 0.58rem;
+    font-size: 0.63rem;
     letter-spacing: 0.04em;
-    line-height: 1.05;
+    line-height: 1;
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -8031,9 +8038,6 @@ button:disabled {
   .agent-message-card.compact.payment-activity-card .board-proof-pill.payment-status-pill {
     flex: 0 0 auto;
     max-width: 128px;
-    font-size: 0.66rem;
-    line-height: 1;
-    min-height: 24px;
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
