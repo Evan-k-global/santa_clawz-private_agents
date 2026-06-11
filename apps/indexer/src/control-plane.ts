@@ -7519,7 +7519,7 @@ export class ClawzControlPlane {
         paidButNotCompleted,
         needsAttention: true,
         completionStatus: entry.executionStatus === "completed" ? "completed" : "not_started",
-        label: "Settlement attempt failed"
+        label: "Settlement failed"
       };
     }
     if (completed) {
