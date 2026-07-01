@@ -1526,17 +1526,20 @@ function terminalNoSettlementSummaryFromPaymentState(paymentStatePayload, paymen
   const retryResume = retryResumeFromPaymentState(paymentStatePayload);
   const latestLedger = isRecord(paymentStatePayload?.payment?.latestLedger) ? paymentStatePayload.payment.latestLedger : {};
   const protocolState = stringValue(lifecycle, "protocolState") || stringValue(paymentStatePayload, "protocolState");
-  if (protocolState !== "PLATFORM_FAILED_NO_SETTLEMENT") {
+  if (protocolState !== "PLATFORM_FAILED_NO_SETTLEMENT" && protocolState !== "SELLER_FAILED_NO_SETTLEMENT") {
     return null;
   }
   const buyerAction = stringValue(lifecycle, "buyerAction") || stringValue(paymentStatePayload, "buyerAction") || "create_fresh_payment";
-  const sellerOutcome = stringValue(lifecycle, "sellerOutcome") || stringValue(paymentStatePayload, "sellerOutcome") || "not_at_fault";
+  const sellerOutcome =
+    stringValue(lifecycle, "sellerOutcome") ||
+    stringValue(paymentStatePayload, "sellerOutcome") ||
+    (protocolState === "SELLER_FAILED_NO_SETTLEMENT" ? "failed" : "not_at_fault");
   const operatorObligation = stringValue(lifecycle, "operatorObligation") || stringValue(paymentStatePayload, "operatorObligation") || "none";
   const execution = isRecord(paymentStatePayload?.execution) ? paymentStatePayload.execution : {};
   const executionLifecycle = firstRecord(execution.lifecycle, paymentStatePayload?.lifecycle);
   return {
     ok: false,
-    code: "platform_failed_no_settlement",
+    code: protocolState === "SELLER_FAILED_NO_SETTLEMENT" ? "seller_failed_no_settlement" : "platform_failed_no_settlement",
     completionMode: "terminal_no_settlement_from_payment_state",
     retryable: false,
     nextAction: "create_fresh_payment",
@@ -1696,6 +1699,7 @@ function finalOutcomeFromOutput(output) {
     output.paymentTerminal === true ||
     protocolState === "DELIVERED_SETTLED" ||
     protocolState === "PLATFORM_FAILED_NO_SETTLEMENT" ||
+    protocolState === "SELLER_FAILED_NO_SETTLEMENT" ||
     protocolState === "EXPIRED_NO_CHARGE" ||
     paymentFinality === "settled";
   return {
