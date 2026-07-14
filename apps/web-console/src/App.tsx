@@ -1193,6 +1193,9 @@ function matchesPaymentQuery(entry: PaymentLedgerEntry, query: string, agent?: A
 }
 
 function isVisibleProofAnchor(item: SocialAnchorCandidate) {
+  if (item.kind === "activation-task-completed") {
+    return false;
+  }
   return item.status === "confirmed" && PUBLIC_FEED_PROOF_KINDS.has(item.kind);
 }
 

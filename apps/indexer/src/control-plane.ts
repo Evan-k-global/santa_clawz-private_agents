@@ -14713,48 +14713,48 @@ export class ClawzControlPlane {
       });
     }
     const detailedLifecycle = shouldPublishDetailedHireLifecycle(options.jobPrivacy);
-    await this.enqueueSocialAnchorCandidate({
-      sessionId,
-      kind: "hire-request-submitted",
-      summary: detailedLifecycle
-        ? `${profile.agentName} received a new hire request through SantaClawz.`
-        : `${profile.agentName} received a private hire request through SantaClawz.`,
-      occurredAtIso: submittedAtIso,
-      payload: detailedLifecycle
-        ? {
-            requestId,
-            agentId: options.agentId,
-            requesterContactDigestSha256: sha256Hex(nextRecord.requesterContact),
-            requestType,
-            pricingMode: profile.paymentProfile.pricingMode,
-            paymentStatus,
-            ...(!marketplaceWorkTagsAreEmpty(marketplaceTags) ? { marketplaceTags } : {}),
-            ...(settledAmountUsd ? { settledAmountUsd } : {}),
-            status: hireStatus
-          }
-        : {
-            agentId: options.agentId,
-            privateActivity: true,
-            activityDigestSha256: sha256Hex(requestId),
-            requestType,
-            pricingMode: profile.paymentProfile.pricingMode,
-            paymentStatus,
-            status: hireStatus
-          }
-    });
-    if (ingressProtocolReturn) {
+    const activationLaneLifecycle = isActivationLaneHireRequest(nextRecord);
+    if (!activationLaneLifecycle) {
+      await this.enqueueSocialAnchorCandidate({
+        sessionId,
+        kind: "hire-request-submitted",
+        summary: detailedLifecycle
+          ? `${profile.agentName} received a new hire request through SantaClawz.`
+          : `${profile.agentName} received a private hire request through SantaClawz.`,
+        occurredAtIso: submittedAtIso,
+        payload: detailedLifecycle
+          ? {
+              requestId,
+              agentId: options.agentId,
+              requesterContactDigestSha256: sha256Hex(nextRecord.requesterContact),
+              requestType,
+              pricingMode: profile.paymentProfile.pricingMode,
+              paymentStatus,
+              ...(!marketplaceWorkTagsAreEmpty(marketplaceTags) ? { marketplaceTags } : {}),
+              ...(settledAmountUsd ? { settledAmountUsd } : {}),
+              status: hireStatus
+            }
+          : {
+              agentId: options.agentId,
+              privateActivity: true,
+              activityDigestSha256: sha256Hex(requestId),
+              requestType,
+              pricingMode: profile.paymentProfile.pricingMode,
+              paymentStatus,
+              status: hireStatus
+            }
+      });
+    }
+    if (ingressProtocolReturn && !activationLaneLifecycle) {
       const completionClassification =
         ingressProtocolReturn.status === "completed"
           ? ingressProtocolReturn.execution?.completionClassification
           : undefined;
-      const activationLaneCompletion = isActivationLaneHireRequest(nextRecord);
       const returnKind: SocialAnchorCandidateKind =
         ingressProtocolReturn.status === "quoted"
           ? "quote-returned"
           : ingressProtocolReturn.status === "completed"
-            ? activationLaneCompletion
-              ? "activation-task-completed"
-              : requestType === "free_test"
+            ? requestType === "free_test"
               ? "free-test-completed"
               : "paid-execution-completed"
             : "hire-request-failed";
@@ -14767,11 +14767,9 @@ export class ClawzControlPlane {
               : `${profile.agentName} returned an anonymized private failure milestone.`
         : ingressProtocolReturn.status === "quoted"
           ? `${profile.agentName} returned an exact quote for a SantaClawz hire request.`
-          : ingressProtocolReturn.status === "completed"
-            ? completionClassification === "agent_completed_verified"
-              ? activationLaneCompletion
-                ? `${profile.agentName} completed the SantaClawz activation task and proved paid execution readiness.`
-                : requestType === "free_test"
+        : ingressProtocolReturn.status === "completed"
+          ? completionClassification === "agent_completed_verified"
+              ? requestType === "free_test"
                 ? `${profile.agentName} returned a verified output package for a free test.`
                 : `${profile.agentName} returned a verified output package for paid execution.`
               : completionClassification === "demo_completion"
@@ -14847,6 +14845,7 @@ export class ClawzControlPlane {
     const marketplaceTagOutcome = paidExecutionTerminalOutcome(nextRecord);
     if (
       requestType === "paid_execution" &&
+      !activationLaneLifecycle &&
       detailedLifecycle &&
       marketplaceTagOutcome !== "pending" &&
       !marketplaceWorkTagsAreEmpty(marketplaceTags)
