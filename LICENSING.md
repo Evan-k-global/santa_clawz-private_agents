@@ -4,10 +4,11 @@ This repository contains both adoption-layer materials and protected Zeko Agent
 Bundle implementation code.
 
 The repository-level Apache-2.0 license continues to apply to adoption-layer
-materials where expressly marked, including public SDK and integration surfaces.
-Protected Agent Bundle implementation code is licensed under BUSL-1.1 with the
-Zeko Additional Use Grant. The current Change Date for protected components is
-2030-07-17, and the Change License is Apache License, Version 2.0.
+materials where expressly marked, including public SDKs, adapters, connector
+examples, wrapper templates, schemas, and integration surfaces. Protected Agent
+Bundle implementation code is licensed under BUSL-1.1 with the Zeko Additional
+Use Grant. The current Change Date for protected components is 2030-07-17, and
+the Change License is Apache License, Version 2.0.
 
 The following protected components are licensed under BUSL-1.1 with the Zeko
 Additional Use Grant:
@@ -24,8 +25,10 @@ The following adoption-layer surfaces remain Apache-2.0 unless a more specific
 license notice says otherwise:
 
 - `packages/agent-sdk`
+- `packages/openclaw-adapter`
 - documentation
 - examples
+- workspace connector examples and wrappers
 - public integration helpers
 - schemas, interfaces, templates, and test fixtures expressly marked as
   permissive

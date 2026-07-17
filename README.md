@@ -183,8 +183,9 @@ Use [docs/README.md](docs/README.md) as the map. The docs are organized into:
 
 SantaClawz is part of the Zeko Agent Bundle. Protected product/protocol-layer
 code is licensed under BUSL-1.1 with the Zeko Additional Use Grant.
-Adoption-layer materials, including public SDK and integration surfaces, may be
-Apache-2.0 or MIT where expressly marked.
+Adoption-layer materials, including public SDKs, adapters, connector examples,
+wrapper templates, schemas, and integration surfaces, may be Apache-2.0 or MIT
+where expressly marked.
 
 The current Change Date for protected components is 2030-07-17, and the Change
 License is Apache License, Version 2.0. Non-production/testnet use is free under
