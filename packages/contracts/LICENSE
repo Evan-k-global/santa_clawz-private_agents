@@ -1,73 +1,25 @@
 Business Source License 1.1
 
-Licensor: Zeko Labs
-Licensed Work: SantaClawz Contracts (packages/contracts)
-Additional Use Grant:
+Licensor: Zeko Labs, Inc.
 
-You may use the Licensed Work in production to operate SantaClawz-compatible
-agent commerce, proof anchoring, coordination, or settlement systems, provided
-that any Paid Workflow preserves and pays the applicable SantaClawz protocol fee
-according to the Published SantaClawz Protocol Fee Schedule in effect at the time
-of the Paid Workflow.
+Licensed Work: Zeko Agent Bundle protected product/protocol components in this
+repository, including source code, services, scripts, verifier components,
+authorization components, payment components, settlement components,
+coordination components, orchestration components, tests, and related
+artifacts, except any file, package, directory, SDK, specification, example,
+interface, ABI, documentation, test vector, template, or third-party component
+that contains an express different license notice.
 
-"Paid Workflow" means any workflow using the Licensed Work where any party
-receives or expects to receive economic consideration, directly or indirectly,
-for agent work, task execution, coordination, routing, verification, settlement,
-delivery, compute, data, access, or related services. Economic consideration
-includes crypto, stablecoins, fiat, credits, subscriptions, prepaid balances,
-tokens, rewards, revenue share, off-chain invoices, or bundled commercial fees,
-whether or not the payment is visible on-chain.
+Additional Use Grant: The Zeko Additional Use Grant published in
+../../LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md.
 
-"Published SantaClawz Protocol Fee Schedule" means the fee schedule, recipient
-address or account, supported payment rails, and related payment instructions
-published by Licensor in docs/legal/protocol-fee-schedule.md or any successor
-location identified by Licensor.
+Change Date: 2030-07-17
 
-Workflows that are non-commercial, local development, testing, or educational do
-not create a protocol fee obligation under this Additional Use Grant.
+Change License: Apache License, Version 2.0.
 
-You may not structure, route, relabel, bundle, or move consideration off-chain
-for the purpose of avoiding the SantaClawz protocol fee.
+The Business Source License 1.1 terms are published in
+../../LICENSES/BUSL-1.1.txt and are incorporated into this License by
+reference.
 
-If a Paid Workflow cannot technically route the protocol fee through the
-published on-chain mechanism, production use requires either periodic fee
-remittance according to the Published SantaClawz Protocol Fee Schedule or a
-separate commercial license from Licensor.
-Change Date: 2029-06-01
-Change License: Apache License, Version 2.0
-
-License text copyright (c) 2024 MariaDB plc, All Rights Reserved. "Business Source License" is a trademark of MariaDB plc.
-
-Terms
-
-The Licensor hereby grants you the right to copy, modify, create derivative works, redistribute, and make non-production use of the Licensed Work. The Licensor may make an Additional Use Grant, above, permitting limited production use.
-
-Effective on the Change Date, or the fourth anniversary of the first publicly available distribution of a specific version of the Licensed Work under this License, whichever comes first, the Licensor hereby grants you rights under the terms of the Change License, and the rights granted in the paragraph above terminate.
-
-If your use of the Licensed Work does not comply with the requirements currently in effect as described in this License, you must purchase a commercial license from the Licensor, its affiliated entities, or authorized resellers, or you must refrain from using the Licensed Work.
-
-All copies of the original and modified Licensed Work, and derivative works of the Licensed Work, are subject to this License. This License applies separately for each version of the Licensed Work and the Change Date may vary for each version of the Licensed Work released by Licensor.
-
-You must conspicuously display this License on each original or modified copy of the Licensed Work. If you receive the Licensed Work in original or modified form from a third party, the terms and conditions set forth in this License apply to your use of that work.
-
-Any use of the Licensed Work in violation of this License will automatically terminate your rights under this License for the current and all other versions of the Licensed Work.
-
-This License does not grant you any right in any trademark or logo of Licensor or its affiliates, except as required to comply with this License.
-
-TO THE EXTENT PERMITTED BY APPLICABLE LAW, THE LICENSED WORK IS PROVIDED ON AN "AS IS" BASIS. LICENSOR HEREBY DISCLAIMS ALL WARRANTIES AND CONDITIONS, EXPRESS OR IMPLIED, INCLUDING, WITHOUT LIMITATION, WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, NON-INFRINGEMENT, AND TITLE.
-
-MariaDB hereby grants you permission to use this License's text to license your works, and to refer to it using the trademark "Business Source License", as long as you comply with the Covenants of Licensor below.
-
-Covenants of Licensor
-
-In consideration of the right to use this License's text and the "Business Source License" name and trademark, Licensor covenants to MariaDB, and to all other recipients of the licensed work to be provided by Licensor:
-
-To specify as the Change License the GPL Version 2.0 or any later version, or a license that is compatible with GPL Version 2.0 or a later version, where "compatible" means that software provided under the Change License can be included in a program with software provided under GPL Version 2.0 or a later version. Licensor may specify additional Change Licenses without limitation.
-
-To either: (a) specify an additional grant of rights to use that does not impose any additional restriction on the right granted in this License, as the Additional Use Grant; or (b) insert the text "None".
-
-Not to modify this License in any other way.
-
-Notice
-
-The Business Source License (this document, or the "License") is not an Open Source license. However, the Licensed Work will eventually be made available under an Open Source License, as stated in this License.
+For payment, billing, commercial licensing, ecosystem agreements, or other
+inquiries, contact partnerships@zeko.io.

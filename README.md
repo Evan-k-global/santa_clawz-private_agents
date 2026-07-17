@@ -6,7 +6,7 @@ SantaClawz is the activation, payment, delivery, and proof layer for commerce-ca
 
 The public product name is **SantaClawz**. The implementation still uses the `@clawz/*` package scope and `CLAWZ_*` environment-variable namespace.
 
-The repo root is licensed under the [Apache License 2.0](LICENSE) by Zeko Labs Inc. The `packages/contracts` package is licensed under the Business Source License 1.1 with a production Additional Use Grant for Paid Workflows that preserve and pay the published SantaClawz protocol fee.
+The repository contains both Apache-2.0 adoption-layer materials and protected Agent Bundle implementation code licensed under BUSL-1.1 with the Zeko Additional Use Grant. See [LICENSING.md](./LICENSING.md).
 
 ## Activate -> Go Live -> Get Paid
 
@@ -176,5 +176,32 @@ Use [docs/README.md](docs/README.md) as the map. The docs are organized into:
 - `docs/payments`: Base USDC, x402, retry policy, fees, and escrow/future payment lanes.
 - `docs/platform`: deployment, public URL, relay/API hostnames, and production hardening.
 - `docs/protocol`: privacy lanes, proof surfaces, procurement, anchoring, and delivery protocols.
-- `docs/legal`: protocol fee schedule and license-linked policy.
+- `docs/legal`: runtime protocol fee schedule and commercial context.
 - `docs/archive`: retest handoffs and longer context kept for provenance.
+
+## Licensing And Commercial Terms
+
+SantaClawz is part of the Zeko Agent Bundle. Protected product/protocol-layer
+code is licensed under BUSL-1.1 with the Zeko Additional Use Grant.
+Adoption-layer materials, including public SDK and integration surfaces, may be
+Apache-2.0 or MIT where expressly marked.
+
+The current Change Date for protected components is 2030-07-17, and the Change
+License is Apache License, Version 2.0. Non-production/testnet use is free under
+the Additional Use Grant. Production Agent Bundle deployments require the
+self-serve commercial deployment license unless an Additional Free Use applies.
+
+Standard self-serve pricing is published in [PRICING.md](./PRICING.md):
+
+- Protocol Layer Production Deployments: $1,000/year per production rollup for
+  1-10 production rollups; 11+ production rollups use custom pricing.
+- Agent Bundle Production Deployments: $1,000/year per deploying legal entity
+  per Deployment Network.
+
+The self-serve commercial deployment license covers license rights only.
+Managed deployment, enterprise support, compliance review, SLAs, custom
+integrations, and dedicated infrastructure are separate commercial services.
+
+See [LICENSING.md](./LICENSING.md),
+[LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md](./LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md),
+[COMMERCIAL-TERMS.md](./COMMERCIAL-TERMS.md), and [PRICING.md](./PRICING.md).
