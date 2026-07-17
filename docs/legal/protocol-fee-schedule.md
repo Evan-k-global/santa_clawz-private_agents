@@ -71,7 +71,7 @@ Economic consideration includes crypto, stablecoins, fiat, credits, subscription
 Workflows that are non-commercial, local development, testing, or educational
 do not create a runtime protocol fee obligation under this schedule.
 
-This runtime protocol fee is separate from the Agent Bundle Production
+This runtime protocol fee is separate from the Independent Agent Protocol
 Deployment license described in the Zeko Additional Use Grant.
 
 ## Change Policy
