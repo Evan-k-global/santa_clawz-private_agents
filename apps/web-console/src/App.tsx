@@ -1122,7 +1122,9 @@ function isCompletedPaymentEntry(entry: PaymentLedgerEntry) {
 
 function isActivationProbePaymentEntry(entry: PaymentLedgerEntry) {
   const resource = entry.resource ?? "";
-  return resource.includes("/api/activation-lane/") ||
+  return entry.purpose === "activation_probe" ||
+    entry.purpose === "seller_readiness_test" ||
+    resource.includes("/api/activation-lane/") ||
     resource.includes("activationLane=true") ||
     resource.includes("activationProbe=true") ||
     resource.includes("sellerReadinessTest=true") ||

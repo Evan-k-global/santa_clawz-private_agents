@@ -11201,6 +11201,9 @@ const handleAgentHireRequest = route(async (request, response) => {
       }
       paymentAuthorization = {
         status: "authorized",
+        ...(activationProbeRequested
+          ? { purpose: sellerReadinessTestRequested ? "seller_readiness_test" : "activation_probe" }
+          : {}),
         ...(activationProbeRequested ? { activationLane: true } : {}),
         ...(publicActivationProbeRequested || sellerReadinessTestRequested ? { publicActivationProbe: true } : {}),
         ...(sellerReadinessTestRequested ? { sellerReadinessTest: true } : {}),

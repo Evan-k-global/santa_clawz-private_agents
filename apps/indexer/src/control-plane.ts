@@ -834,6 +834,7 @@ interface QuotePaymentContext {
 
 interface HirePaymentAuthorization {
   status: "not-required" | "authorized" | "settled";
+  purpose?: PaymentLedgerEntry["purpose"];
   activationLane?: boolean;
   publicActivationProbe?: boolean;
   sellerReadinessTest?: boolean;
@@ -3137,7 +3138,22 @@ function isPrivateHireRequest(request: Pick<HireRequestRecord, "jobPrivacy">) {
 }
 
 function isActivationLaneHireRequest(request: Pick<HireRequestRecord, "requestType" | "payment">) {
-  return request.requestType === "paid_execution" && request.payment?.activationLane === true;
+  if (request.requestType !== "paid_execution") {
+    return false;
+  }
+  if (
+    request.payment?.activationLane === true ||
+    request.payment?.publicActivationProbe === true ||
+    request.payment?.sellerReadinessTest === true ||
+    request.payment?.purpose === "activation_probe" ||
+    request.payment?.purpose === "seller_readiness_test"
+  ) {
+    return true;
+  }
+  return (
+    isSameUsdAmount(request.payment?.amountUsd, activationLaneAmountUsdForLedgerClassification()) ||
+    isSameUsdAmount(request.payment?.amountUsd, "0.002001")
+  );
 }
 
 function shouldPublishDetailedHireLifecycle(jobPrivacy?: SantaClawzJobPrivacyPreference) {
