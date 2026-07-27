@@ -240,7 +240,6 @@ const PUBLIC_FEED_PROOF_KINDS = new Set<SocialAnchorCandidateKind>([
   "ownership-verified",
   "agent-published",
   "payment-terms-live",
-  "hire-request-submitted",
   "quote-returned",
   "quote-accepted",
   "paid-execution-completed",

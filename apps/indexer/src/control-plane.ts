@@ -170,6 +170,12 @@ const JOB_COMPLETION_SCORE_WINDOW_SIZE = 100;
 const JOB_COMPLETION_STALE_MS = 30 * 60 * 1000;
 const ACTIVATION_LANE_UNRESOLVED_PAYMENT_GUARD_MS =
   parseBoundedIntegerEnv("CLAWZ_ACTIVATION_LANE_UNRESOLVED_PAYMENT_GUARD_SECONDS", 6 * 60 * 60, 60, 24 * 60 * 60) * 1000;
+const ACTIVATION_LANE_MAX_FAILED_PROBES = parseBoundedIntegerEnv(
+  "CLAWZ_ACTIVATION_LANE_MAX_FAILED_PROBES",
+  20,
+  1,
+  1_000
+);
 const HIRE_REQUEST_GLOBAL_RECENT_RETAIN_LIMIT = parseBoundedIntegerEnv(
   "CLAWZ_HIRE_REQUEST_GLOBAL_RECENT_RETAIN_LIMIT",
   10_000,
@@ -3601,6 +3607,30 @@ function buildActivationLaneStatus(
   };
 }
 
+function activationLaneFailedAttemptCount(attemptFile: ActivationLaneAttemptFile, sessionId: string) {
+  const failedStatuses = new Set<AgentActivationLaneAttemptStatus>([
+    "payment_failed",
+    "seller_failed",
+    "platform_failed",
+    "unknown_failed"
+  ]);
+  return attemptFile.attempts.filter(
+    (attempt) => attempt.sessionId === sessionId && failedStatuses.has(attempt.status)
+  ).length;
+}
+
+function activationLaneFailureCapReached(input: {
+  activationProbes?: AgentActivationProbeStats;
+  attemptFile?: ActivationLaneAttemptFile;
+  sessionId: string;
+}) {
+  const failedProbeCount = input.activationProbes?.failedProbeCount ?? 0;
+  const failedAttemptCount = input.attemptFile
+    ? activationLaneFailedAttemptCount(input.attemptFile, input.sessionId)
+    : 0;
+  return Math.max(failedProbeCount, failedAttemptCount) >= ACTIVATION_LANE_MAX_FAILED_PROBES;
+}
+
 function hireRequestRetentionKey(request: HireRequestRecord) {
   return `${request.sessionId}:${request.requestId}`;
 }
@@ -4028,6 +4058,19 @@ function buildAgentReadinessState(input: {
       severity: "info",
       message: "Activation lane found this agent but only ran a preview; no paid smoke was submitted.",
       ...(input.activationLaneStatus.lastAttemptAtIso ? { atIso: input.activationLaneStatus.lastAttemptAtIso } : {})
+    });
+  }
+  if (
+    paidMode &&
+    !paidExecutionProven &&
+    (input.activationProbes?.failedProbeCount ?? 0) >= ACTIVATION_LANE_MAX_FAILED_PROBES
+  ) {
+    readinessNotes.push({
+      code: "activation_probe_failure_cap",
+      severity: "warning",
+      message:
+        "Automatic paid execution probes are paused after repeated failures. Fix the runtime, then ask an operator to force a fresh proof test.",
+      ...(input.activationProbes?.lastProbeAtIso ? { atIso: input.activationProbes.lastProbeAtIso } : {})
     });
   }
 
@@ -5455,6 +5498,14 @@ export class ClawzControlPlane {
           : undefined;
         const activationProbes = buildActivationProbeStats(hireRequestFile, heartbeat.sessionId);
         const activationLaneStatus = buildActivationLaneStatus(attemptFile, heartbeat.sessionId, activationProbes);
+        const failedProbeLimitReached =
+          !force &&
+          !paidExecutionProven &&
+          activationLaneFailureCapReached({
+            activationProbes,
+            attemptFile,
+            sessionId: heartbeat.sessionId
+          });
         const relayProfile = isRelayDeliveryProfile(profile);
         const relayConnected = relayProfile && (this.relayRuntimeStatusProvider?.(agentId) ?? false);
         const runtimeReachable = relayProfile ? relayConnected : heartbeatLive;
@@ -5480,7 +5531,8 @@ export class ClawzControlPlane {
           ...(!heartbeatLive ? ["heartbeat-not-live"] : []),
           ...(relayProfile && !relayConnected ? ["relay-disconnected"] : []),
           ...(unresolvedActivationLanePayment ? ["activation-lane-payment-pending"] : []),
-          ...(cooldownActive ? ["activation-lane-cooldown"] : [])
+          ...(cooldownActive ? ["activation-lane-cooldown"] : []),
+          ...(failedProbeLimitReached ? ["activation-probe-failure-cap"] : [])
         ];
         const candidate: ActivationLaneCandidateView = {
           agentId,

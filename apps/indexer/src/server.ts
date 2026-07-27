@@ -192,7 +192,6 @@ const PUBLIC_SOCIAL_ANCHOR_FEED_KINDS: SocialAnchorCandidateKind[] = [
   "ownership-verified",
   "agent-published",
   "payment-terms-live",
-  "hire-request-submitted",
   "quote-returned",
   "quote-accepted",
   "paid-execution-completed",
