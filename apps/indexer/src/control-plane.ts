@@ -170,6 +170,12 @@ const JOB_COMPLETION_SCORE_WINDOW_SIZE = 100;
 const JOB_COMPLETION_STALE_MS = 30 * 60 * 1000;
 const ACTIVATION_LANE_UNRESOLVED_PAYMENT_GUARD_MS =
   parseBoundedIntegerEnv("CLAWZ_ACTIVATION_LANE_UNRESOLVED_PAYMENT_GUARD_SECONDS", 6 * 60 * 60, 60, 24 * 60 * 60) * 1000;
+const ACTIVATION_LANE_MAX_FAILED_PROBES = parseBoundedIntegerEnv(
+  "CLAWZ_ACTIVATION_LANE_MAX_FAILED_PROBES",
+  20,
+  1,
+  1_000
+);
 const HIRE_REQUEST_GLOBAL_RECENT_RETAIN_LIMIT = parseBoundedIntegerEnv(
   "CLAWZ_HIRE_REQUEST_GLOBAL_RECENT_RETAIN_LIMIT",
   10_000,
@@ -834,6 +840,7 @@ interface QuotePaymentContext {
 
 interface HirePaymentAuthorization {
   status: "not-required" | "authorized" | "settled";
+  purpose?: PaymentLedgerEntry["purpose"];
   activationLane?: boolean;
   publicActivationProbe?: boolean;
   sellerReadinessTest?: boolean;
@@ -3137,7 +3144,22 @@ function isPrivateHireRequest(request: Pick<HireRequestRecord, "jobPrivacy">) {
 }
 
 function isActivationLaneHireRequest(request: Pick<HireRequestRecord, "requestType" | "payment">) {
-  return request.requestType === "paid_execution" && request.payment?.activationLane === true;
+  if (request.requestType !== "paid_execution") {
+    return false;
+  }
+  if (
+    request.payment?.activationLane === true ||
+    request.payment?.publicActivationProbe === true ||
+    request.payment?.sellerReadinessTest === true ||
+    request.payment?.purpose === "activation_probe" ||
+    request.payment?.purpose === "seller_readiness_test"
+  ) {
+    return true;
+  }
+  return (
+    isSameUsdAmount(request.payment?.amountUsd, activationLaneAmountUsdForLedgerClassification()) ||
+    isSameUsdAmount(request.payment?.amountUsd, "0.002001")
+  );
 }
 
 function shouldPublishDetailedHireLifecycle(jobPrivacy?: SantaClawzJobPrivacyPreference) {
@@ -3585,6 +3607,30 @@ function buildActivationLaneStatus(
   };
 }
 
+function activationLaneFailedAttemptCount(attemptFile: ActivationLaneAttemptFile, sessionId: string) {
+  const failedStatuses = new Set<AgentActivationLaneAttemptStatus>([
+    "payment_failed",
+    "seller_failed",
+    "platform_failed",
+    "unknown_failed"
+  ]);
+  return attemptFile.attempts.filter(
+    (attempt) => attempt.sessionId === sessionId && failedStatuses.has(attempt.status)
+  ).length;
+}
+
+function activationLaneFailureCapReached(input: {
+  activationProbes?: AgentActivationProbeStats;
+  attemptFile?: ActivationLaneAttemptFile;
+  sessionId: string;
+}) {
+  const failedProbeCount = input.activationProbes?.failedProbeCount ?? 0;
+  const failedAttemptCount = input.attemptFile
+    ? activationLaneFailedAttemptCount(input.attemptFile, input.sessionId)
+    : 0;
+  return Math.max(failedProbeCount, failedAttemptCount) >= ACTIVATION_LANE_MAX_FAILED_PROBES;
+}
+
 function hireRequestRetentionKey(request: HireRequestRecord) {
   return `${request.sessionId}:${request.requestId}`;
 }
@@ -4012,6 +4058,19 @@ function buildAgentReadinessState(input: {
       severity: "info",
       message: "Activation lane found this agent but only ran a preview; no paid smoke was submitted.",
       ...(input.activationLaneStatus.lastAttemptAtIso ? { atIso: input.activationLaneStatus.lastAttemptAtIso } : {})
+    });
+  }
+  if (
+    paidMode &&
+    !paidExecutionProven &&
+    (input.activationProbes?.failedProbeCount ?? 0) >= ACTIVATION_LANE_MAX_FAILED_PROBES
+  ) {
+    readinessNotes.push({
+      code: "activation_probe_failure_cap",
+      severity: "warning",
+      message:
+        "Automatic paid execution probes are paused after repeated failures. Fix the runtime, then ask an operator to force a fresh proof test.",
+      ...(input.activationProbes?.lastProbeAtIso ? { atIso: input.activationProbes.lastProbeAtIso } : {})
     });
   }
 
@@ -5439,6 +5498,14 @@ export class ClawzControlPlane {
           : undefined;
         const activationProbes = buildActivationProbeStats(hireRequestFile, heartbeat.sessionId);
         const activationLaneStatus = buildActivationLaneStatus(attemptFile, heartbeat.sessionId, activationProbes);
+        const failedProbeLimitReached =
+          !force &&
+          !paidExecutionProven &&
+          activationLaneFailureCapReached({
+            activationProbes,
+            attemptFile,
+            sessionId: heartbeat.sessionId
+          });
         const relayProfile = isRelayDeliveryProfile(profile);
         const relayConnected = relayProfile && (this.relayRuntimeStatusProvider?.(agentId) ?? false);
         const runtimeReachable = relayProfile ? relayConnected : heartbeatLive;
@@ -5464,7 +5531,8 @@ export class ClawzControlPlane {
           ...(!heartbeatLive ? ["heartbeat-not-live"] : []),
           ...(relayProfile && !relayConnected ? ["relay-disconnected"] : []),
           ...(unresolvedActivationLanePayment ? ["activation-lane-payment-pending"] : []),
-          ...(cooldownActive ? ["activation-lane-cooldown"] : [])
+          ...(cooldownActive ? ["activation-lane-cooldown"] : []),
+          ...(failedProbeLimitReached ? ["activation-probe-failure-cap"] : [])
         ];
         const candidate: ActivationLaneCandidateView = {
           agentId,
@@ -14713,48 +14781,48 @@ export class ClawzControlPlane {
       });
     }
     const detailedLifecycle = shouldPublishDetailedHireLifecycle(options.jobPrivacy);
-    await this.enqueueSocialAnchorCandidate({
-      sessionId,
-      kind: "hire-request-submitted",
-      summary: detailedLifecycle
-        ? `${profile.agentName} received a new hire request through SantaClawz.`
-        : `${profile.agentName} received a private hire request through SantaClawz.`,
-      occurredAtIso: submittedAtIso,
-      payload: detailedLifecycle
-        ? {
-            requestId,
-            agentId: options.agentId,
-            requesterContactDigestSha256: sha256Hex(nextRecord.requesterContact),
-            requestType,
-            pricingMode: profile.paymentProfile.pricingMode,
-            paymentStatus,
-            ...(!marketplaceWorkTagsAreEmpty(marketplaceTags) ? { marketplaceTags } : {}),
-            ...(settledAmountUsd ? { settledAmountUsd } : {}),
-            status: hireStatus
-          }
-        : {
-            agentId: options.agentId,
-            privateActivity: true,
-            activityDigestSha256: sha256Hex(requestId),
-            requestType,
-            pricingMode: profile.paymentProfile.pricingMode,
-            paymentStatus,
-            status: hireStatus
-          }
-    });
-    if (ingressProtocolReturn) {
+    const activationLaneLifecycle = isActivationLaneHireRequest(nextRecord);
+    if (!activationLaneLifecycle) {
+      await this.enqueueSocialAnchorCandidate({
+        sessionId,
+        kind: "hire-request-submitted",
+        summary: detailedLifecycle
+          ? `${profile.agentName} received a new hire request through SantaClawz.`
+          : `${profile.agentName} received a private hire request through SantaClawz.`,
+        occurredAtIso: submittedAtIso,
+        payload: detailedLifecycle
+          ? {
+              requestId,
+              agentId: options.agentId,
+              requesterContactDigestSha256: sha256Hex(nextRecord.requesterContact),
+              requestType,
+              pricingMode: profile.paymentProfile.pricingMode,
+              paymentStatus,
+              ...(!marketplaceWorkTagsAreEmpty(marketplaceTags) ? { marketplaceTags } : {}),
+              ...(settledAmountUsd ? { settledAmountUsd } : {}),
+              status: hireStatus
+            }
+          : {
+              agentId: options.agentId,
+              privateActivity: true,
+              activityDigestSha256: sha256Hex(requestId),
+              requestType,
+              pricingMode: profile.paymentProfile.pricingMode,
+              paymentStatus,
+              status: hireStatus
+            }
+      });
+    }
+    if (ingressProtocolReturn && !activationLaneLifecycle) {
       const completionClassification =
         ingressProtocolReturn.status === "completed"
           ? ingressProtocolReturn.execution?.completionClassification
           : undefined;
-      const activationLaneCompletion = isActivationLaneHireRequest(nextRecord);
       const returnKind: SocialAnchorCandidateKind =
         ingressProtocolReturn.status === "quoted"
           ? "quote-returned"
           : ingressProtocolReturn.status === "completed"
-            ? activationLaneCompletion
-              ? "activation-task-completed"
-              : requestType === "free_test"
+            ? requestType === "free_test"
               ? "free-test-completed"
               : "paid-execution-completed"
             : "hire-request-failed";
@@ -14767,11 +14835,9 @@ export class ClawzControlPlane {
               : `${profile.agentName} returned an anonymized private failure milestone.`
         : ingressProtocolReturn.status === "quoted"
           ? `${profile.agentName} returned an exact quote for a SantaClawz hire request.`
-          : ingressProtocolReturn.status === "completed"
-            ? completionClassification === "agent_completed_verified"
-              ? activationLaneCompletion
-                ? `${profile.agentName} completed the SantaClawz activation task and proved paid execution readiness.`
-                : requestType === "free_test"
+        : ingressProtocolReturn.status === "completed"
+          ? completionClassification === "agent_completed_verified"
+              ? requestType === "free_test"
                 ? `${profile.agentName} returned a verified output package for a free test.`
                 : `${profile.agentName} returned a verified output package for paid execution.`
               : completionClassification === "demo_completion"
@@ -14847,6 +14913,7 @@ export class ClawzControlPlane {
     const marketplaceTagOutcome = paidExecutionTerminalOutcome(nextRecord);
     if (
       requestType === "paid_execution" &&
+      !activationLaneLifecycle &&
       detailedLifecycle &&
       marketplaceTagOutcome !== "pending" &&
       !marketplaceWorkTagsAreEmpty(marketplaceTags)

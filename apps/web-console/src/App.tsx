@@ -240,7 +240,6 @@ const PUBLIC_FEED_PROOF_KINDS = new Set<SocialAnchorCandidateKind>([
   "ownership-verified",
   "agent-published",
   "payment-terms-live",
-  "hire-request-submitted",
   "quote-returned",
   "quote-accepted",
   "paid-execution-completed",
@@ -1122,7 +1121,9 @@ function isCompletedPaymentEntry(entry: PaymentLedgerEntry) {
 
 function isActivationProbePaymentEntry(entry: PaymentLedgerEntry) {
   const resource = entry.resource ?? "";
-  return resource.includes("/api/activation-lane/") ||
+  return entry.purpose === "activation_probe" ||
+    entry.purpose === "seller_readiness_test" ||
+    resource.includes("/api/activation-lane/") ||
     resource.includes("activationLane=true") ||
     resource.includes("activationProbe=true") ||
     resource.includes("sellerReadinessTest=true") ||
@@ -1193,6 +1194,9 @@ function matchesPaymentQuery(entry: PaymentLedgerEntry, query: string, agent?: A
 }
 
 function isVisibleProofAnchor(item: SocialAnchorCandidate) {
+  if (item.kind === "activation-task-completed") {
+    return false;
+  }
   return item.status === "confirmed" && PUBLIC_FEED_PROOF_KINDS.has(item.kind);
 }
 
