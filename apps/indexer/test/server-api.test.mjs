@@ -6208,6 +6208,62 @@ async function testPublicActivitySummaryKeepsAdditiveTotals() {
   }
 }
 
+async function testPublicMarketplaceSnapshotSuppressesHireRequestProofPings() {
+  const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "clawz-indexer-public-proof-filter-"));
+  const stateDir = path.join(workspaceDir, ".clawz-data", "state");
+  await mkdir(stateDir, { recursive: true });
+  await writeFile(path.join(stateDir, "social-anchor-queue.json"), JSON.stringify({
+    items: [
+      {
+        candidateId: "anchor_hire_ping",
+        sessionId: "session_agent_ping",
+        agentId: "cyruser001--session_agent_ping",
+        anchorMode: "shared-batched",
+        kind: "hire-request-submitted",
+        title: "Hire request received",
+        summary: "Cyruser001 received a new hire request through SantaClawz.",
+        occurredAtIso: "2026-07-28T17:00:00.000Z",
+        payloadDigestSha256: "a".repeat(64),
+        status: "confirmed",
+        confirmedAtIso: "2026-07-28T17:01:00.000Z"
+      },
+      {
+        candidateId: "anchor_paid_execution",
+        sessionId: "session_agent_ping",
+        agentId: "cyruser001--session_agent_ping",
+        anchorMode: "shared-batched",
+        kind: "paid-execution-completed",
+        title: "Paid execution completed",
+        summary: "Cyruser001 returned a verified output package for paid execution.",
+        occurredAtIso: "2026-07-28T17:02:00.000Z",
+        payloadDigestSha256: "b".repeat(64),
+        status: "confirmed",
+        confirmedAtIso: "2026-07-28T17:03:00.000Z"
+      }
+    ],
+    archivedItems: [],
+    batches: []
+  }, null, 2), "utf8");
+  const port = await reservePort();
+  const server = startServer(workspaceDir, port);
+
+  try {
+    const baseUrl = `http://127.0.0.1:${port}`;
+    await waitForJson(`${baseUrl}/ready`, SERVER_READY_TIMEOUT_MS, server);
+    const publicMarketplaceSnapshot = await requestJson(`${baseUrl}/api/public/marketplace-snapshot`, { method: "GET" });
+    assert.equal(publicMarketplaceSnapshot.status, 200);
+    const publicProofKinds = publicMarketplaceSnapshot.payload.publicSocialAnchorQueue.items.map((item) => item.kind);
+    assert.deepEqual(publicProofKinds, ["paid-execution-completed"]);
+    assert.equal(publicMarketplaceSnapshot.payload.publicSocialAnchorQueue.confirmedCount, 1);
+    assert.equal(publicMarketplaceSnapshot.payload.publicActivitySummary.categoryCounts.proofAnchors, 1);
+
+    console.log("ok - public marketplace snapshot suppresses hire request proof pings");
+  } finally {
+    await stopProcess(server.child);
+    await rm(workspaceDir, { recursive: true, force: true });
+  }
+}
+
 async function testPaymentLedgerPersistenceKeepsCumulativePayoutStatsWhenRowsArePruned() {
   const workspaceDir = await mkdtemp(path.join(os.tmpdir(), "clawz-indexer-payment-ledger-rollup-"));
   try {
@@ -7176,6 +7232,7 @@ async function main() {
   await testLegacyDemoProfileCanEnableBasePayments();
   await testPublicPayoutSummaryUsesAllTimeLedgerStats();
   await testPublicActivitySummaryKeepsAdditiveTotals();
+  await testPublicMarketplaceSnapshotSuppressesHireRequestProofPings();
   await testPaymentLedgerPersistenceKeepsCumulativePayoutStatsWhenRowsArePruned();
   await testProductionPaymentLedgerUsesVerifiedBasePayoutBaseline();
   await testPaymentLedgerExecutionUpdatesAreMonotonic();
