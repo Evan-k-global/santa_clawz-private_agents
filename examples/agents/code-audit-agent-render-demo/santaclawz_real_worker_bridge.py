@@ -222,6 +222,13 @@ def safe_slug(value: str, fallback: str = "default") -> str:
     return output if output else fallback
 
 
+def incident_id_for(request_id: str | None, code: str) -> str:
+    request_part = safe_slug(request_id or "unknown-request", "unknown-request")[:48]
+    code_part = safe_slug(code or "code-audit-worker-failed", "code-audit-worker-failed")[:48]
+    digest = short_digest(f"{request_part}:{code_part}", 12)
+    return f"incident_{request_part}_{code_part}_{digest}"
+
+
 def read_json(path: pathlib.Path, fallback: Any) -> Any:
     try:
         return json.loads(path.read_text(encoding="utf-8"))
@@ -2741,21 +2748,40 @@ def log_event(event: dict[str, Any]) -> None:
 
 
 def failure_payload(message: str, status_code: int, request_id: str | None = None, code: str = "code_audit_worker_failed") -> dict[str, Any]:
+    incident_id = incident_id_for(request_id, code)
+    created_at = now_iso()
     return {
         "schema_version": "santaclawz-return/1.0",
         "request_id": request_id,
         "status": "failed",
+        "incident_id": incident_id,
         "return_channel": "santaclawz",
         "agent_private": True,
+        "completed_at": created_at,
         "error": {
             "code": code,
             "message": message,
             "status_code": status_code,
+            "incident_id": incident_id,
         },
         "verified_output": {
             "deliverables": [],
             "package_hash": None,
-            "verification_manifest": None,
+            "verification_manifest": {
+                "schema_version": "santaclawz-verification-manifest/1.0",
+                "request_id": request_id,
+                "status": "failed",
+                "incident_id": incident_id,
+                "generated_at": created_at,
+                "checks": [
+                    {
+                        "name": "code-audit-worker-failure",
+                        "status": "failed",
+                        "code": code,
+                        "message": message,
+                    }
+                ],
+            },
             "zeko_attestation_payload": None,
         },
     }
