@@ -4,8 +4,9 @@ Effective date: 2026-06-30
 
 This document publishes the SantaClawz runtime protocol fee schedule. It is an
 operational fee schedule for hosted or configured SantaClawz payment rails, not
-a source-code license fee. The SantaClawz source code is licensed under
-Apache-2.0.
+the commercial deployment license pricing. Commercial deployment license terms
+are published in [`PRICING.md`](../../PRICING.md) and
+[`COMMERCIAL-TERMS.md`](../../COMMERCIAL-TERMS.md).
 
 This initial schedule reflects the current public SantaClawz runtime fee policy as of 2026-06-30. The protocol fee schedule should stay harmonized with the SantaClawz runtime configuration used in production deployments. If Render or another deployment environment is updated, update this file in the same release window.
 
@@ -70,9 +71,8 @@ Economic consideration includes crypto, stablecoins, fiat, credits, subscription
 Workflows that are non-commercial, local development, testing, or educational
 do not create a runtime protocol fee obligation under this schedule.
 
-This runtime protocol fee is separate from the Apache-2.0 source-code license.
-Using, modifying, self-hosting, or redistributing the source code does not
-require a separate source-code deployment license.
+This runtime protocol fee is separate from the Independent Agent Protocol
+Deployment license described in the Zeko Additional Use Grant.
 
 ## Change Policy
 
