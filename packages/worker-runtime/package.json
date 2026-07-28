@@ -2,7 +2,6 @@
   "name": "@clawz/worker-runtime",
   "version": "0.1.0",
   "private": true,
-  "license": "Apache-2.0",
   "type": "module",
   "main": "./dist/worker-runtime/src/index.js",
   "types": "./dist/worker-runtime/src/index.d.ts",

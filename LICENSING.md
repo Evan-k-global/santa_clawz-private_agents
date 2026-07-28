@@ -1,21 +1,44 @@
 # Licensing
 
-This repository is licensed under the Apache License, Version 2.0. See
-[LICENSE](./LICENSE).
+This repository contains both adoption-layer materials and protected Zeko Agent
+Bundle implementation code.
 
-The Apache-2.0 license applies to the source code, SDKs, adapters, connector
-examples, wrapper templates, schemas, integration surfaces, examples,
-documentation, test fixtures, and other repository materials unless a file or
-third-party dependency states a different license.
+The repository-level Apache-2.0 license continues to apply to adoption-layer
+materials where expressly marked, including public SDKs, adapters, connector
+examples, wrapper templates, schemas, and integration surfaces. Protected Agent
+Bundle implementation code is licensed under BUSL-1.1 with the Zeko Additional
+Use Grant. The current Change Date for protected components is 2030-07-17, and
+the Change License is Apache License, Version 2.0.
 
-Commercial use, production use, self-hosting, modification, and redistribution
-are permitted under Apache-2.0. No separate source-code deployment license or
-self-serve commercial deployment fee is required for using this repository.
+The following protected components are licensed under BUSL-1.1 with the Zeko
+Additional Use Grant:
 
-Zeko Labs may offer hosted services, managed deployment, enterprise support,
-compliance review, SLAs, custom integrations, dedicated infrastructure, and
-professional services separately. Runtime protocol, marketplace, payment,
-network, gas, prover, bridge, or usage fees may apply to hosted or configured
-services where expressly published. Those services and runtime fees are not
-required to use the Apache-2.0 source code. For service inquiries, contact
-partnerships@zeko.io.
+- `apps/enterprise-kms`
+- `apps/indexer`, except expressly permissive integration helpers
+- `apps/privacy-gateway`
+- `packages/blob-store`
+- `packages/contracts`
+- `packages/key-broker`
+- `packages/protocol`
+
+The following adoption-layer surfaces remain Apache-2.0 unless a more specific
+license notice says otherwise:
+
+- `packages/agent-sdk`
+- `packages/openclaw-adapter`
+- documentation
+- examples
+- workspace connector examples and wrappers
+- public integration helpers
+- schemas, interfaces, templates, and test fixtures expressly marked as
+  permissive
+
+If a file, package, or directory has a more specific license notice, that
+notice controls. Otherwise, protected product/protocol-layer code is governed by
+the applicable package `LICENSE` file and the Zeko Additional Use Grant in
+[LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md](./LICENSES/ZEKO-ADDITIONAL-USE-GRANT.md).
+
+Commercial deployment pricing is published in [PRICING.md](./PRICING.md).
+Commercial terms are summarized in [COMMERCIAL-TERMS.md](./COMMERCIAL-TERMS.md).
+Published ecosystem exceptions, if any, are listed in
+[ECOSYSTEM-EXCEPTIONS.md](./ECOSYSTEM-EXCEPTIONS.md).
