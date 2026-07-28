@@ -21,7 +21,7 @@ and operate the Licensed Work for the following purposes:
 3. Commercially operating applications, agents, workflows, or integrations that
    use the Official Zeko Network or an Official Agent Protocol Deployment,
    provided that you do not operate an Independent Production Deployment of the
-   Licensed Work or an Independent Agent Protocol Deployment.
+   Licensed Work or an Independent Agent Protocol Bundle production deployment.
 4. Operating infrastructure as an authorized participant, operator, prover,
    sequencer, validator, relayer, settlement operator, or service provider for
    the Official Zeko Network, where such role has been approved, authorized, or
@@ -41,7 +41,7 @@ Zeko Network or Official Agent Protocol Deployments. They only clarify that no
 separate commercial deployment license is required for that official-network or
 official-service use.
 
-## 2. Commercial Deployment License Required
+## 2. Commercial Deployment License Coverage
 
 Except as expressly permitted above, the following production deployments are
 covered by the self-serve commercial deployment license:
@@ -55,10 +55,8 @@ The current published self-serve fee is $0/year, subject to the pricing
 schedule in `PRICING.md`.
 
 Commercial deployment fees, if any, are payable to Zeko Labs, Inc. or its
-successor or assigns. Current self-serve pricing is published in `PRICING.md`
-and may be changed by a successor pricing schedule or written authorization.
-For payment, billing, commercial licensing, ecosystem agreements, or other
-inquiries, contact partnerships@zeko.io.
+successor or assigns. For payment, billing, commercial licensing, ecosystem
+agreements, or other inquiries, contact partnerships@zeko.io.
 
 ## 3. Definitions
 
@@ -98,22 +96,24 @@ related infrastructure operated by Zeko Labs, authorized by Zeko Labs, or
 designated by the applicable Zeko governance process as part of the official
 Zeko ecosystem.
 
-### Independent Agent Protocol Deployment
+### Independent Agent Protocol Bundle Production Deployment
 
-Independent Agent Protocol Deployment means a production deployment or operation
-of one or more protected Agent Protocol Bundle components, or modified versions
-or derivative works of those components, by or on behalf of a legal entity on a
-Deployment Network, outside an Official Agent Protocol Deployment.
+Independent Agent Protocol Bundle production deployment means a production
+deployment or operation of one or more protected Agent Protocol Bundle
+components, or modified versions or derivative works of those components, by or
+on behalf of a legal entity on a Deployment Network, outside an Official Agent
+Protocol Deployment.
 
-The Agent Protocol Bundle fee applies only to production deployment or operation
-of protected Agent Protocol Bundle code, or modified versions or derivative
-works of that code, outside an Official Agent Protocol Deployment. It does not
-apply to use of official Zeko-operated or Zeko-authorized applications,
-services, APIs, relays, facilitators, verifiers, marketplaces, payment rails,
-authorization rails, coordination rails, or settlement endpoints. It also does
-not apply to independently developed implementations that do not copy, modify,
-derive from, or substantially incorporate protected Agent Protocol Bundle code,
-even if they implement similar concepts, protocols, or workflows.
+Independent Agent Protocol Bundle production deployments are covered by the
+self-serve commercial deployment license. The current published self-serve fee
+is $0/year, subject to the pricing schedule in `PRICING.md`.
+
+This does not apply to use of official Zeko-operated or Zeko-authorized
+applications, services, APIs, relays, facilitators, verifiers, marketplaces,
+payment rails, authorization rails, coordination rails, or settlement endpoints.
+It also does not apply to independently developed implementations that do not
+copy, modify, derive from, or substantially incorporate protected Agent Protocol
+Bundle code, even if they implement similar concepts, protocols, or workflows.
 
 ### Deployment Network
 

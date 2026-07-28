@@ -205,8 +205,9 @@ Standard self-serve pricing is published in [PRICING.md](./PRICING.md):
 
 - Protocol Layer Production Deployments: $0/year per production rollup under
   the current published self-serve pricing.
-- Independent Agent Protocol Deployments: $0/year per deploying legal entity
-  per Deployment Network under the current published self-serve pricing.
+- Independent Agent Protocol Bundle Production Deployments: $0/year per
+  deploying legal entity per Deployment Network under the current published
+  self-serve pricing.
 
 Current self-serve pricing is subject to change by a successor pricing schedule,
 ecosystem exception, enterprise agreement, foundation agreement, or other
