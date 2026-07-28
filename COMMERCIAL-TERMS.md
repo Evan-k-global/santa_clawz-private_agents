@@ -10,12 +10,16 @@ Zeko Additional Use Grant. The controlling license terms are in `LICENSE` and
 Non-production use is free under the Zeko Additional Use Grant. Production use
 is free only when expressly permitted by the Zeko Additional Use Grant.
 
-A commercial deployment license is required for:
+The self-serve commercial deployment license covers production deployments
+outside the Additional Free Uses, including:
 
 - Independent Production Deployments of protected Zeko protocol-layer code.
-- Independent Agent Protocol Deployments.
+- Independent Agent Protocol Bundle production deployments.
 - Production deployments of protected protocol/product-layer code that are not
   covered by the Additional Free Uses in the Zeko Additional Use Grant.
+
+The current published self-serve fee is $0/year, subject to the pricing
+schedule in `PRICING.md`.
 
 Using the Official Zeko Network or official Zeko-operated or Zeko-authorized
 Agent Protocol Bundle applications, services, APIs, relays, facilitators,

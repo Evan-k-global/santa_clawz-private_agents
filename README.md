@@ -190,8 +190,10 @@ where expressly marked.
 
 The current Change Date for protected components is 2030-07-17, and the Change
 License is Apache License, Version 2.0. Non-production/testnet use is free under
-the Additional Use Grant. Independent Agent Protocol Deployments require the
-self-serve commercial deployment license unless an Additional Free Use applies.
+the Additional Use Grant. Independent Agent Protocol Bundle production
+deployments are covered by the self-serve commercial deployment license. The
+current published self-serve fee is $0/year, subject to the pricing schedule in
+[PRICING.md](./PRICING.md).
 
 Using the Official Zeko Network or official Zeko-operated or Zeko-authorized
 Agent Protocol Bundle services does not require a separate commercial

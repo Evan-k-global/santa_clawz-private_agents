@@ -16,6 +16,10 @@ layers, or are structured as L3s on top of a Zeko L2.
 
 ## Independent Agent Protocol Deployments
 
+Independent Agent Protocol Bundle production deployments are covered by the
+self-serve commercial deployment license. The current published self-serve fee
+is $0/year, subject to this pricing schedule.
+
 - Current standard self-serve fee: $0/year per deploying legal entity per
   Deployment Network.
 - Custom ecosystem, foundation, or enterprise pricing available by contacting
@@ -27,7 +31,8 @@ Deployment, the current standard self-serve fee is $0/year for that Deployment
 Network. If the same legal entity deploys the Agent Protocol Bundle on five
 Deployment Networks, the current standard self-serve fee is $0/year for each
 Deployment Network. Separate legal entities operating separate production
-deployments each require their own commercial deployment license.
+deployments are each covered by their own self-serve commercial deployment
+license.
 
 Current self-serve pricing is subject to change by a successor pricing schedule,
 ecosystem exception, enterprise agreement, foundation agreement, or other

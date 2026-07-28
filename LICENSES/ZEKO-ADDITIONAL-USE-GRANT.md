@@ -43,13 +43,16 @@ official-service use.
 
 ## 2. Commercial Deployment License Required
 
-Except as expressly permitted above, a commercial deployment license is required
-for:
+Except as expressly permitted above, the following production deployments are
+covered by the self-serve commercial deployment license:
 
 1. an Independent Production Deployment of the Zeko protocol layer;
-2. an Independent Agent Protocol Deployment; or
+2. an Independent Agent Protocol Bundle production deployment; or
 3. any other production deployment of protected protocol/product-layer code that
    is not covered by the Additional Free Uses above.
+
+The current published self-serve fee is $0/year, subject to the pricing
+schedule in `PRICING.md`.
 
 Commercial deployment fees, if any, are payable to Zeko Labs, Inc. or its
 successor or assigns. Current self-serve pricing is published in `PRICING.md`
