@@ -6,9 +6,7 @@ specific pricing schedule, ecosystem exception, or written authorization applies
 
 ## Protocol Layer Production Deployments
 
-- 1-10 production rollups: $1,000/year per production rollup.
-- 11+ production rollups: custom pricing available by contacting
-  partnerships@zeko.io.
+- Current standard self-serve fee: $0/year per production rollup.
 
 A production rollup includes each production L2, L3, sovereign rollup,
 appchain, application-specific chain, or substantially similar production
@@ -18,16 +16,23 @@ layers, or are structured as L3s on top of a Zeko L2.
 
 ## Independent Agent Protocol Deployments
 
-- $1,000/year per deploying legal entity per Deployment Network.
+- Current standard self-serve fee: $0/year per deploying legal entity per
+  Deployment Network.
 - Custom ecosystem, foundation, or enterprise pricing available by contacting
   partnerships@zeko.io.
 
 If one legal entity independently deploys one or more protected Agent Protocol
 Bundle components on one Deployment Network outside an Official Agent Protocol
-Deployment, the fee is $1,000/year for that Deployment Network. If the same
-legal entity deploys the Agent Protocol Bundle on five Deployment Networks, the
-fee is $5,000/year. Separate legal entities operating separate production
+Deployment, the current standard self-serve fee is $0/year for that Deployment
+Network. If the same legal entity deploys the Agent Protocol Bundle on five
+Deployment Networks, the current standard self-serve fee is $0/year for each
+Deployment Network. Separate legal entities operating separate production
 deployments each require their own commercial deployment license.
+
+Current self-serve pricing is subject to change by a successor pricing schedule,
+ecosystem exception, enterprise agreement, foundation agreement, or other
+written authorization published or approved by Zeko Labs. Any successor pricing
+applies as stated in that successor schedule or written authorization.
 
 Using official Zeko-operated or Zeko-authorized Agent Protocol Bundle
 applications, services, APIs, relays, facilitators, verifiers, marketplaces,
@@ -39,11 +44,12 @@ deployments.
 
 ## Payment Timing
 
-The self-serve commercial deployment fee is pro-rated for the first calendar
-year of a new production deployment. Fees renew annually on a calendar-year
-basis. Payment is due to Zeko Labs, Inc. or its successor or assigns within the
-first 30 days of each calendar year, or within 30 days after a new production
-deployment first goes live, whichever applies.
+Because the current standard self-serve fee is $0/year, no payment is due under
+this pricing schedule.
+
+If Zeko Labs publishes or approves a successor pricing schedule or written
+authorization with a non-zero fee, payment timing will be specified in that
+successor schedule or written authorization.
 
 For payment, billing, commercial licensing, ecosystem agreements, or other
 inquiries, contact partnerships@zeko.io.
