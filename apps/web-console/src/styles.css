@@ -5221,14 +5221,14 @@ pre,
 }
 
 .activation-method-inline .activation-tab-group {
-  width: min(100%, 252px);
+  width: min(100%, 342px);
   min-width: 0;
   max-width: 100%;
 }
 
 .activation-method-inline .activation-tab-group button {
   min-width: 0;
-  padding: 6px 10px 5px;
+  padding: 6px 8px 5px;
 }
 
 .activation-ticket-issued-row {

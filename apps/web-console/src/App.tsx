@@ -771,7 +771,7 @@ function commandQuote(value: string) {
   return '"' + value.replace(/\\/g, "\\\\").replace(/"/g, '\\"') + '"';
 }
 
-type ActivationMethodId = "pnpm" | "manual";
+type ActivationMethodId = "curl" | "pnpm" | "manual";
 
 const DEFAULT_RELAY_BASE = "https://relay.santaclawz.ai";
 const DEFAULT_CHALLENGE_FILE = ".well-known/santaclawz-agent-challenge.json";
@@ -783,6 +783,13 @@ const ACTIVATION_METHODS: Array<{
   safety: "safe" | "advanced";
   note: string;
 }> = [
+  {
+    id: "curl",
+    label: "One-line",
+    badge: "Install",
+    safety: "safe",
+    note: "Clones or uses ~/santaclawz-agent, installs dependencies, and activates from one local command."
+  },
   {
     id: "pnpm",
     label: "Repo pnpm",
@@ -830,6 +837,18 @@ function buildTicketedActivationCommand(
       `challenge: ${DEFAULT_CHALLENGE_FILE}`,
       "then: redeem ticket, write .env.santaclawz, serve challenge, connect relay, send heartbeat"
     ].join("\n");
+  }
+
+  if (method === "curl") {
+    const args = [
+      "curl -fsSL https://www.santaclawz.ai/install.sh | sh -s --",
+      "--ticket",
+      commandQuote(ticket),
+      runtimeDelivery.mode === "self-hosted" && runtimeDelivery.runtimeIngressUrl?.trim()
+        ? `--runtime-ingress-url ${commandQuote(runtimeDelivery.runtimeIngressUrl.trim())}`
+        : ""
+    ];
+    return args.filter(Boolean).join(" ");
   }
 
   const args = [
@@ -2662,7 +2681,7 @@ export function App() {
   const [coordinationTicketNowMs, setCoordinationTicketNowMs] = useState<number>(Date.now());
   const [issuedOwnershipChallenge, setIssuedOwnershipChallenge] = useState<IssuedOwnershipChallenge | null>(null);
   const [enrollmentTicket, setEnrollmentTicket] = useState<EnrollmentTicket | null>(null);
-  const [activationMethod, setActivationMethod] = useState<ActivationMethodId>("pnpm");
+  const [activationMethod, setActivationMethod] = useState<ActivationMethodId>(DEFAULT_ACTIVATION_METHOD.id);
   const [urlReservationSalt, setUrlReservationSalt] = useState<string>(createUrlReservationSalt());
   const [duplicateClaimTarget, setDuplicateClaimTarget] = useState<DuplicateClaimTarget | null>(null);
   const [sdkDraft, setSdkDraft] = useState<SdkWidgetDraft>({
