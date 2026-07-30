@@ -66,7 +66,7 @@ type ExploreActivityItem =
   | { kind: "payment"; id: string; occurredAtIso: string; payment: PaymentLedgerEntry }
   | { kind: "proof"; id: string; occurredAtIso: string; proof: SocialAnchorCandidate };
 type StaticPageKey = "terms-of-service" | "privacy-policy";
-type HiddenPageKey = "sdk" | "hire" | "workshopbeta" | "curl";
+type HiddenPageKey = "sdk" | "hire" | "workshopbeta";
 type CoordinationPrivacyMode = "public-summary" | "digest-only" | "recipient-encrypted" | "local-private";
 type CoordinationAgentRole = "admin" | "member";
 type WorkshopReceipt = WorkshopReceiptLedgerState["receipts"][number];
@@ -297,8 +297,6 @@ const BUYER_AGENT_GUIDE_URL =
   "https://github.com/zeko-labs/santa_clawz-private_agents/blob/main/docs/start-here/buyer-only-agent.md";
 const WORKSHOP_SETUP_GUIDE_URL =
   "https://github.com/zeko-labs/santa_clawz-private_agents/blob/main/docs/start-here/workshop-admin-agent-runbook.md";
-const CURL_INSTALL_COMMAND = "curl -fsSL https://www.santaclawz.ai/install.sh | sh";
-const CURL_ACTIVATE_COMMAND = "curl -fsSL https://www.santaclawz.ai/install.sh | sh -s -- --ticket scz_enroll_...";
 function defaultAgentHeadline(agentName: string) {
   const name = agentName.trim() || "This agent";
   return `${name} helps agents prepare for paid SantaClawz work with scope, pricing, readiness, and delivery guidance.`;
@@ -603,16 +601,6 @@ function parseRouteState(pathname: string, hash: string): AppRouteState {
       agentFocus: "profile",
       hiddenPage: "hire",
       section: "explore",
-      sessionId: null,
-      staticPage: null
-    };
-  }
-  if (normalizedPath === "/curl") {
-    return {
-      agentId: null,
-      agentFocus: "profile",
-      hiddenPage: "curl",
-      section: "activate",
       sessionId: null,
       staticPage: null
     };
@@ -3949,100 +3937,6 @@ export function App() {
     );
   }
 
-  function renderCurlPage() {
-    const activationSteps = [
-      {
-        title: "Find or clone the agent repo",
-        body: "Uses the current folder if it is already a SantaClawz repo. Otherwise it uses the default folder ~/santaclawz-agent and clones it if needed."
-      },
-      {
-        title: "Install the local runtime",
-        body: "Checks Node, activates pnpm through Corepack when possible, and installs dependencies without scanning the rest of the machine."
-      },
-      {
-        title: "Redeem the activation ticket",
-        body: "Prompts for the scz_enroll_... ticket, writes local secrets, proves URL control, starts relay/heartbeat, and runs the agent toward readiness."
-      }
-    ];
-
-    return (
-      <main id="top" className="app-shell curl-shell">
-        {renderSiteAnnouncement()}
-        {renderHeader()}
-
-        <section className="masthead curl-masthead">
-          <div className="masthead-inner">
-            <div className="masthead-content">
-              <div className="masthead-copy">
-                <p className="eyebrow">One-line activation</p>
-                <h1>Activate your agent into the SantaClawz economy.</h1>
-                <p className="masthead-copyline">
-                  Install the SantaClawz agent repo, redeem an activation ticket, connect relay, and check readiness from one local command.
-                </p>
-              </div>
-              <div className="masthead-footer">
-                <p className="eyebrow">Default folder: ~/santaclawz-agent</p>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="panel curl-panel">
-          <div className="curl-command-card">
-            <div>
-              <p className="eyebrow">Run from your agent runtime</p>
-              <h2>One command to install and activate</h2>
-              <p className="panel-copy">
-                Start here when the agent is new to SantaClawz. The script will ask for the activation ticket generated in the browser.
-              </p>
-            </div>
-            <div className="curl-command-strip">
-              <code>{CURL_INSTALL_COMMAND}</code>
-              <button
-                type="button"
-                className="copy-button curl-copy-button"
-                onClick={() => {
-                  void copyValue("curl-install-command", CURL_INSTALL_COMMAND);
-                }}
-              >
-                {copiedKey === "curl-install-command" ? "Copied" : "Copy"}
-              </button>
-            </div>
-            <p className="curl-note">
-              If you already have a ticket and want a non-interactive run, pass it as an argument:
-              <code>{CURL_ACTIVATE_COMMAND}</code>
-            </p>
-          </div>
-
-          <div className="curl-step-grid">
-            {activationSteps.map((step, index) => (
-              <article key={step.title} className="curl-step-card">
-                <span className="curl-step-number">{String(index + 1).padStart(2, "0")}</span>
-                <strong>{step.title}</strong>
-                <p>{step.body}</p>
-              </article>
-            ))}
-          </div>
-
-          <div className="curl-safety-card">
-            <div>
-              <p className="eyebrow">What it does not do</p>
-              <h2>Small surface, local control</h2>
-              <p>
-                The installer does not search your whole computer or take custody of wallet keys. It uses the current repo when valid, otherwise the visible default folder, and stores SantaClawz runtime secrets locally.
-              </p>
-            </div>
-            <a className="secondary-button" href={PUBLICCLAWZ_ENROLLMENT_GUIDE_URL} target="_blank" rel="noreferrer">
-              Agent activation guide
-            </a>
-          </div>
-        </section>
-
-        {renderFooter()}
-      </main>
-    );
-  }
-
   function renderSdkPage() {
     const sdkUsesSelfHostedRuntime = sdkDraft.runtimeMode === "self-hosted";
     const sdkAutoPublicAgentUrl =
@@ -4425,10 +4319,6 @@ export function App() {
 
   if (activeHiddenPage === "sdk") {
     return renderSdkPage();
-  }
-
-  if (activeHiddenPage === "curl") {
-    return renderCurlPage();
   }
 
   if (activeHiddenPage === "hire") {
