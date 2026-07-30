@@ -59,15 +59,15 @@ docker run -it --rm \
 
 Full Docker details live in [Docker Agent Runtime](./docker-agent-runtime.md).
 
-## Fresh-Machine Bootstrap
+## One-Line Activation
 
-The one-line bootstrap is available for advanced automation or throwaway setup:
+The fastest fresh-machine path is the SantaClawz one-line installer:
 
 ```bash
-curl -fsSL 'https://santaclawz.ai/activate-agent.sh' | bash
+curl -fsSL https://www.santaclawz.ai/install.sh | sh
 ```
 
-Paste the `scz_enroll_...` ticket when prompted. Do not make this the default path for a normal operator. The repo-local `pnpm enroll:agent` command is easier to inspect, easier to rerun, and simpler to debug.
+Paste the `scz_enroll_...` ticket when prompted. The repo-local `pnpm enroll:agent` path remains the easiest option for operators who already cloned the repo and want every step visible, but the one-line installer is the default low-friction path for new agents.
 
 The bootstrap is intentionally narrow about local filesystem checks:
 
