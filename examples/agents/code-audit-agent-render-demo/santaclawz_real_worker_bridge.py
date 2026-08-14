@@ -79,11 +79,51 @@ OPENAI_MODEL = os.environ.get(
 ).strip()
 OPENAI_ENABLE_VALUE = os.environ.get("CODE_AUDIT_USE_OPENAI", os.environ.get("CLAWZ_CODE_AUDIT_ENABLE_OPENAI", "true"))
 OPENAI_ENABLED = bool(OPENAI_API_KEY) and OPENAI_ENABLE_VALUE.lower() not in FALSE_ENV_VALUES
-OPENAI_REQUIRE_VALUE = os.environ.get("CODE_AUDIT_REQUIRE_OPENAI", os.environ.get("CLAWZ_CODE_AUDIT_REQUIRE_OPENAI", "true"))
+# Deterministic audit findings are the paid-work baseline. Model insight is useful
+# enrichment, but must never make a valid audit disappear when the model is slow or
+# temporarily unavailable.
+OPENAI_REQUIRE_VALUE = os.environ.get("CODE_AUDIT_REQUIRE_OPENAI", os.environ.get("CLAWZ_CODE_AUDIT_REQUIRE_OPENAI", "false"))
 OPENAI_REQUIRED = OPENAI_REQUIRE_VALUE.lower() not in FALSE_ENV_VALUES
-OPENAI_TIMEOUT_SECONDS = env_int("CODE_AUDIT_OPENAI_TIMEOUT_SECONDS", env_int("CLAWZ_CODE_AUDIT_OPENAI_TIMEOUT_SECONDS", 110), minimum=15, maximum=240)
-OPENAI_RETRY_ATTEMPTS = env_int("CODE_AUDIT_OPENAI_RETRY_ATTEMPTS", env_int("CLAWZ_CODE_AUDIT_OPENAI_RETRY_ATTEMPTS", 2), minimum=1, maximum=4)
+RELAY_RESPONSE_BUDGET_SECONDS = env_int(
+    "CODE_AUDIT_RELAY_RESPONSE_BUDGET_SECONDS",
+    env_int("CLAWZ_CODE_AUDIT_RELAY_RESPONSE_BUDGET_SECONDS", 90),
+    minimum=45,
+    maximum=110,
+)
+OPENAI_RESERVE_SECONDS = env_int(
+    "CODE_AUDIT_OPENAI_RESERVE_SECONDS",
+    env_int("CLAWZ_CODE_AUDIT_OPENAI_RESERVE_SECONDS", 35),
+    minimum=10,
+    maximum=75,
+)
 OPENAI_RETRY_BACKOFF_SECONDS = env_int("CODE_AUDIT_OPENAI_RETRY_BACKOFF_SECONDS", env_int("CLAWZ_CODE_AUDIT_OPENAI_RETRY_BACKOFF_SECONDS", 2), minimum=0, maximum=20)
+OPENAI_ENRICHMENT_BUDGET_SECONDS = max(15, RELAY_RESPONSE_BUDGET_SECONDS - OPENAI_RESERVE_SECONDS)
+CONFIGURED_OPENAI_RETRY_ATTEMPTS = env_int(
+    "CODE_AUDIT_OPENAI_RETRY_ATTEMPTS",
+    env_int("CLAWZ_CODE_AUDIT_OPENAI_RETRY_ATTEMPTS", 2),
+    minimum=1,
+    maximum=4,
+)
+MAX_OPENAI_ATTEMPTS_WITHIN_BUDGET = max(
+    1,
+    (OPENAI_ENRICHMENT_BUDGET_SECONDS + OPENAI_RETRY_BACKOFF_SECONDS)
+    // (15 + OPENAI_RETRY_BACKOFF_SECONDS),
+)
+OPENAI_RETRY_ATTEMPTS = min(CONFIGURED_OPENAI_RETRY_ATTEMPTS, 2, MAX_OPENAI_ATTEMPTS_WITHIN_BUDGET)
+CONFIGURED_OPENAI_TIMEOUT_SECONDS = env_int(
+    "CODE_AUDIT_OPENAI_TIMEOUT_SECONDS",
+    env_int("CLAWZ_CODE_AUDIT_OPENAI_TIMEOUT_SECONDS", 45),
+    minimum=15,
+    maximum=240,
+)
+OPENAI_TIMEOUT_SECONDS = min(
+    CONFIGURED_OPENAI_TIMEOUT_SECONDS,
+    max(
+        15,
+        (OPENAI_ENRICHMENT_BUDGET_SECONDS - OPENAI_RETRY_BACKOFF_SECONDS * (OPENAI_RETRY_ATTEMPTS - 1))
+        // OPENAI_RETRY_ATTEMPTS,
+    ),
+)
 STANDARD_AUDIT_DISCLAIMER = (
     "This agent output is intended to streamline and prioritize the audit process. "
     "It does not replace a formal security audit, independent verification, or "
@@ -2448,6 +2488,15 @@ def assert_openai_model_audit_completed(ai_insights: dict[str, Any]) -> None:
     )
 
 
+def normalize_verification_manifest_for_delivery(manifest: dict[str, Any]) -> dict[str, Any]:
+    """Keep direct worker responses valid even when no relay normalizer is present."""
+    normalized = dict(manifest)
+    for field in ("checks_performed", "files_produced", "blocked_suspicious_instructions"):
+        value = normalized.get(field)
+        normalized[field] = value if isinstance(value, list) else []
+    return normalized
+
+
 def run_worker(payload: dict[str, Any], raw_body: str) -> tuple[dict[str, Any], dict[str, Any]]:
     normalized = normalize_request(payload, raw_body)
     created_at = now_iso()
@@ -2586,6 +2635,7 @@ def run_worker(payload: dict[str, Any], raw_body: str) -> tuple[dict[str, Any], 
             }
             for item in deliverables
         ],
+        "blocked_suspicious_instructions": [],
         "finding_summary": {
             "finding_count": findings["finding_count"],
             "returned_finding_count": findings.get("returned_finding_count"),
@@ -2605,6 +2655,7 @@ def run_worker(payload: dict[str, Any], raw_body: str) -> tuple[dict[str, Any], 
             "target_status": target_summary.get("status"),
         },
     }
+    manifest = normalize_verification_manifest_for_delivery(manifest)
     verification_manifest_digest_sha256 = canonical_digest(manifest)
     zeko_attestation = {
         "schema_version": "santaclawz-zk-attestation-preview/1.1",
@@ -2758,7 +2809,8 @@ def failure_payload(message: str, status_code: int, request_id: str | None = Non
         "return_channel": "santaclawz",
         "agent_private": True,
         "completed_at": created_at,
-        "error": {
+        "error": message,
+        "failure": {
             "code": code,
             "message": message,
             "status_code": status_code,
