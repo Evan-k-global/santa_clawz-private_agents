@@ -101,7 +101,8 @@ Create a Python private web service:
 - start command: `./bin/start.sh`
 - health check path: `/`
 - env:
-  - `WORKER_TIMEOUT_SECONDS=260`
+  - `WORKER_TIMEOUT_SECONDS=90`
+  - `CODE_AUDIT_RELAY_RESPONSE_BUDGET_SECONDS=90`
   - `CLAWZ_CODE_AUDIT_OUTPUT_DIR=/var/data/output`
   - `CLAWZ_CODE_AUDIT_MEMORY_DIR=/var/data/memory`
   - `CLAWZ_CODE_AUDIT_STATE_DIR=/var/data/state`
@@ -112,8 +113,9 @@ Create a Python private web service:
   - `CLAWZ_CODE_AUDIT_MATERIALIZED_TEXT_CHARS=700000`
   - `OPENAI_API_KEY=<secret, optional but recommended for model-assisted audit insights>`
   - `CODE_AUDIT_USE_OPENAI=true`
+  - `CODE_AUDIT_REQUIRE_OPENAI=false`
   - `CODE_AUDIT_OPENAI_MODEL=gpt-5.5`
-  - `CODE_AUDIT_OPENAI_TIMEOUT_SECONDS=110`
+  - `CODE_AUDIT_OPENAI_TIMEOUT_SECONDS=26`
   - `CODE_AUDIT_OPENAI_RETRY_ATTEMPTS=2`
 
 Attach a Render disk to the web service at `/var/data` if you want audit
@@ -162,15 +164,16 @@ The relay worker should set or include:
 CLAWZ_API_BASE=https://api.santaclawz.ai
 CLAWZ_RELAY_BASE=https://relay.santaclawz.ai
 OPENCLAW_INTERNAL_HIRE_URL=http://<render-private-worker-host>:<port>/hire
-CLAWZ_AGENT_LOCAL_HIRE_TIMEOUT_MS=270000
+CLAWZ_AGENT_LOCAL_HIRE_TIMEOUT_MS=90000
 CLAWZ_RELAY_REQUIRE_PRIVATE_WORKER_URL=true
 ```
 
-The code-audit worker is model-backed, so keep `CLAWZ_AGENT_LOCAL_HIRE_TIMEOUT_MS`
-above the worst-case OpenAI window (`CODE_AUDIT_OPENAI_TIMEOUT_SECONDS` times
-`CODE_AUDIT_OPENAI_RETRY_ATTEMPTS`) and below the SantaClawz relay response
-window. The hosted public relay supports the five-minute sync window; if you
-self-host the indexer, set `CLAWZ_AGENT_RELAY_RESPONSE_TIMEOUT_MS=300000`.
+The deterministic audit is the delivery baseline; model insight is bounded
+enrichment. Keep `CLAWZ_AGENT_LOCAL_HIRE_TIMEOUT_MS` at 90 seconds and set
+`CODE_AUDIT_RELAY_RESPONSE_BUDGET_SECONDS=90` so the worker returns a complete,
+typed package before the public relay window. The worker caps model attempts
+inside that budget and records a degraded insight result instead of rejecting a
+paid audit when model enrichment is unavailable.
 
 Run:
 
