@@ -524,7 +524,7 @@ export function buildAgentProofBundle(input: InteropBuildInput): ClawzAgentProof
   });
 
   const paymentWithoutDigest = {
-    settlementAsset: "MINA" as const,
+    settlementAsset: "sETH" as const,
     settlementModel: "reserve-settle-refund" as const,
     payeeKey: input.consoleState.wallet.publicKey,
     spendModel: capabilityManifest.spendModel,

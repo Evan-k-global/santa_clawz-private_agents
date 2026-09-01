@@ -121,6 +121,8 @@ export interface ArtifactSummary {
 
 export type ZekoDeploymentMode =
   | "local-runtime"
+  | "planned-sepolia"
+  | "sepolia-live"
   | "planned-testnet"
   | "testnet-live"
   | "planned-mainnet"
@@ -145,6 +147,7 @@ export interface ZekoWitnessPlanSummary {
 export interface ZekoDeploymentState {
   chain: "zeko";
   networkId: string;
+  o1jsNetworkId?: string;
   mode: ZekoDeploymentMode;
   graphqlEndpoint: string;
   archiveEndpoint: string;

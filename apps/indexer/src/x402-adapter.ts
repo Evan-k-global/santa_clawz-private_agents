@@ -272,7 +272,11 @@ function toQueryString(sessionId: string): string {
 }
 
 function defaultZekoAssetSymbol(networkId: string): string {
-  return networkId.toLowerCase().endsWith(":testnet") ? "tMINA" : "MINA";
+  const normalizedNetworkId = networkId.toLowerCase();
+  if (normalizedNetworkId.includes("sepolia")) {
+    return "sETH";
+  }
+  return normalizedNetworkId.endsWith(":testnet") ? "tMINA" : "MINA";
 }
 
 function isRecord(value: unknown): value is JsonRecord {

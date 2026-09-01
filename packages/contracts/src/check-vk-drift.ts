@@ -8,12 +8,13 @@ import { DisclosureKernel } from "./disclosure/DisclosureKernel.js";
 import { EscrowKernel } from "./escrow/EscrowKernel.js";
 import { RegistryKernel } from "./registry/RegistryKernel.js";
 import { loadLocalEnv } from "./shared/load-env.js";
-import { normalizeGraphqlEndpoint } from "./shared/network.js";
+import { normalizeGraphqlEndpoint, o1jsNetworkIdForZekoNetwork } from "./shared/network.js";
 import { SessionKernel } from "./session/SessionKernel.js";
 import { TurnKernel } from "./turn/TurnKernel.js";
 
 interface DeploymentManifestFile {
   networkId?: string;
+  o1jsNetworkId?: string;
   mina?: string;
   archive?: string;
   results: Array<{
@@ -55,17 +56,21 @@ async function readJson<T>(filePath: string): Promise<T> {
 async function main() {
   await loadLocalEnv(process.cwd());
 
-  const deploymentPath = join(process.cwd(), "deployments", "latest-testnet.json");
+  const deploymentPath = join(process.cwd(), "deployments", "latest-sepolia.json");
   const deployment = await readJson<DeploymentManifestFile>(deploymentPath);
-  const networkId = deployment.networkId ?? process.env.ZEKO_NETWORK_ID ?? "testnet";
-  const mina = normalizeGraphqlEndpoint(deployment.mina ?? process.env.ZEKO_GRAPHQL ?? "https://testnet.zeko.io/graphql");
+  const networkId = deployment.networkId ?? process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
+  const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(
+    networkId,
+    deployment.o1jsNetworkId ?? process.env.ZEKO_O1JS_NETWORK_ID
+  );
+  const mina = normalizeGraphqlEndpoint(deployment.mina ?? process.env.ZEKO_GRAPHQL ?? "https://sepolia.zeko.io/graphql");
   const archive = normalizeGraphqlEndpoint(
-    deployment.archive ?? process.env.ZEKO_ARCHIVE ?? "https://archive.testnet.zeko.io/graphql"
+    deployment.archive ?? process.env.ZEKO_ARCHIVE ?? "https://sepolia.zeko.io/graphql"
   );
 
   Mina.setActiveInstance(
     Mina.Network({
-      networkId: networkId as never,
+      networkId: o1jsNetworkId as never,
       mina,
       archive
     })

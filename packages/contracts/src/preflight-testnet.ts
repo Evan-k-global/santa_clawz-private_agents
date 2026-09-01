@@ -4,7 +4,7 @@ import { join } from "node:path";
 
 import { Mina, PrivateKey, fetchAccount } from "o1js";
 import { loadLocalEnv } from "./shared/load-env.js";
-import { normalizeGraphqlEndpoint } from "./shared/network.js";
+import { normalizeGraphqlEndpoint, o1jsNetworkIdForZekoNetwork } from "./shared/network.js";
 
 type SecretResolution = {
   value: string | null;
@@ -139,7 +139,7 @@ function querySequencerPk(endpoint: string): {
     return {
       ok: false,
       endpoint,
-      note: error instanceof Error ? error.message : "Unable to query testnet endpoint."
+      note: error instanceof Error ? error.message : "Unable to query configured Zeko endpoint."
     };
   }
 }
@@ -176,12 +176,13 @@ async function inspectAccountStatus(
 async function main() {
   await loadLocalEnv(process.cwd());
 
-  const mina = normalizeGraphqlEndpoint(process.env.ZEKO_GRAPHQL ?? "https://testnet.zeko.io/graphql");
-  const archive = normalizeGraphqlEndpoint(process.env.ZEKO_ARCHIVE ?? "https://archive.testnet.zeko.io/graphql");
-  const networkId = process.env.ZEKO_NETWORK_ID ?? "testnet";
+  const mina = normalizeGraphqlEndpoint(process.env.ZEKO_GRAPHQL ?? "https://sepolia.zeko.io/graphql");
+  const archive = normalizeGraphqlEndpoint(process.env.ZEKO_ARCHIVE ?? "https://sepolia.zeko.io/graphql");
+  const networkId = process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
+  const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(networkId, process.env.ZEKO_O1JS_NETWORK_ID);
 
   const network = Mina.Network({
-    networkId: networkId as never,
+    networkId: o1jsNetworkId as never,
     mina,
     archive
   });
@@ -227,7 +228,7 @@ async function main() {
     ...(compileManifest.present ? [] : ["Missing compile artifact: packages/contracts/artifacts/latest-compile.json"]),
     ...(witnessPlan.present ? [] : ["Missing witness plan: packages/contracts/artifacts/deployment-witness-plan.json"]),
     ...(deployer.present ? [] : ["Missing deployer private key or keychain secret."]),
-    ...(deployer.present && deployer.funded === false ? ["Deployer account is not funded or not present on testnet."] : []),
+    ...(deployer.present && deployer.funded === false ? ["Deployer account is not funded or not present on configured Zeko network."] : []),
     ...kernels
       .filter((entry) => !entry.present)
       .map((entry) => `Missing contract private key for ${entry.label}.`)

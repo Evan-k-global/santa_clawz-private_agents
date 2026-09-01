@@ -2829,7 +2829,7 @@ export function App() {
           if (cancelled) {
             return;
           }
-          setZekoHealthError(nextError.message || "Zeko testnet status check failed.");
+          setZekoHealthError(nextError.message || "Zeko Sepolia status check failed.");
         });
     }
 

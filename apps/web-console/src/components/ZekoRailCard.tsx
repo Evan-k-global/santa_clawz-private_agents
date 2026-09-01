@@ -62,6 +62,12 @@ const FLOW_CHOICES: Array<{
 ];
 
 function formatMode(mode: ZekoDeploymentState["mode"]) {
+  if (mode === "sepolia-live") {
+    return "Live Sepolia";
+  }
+  if (mode === "planned-sepolia") {
+    return "Planned Sepolia";
+  }
   if (mode === "mainnet-live") {
     return "Live mainnet";
   }
@@ -120,7 +126,10 @@ export function ZekoRailCard({
   const [refundAmountMina, setRefundAmountMina] = useState("0.05");
   const [revocationReason, setRevocationReason] = useState("governed-review-window-expired");
 
-  const canRunFlow = deployment.mode === "testnet-live" || deployment.mode === "mainnet-live";
+  const canRunFlow =
+    deployment.mode === "sepolia-live" ||
+    deployment.mode === "testnet-live" ||
+    deployment.mode === "mainnet-live";
   const latestStep = liveFlow.steps.at(-1);
   const recentSteps = liveFlow.steps.slice(-2).reverse();
   const isRunning =
@@ -304,7 +313,7 @@ export function ZekoRailCard({
             </select>
           </label>
           <label className="launcher-field">
-            <span>Refund amount (MINA)</span>
+            <span>Refund amount (sETH)</span>
             <input
               className="launcher-input"
               value={refundAmountMina}
@@ -398,10 +407,10 @@ export function ZekoRailCard({
             <span className="subtle-pill">disclosure {shorten(selectedTurnTarget.latestDisclosureId)}</span>
           ) : null}
           {selectedTurnTarget?.spentMina ? (
-            <span className="subtle-pill">spent {selectedTurnTarget.spentMina} MINA</span>
+            <span className="subtle-pill">spent {selectedTurnTarget.spentMina} sETH</span>
           ) : null}
           {selectedTurnTarget?.refundedMina ? (
-            <span className="subtle-pill">refunded {selectedTurnTarget.refundedMina} MINA</span>
+            <span className="subtle-pill">refunded {selectedTurnTarget.refundedMina} sETH</span>
           ) : null}
           {selectedTurnTarget?.lastOccurredAtIso ? (
             <span className="subtle-pill">{formatTimestamp(selectedTurnTarget.lastOccurredAtIso)}</span>
@@ -515,13 +524,13 @@ export function ZekoRailCard({
             {actionLabel}
           </button>
           {!canRunFlow ? (
-            <span className="subtle-pill">Live execution unlocks after a testnet deployment is loaded.</span>
+            <span className="subtle-pill">Live execution unlocks after a Sepolia deployment is loaded.</span>
           ) : null}
           {missingTarget ? (
             <span className="subtle-pill">This action needs an indexed target before it can be submitted.</span>
           ) : null}
           {selectedFlowKind === "refund-turn" && !refundAmountIsValid ? (
-            <span className="subtle-pill">Enter a MINA amount like 0.05.</span>
+            <span className="subtle-pill">Enter a sETH amount like 0.05.</span>
           ) : null}
           {liveFlow.resumeAvailable && liveFlow.resumeFromStepLabel ? (
             <span className="subtle-pill">Resume from {liveFlow.resumeFromStepLabel}</span>

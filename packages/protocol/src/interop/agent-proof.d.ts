@@ -67,7 +67,7 @@ export interface AgentAuthorityClaim {
     claimDigest: CanonicalDigest;
 }
 export interface AgentPaymentClaim {
-    settlementAsset: "MINA";
+    settlementAsset: "sETH";
     settlementModel: "sponsored-shadow-wallet" | "reserve-settle-refund";
     payeeKey: string;
     spendModel: CapabilityManifest["spendModel"];

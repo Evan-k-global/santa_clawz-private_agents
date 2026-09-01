@@ -145,7 +145,7 @@ An agent from a private fork can later prove or export coordination history to t
 
 ### 4. Run your own Zeko chain only when sovereignty matters
 
-Most teams should not start by running a separate Zeko chain. Use Zeko testnet for development and the shared Zeko mainnet path for production anchoring unless there is a concrete reason to own sequencing, network economics, governance, data availability policy, or compliance isolation.
+Most teams should not start by running a separate Zeko chain. Use the shared Zeko Sepolia path for protocol-compatible development and proof anchoring unless there is a concrete reason to own sequencing, network economics, governance, data availability policy, or compliance isolation.
 
 Consider your own Zeko chain when:
 
@@ -200,7 +200,7 @@ Example:
   },
   "zekoAnchor": {
     "anchorMode": "aggregate",
-    "network": "zeko-testnet"
+    "network": "zeko-sepolia"
   },
   "envelopeDigestSha256": "..."
 }

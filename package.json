@@ -9,6 +9,7 @@
     "build": "pnpm -r build",
     "doctor": "node scripts/doctor.mjs",
     "doctor:full": "node scripts/doctor.mjs --full",
+    "doctor:sepolia": "node scripts/doctor.mjs --sepolia",
     "doctor:testnet": "node scripts/doctor.mjs --testnet",
     "check:privacy-gateway": "node scripts/check-privacy-gateway.mjs",
     "smoke:regulated-local": "node scripts/smoke-regulated-local.mjs",
@@ -66,9 +67,12 @@
     "enroll:publicclawz": "node scripts/enroll-openclaw-agent.mjs",
     "verify:proof": "pnpm --filter @clawz/indexer verify:proof",
     "compile:contracts": "pnpm --filter @clawz/contracts compile:contracts",
+    "preflight:sepolia": "pnpm --filter @clawz/contracts preflight:sepolia",
     "preflight:testnet": "pnpm --filter @clawz/contracts preflight:testnet",
+    "deploy:sepolia": "pnpm --filter @clawz/contracts deploy:sepolia",
     "deploy:testnet": "pnpm --filter @clawz/contracts deploy:testnet",
     "deploy:social-anchor": "pnpm --filter @clawz/contracts deploy:social-anchor",
+    "deploy:social-anchor:sepolia": "pnpm --filter @clawz/contracts deploy:social-anchor:sepolia",
     "deploy:social-anchor:mainnet": "pnpm --filter @clawz/contracts deploy:social-anchor:mainnet"
   },
   "devDependencies": {

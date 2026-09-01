@@ -619,7 +619,7 @@ async function testPersistenceFlow() {
     assert.equal(initialState.artifacts.length, 1);
     assert.equal(initialState.deployment.chain, "zeko");
     assert.ok(
-      ["local-runtime", "planned-testnet", "testnet-live", "planned-mainnet", "mainnet-live"].includes(
+      ["local-runtime", "planned-sepolia", "sepolia-live", "planned-testnet", "testnet-live", "planned-mainnet", "mainnet-live"].includes(
         initialState.deployment.mode
       )
     );
@@ -666,7 +666,7 @@ async function testPersistenceFlow() {
     assert.equal(directBundle.ownership.publicClawzUrl, `https://santaclawz.ai/agent/${encodeURIComponent(initialState.agentId)}`);
     assert.equal(directBundle.ownership.challengeUrl, undefined);
     assert.equal(directBundle.authority.sessionId, initialState.session.sessionId);
-    assert.equal(directBundle.payment.settlementAsset, "MINA");
+    assert.equal(directBundle.payment.settlementAsset, "sETH");
     assert.ok(Array.isArray(directBundle.originProofs));
     assert.ok(directBundle.originProofs.length >= 1);
     assert.equal(directBundle.exampleToolReceipt.originProofRef, directBundle.originProofs[0].originProofId);
@@ -725,7 +725,7 @@ async function testPersistenceFlow() {
     const verification = await waitForJson(`${baseUrl}/api/interop/verify`, SERVER_READY_TIMEOUT_MS, server);
     assert.equal(verification.ok, true);
     assert.equal(verification.source.mode, "self");
-    assert.equal(verification.question.payment.settlementAsset, "MINA");
+    assert.equal(verification.question.payment.settlementAsset, "sETH");
     assert.ok(verification.question.origin.proofCount >= 1);
     assert.equal(verification.summary.bundleDigestSha256, currentBundle.bundleDigest.sha256Hex);
 

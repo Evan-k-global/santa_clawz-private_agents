@@ -20,7 +20,7 @@ export const trustModes: TrustModeCard[] = [
     operatorVisible: true,
     providerVisible: true,
     proofLevel: "Signed",
-    maxSpend: "0.08 MINA",
+    maxSpend: "0.08 sETH",
     retention: "24h checkpoint",
     stripe: ["Visible to your workspace", "Provider approved", "Quick retention"]
   },
@@ -31,7 +31,7 @@ export const trustModes: TrustModeCard[] = [
     operatorVisible: false,
     providerVisible: false,
     proofLevel: "Rooted",
-    maxSpend: "0.18 MINA",
+    maxSpend: "0.18 sETH",
     retention: "72h zero-retention",
     stripe: ["Visible only to you", "Operator blind", "Deleted after completion"]
   },
@@ -42,7 +42,7 @@ export const trustModes: TrustModeCard[] = [
     operatorVisible: false,
     providerVisible: false,
     proofLevel: "Rooted + replay proofs",
-    maxSpend: "0.25 MINA",
+    maxSpend: "0.25 sETH",
     retention: "Checkpoint only",
     stripe: ["Operator blind", "Receipt complete", "Selective disclosure only"]
   },
@@ -53,7 +53,7 @@ export const trustModes: TrustModeCard[] = [
     operatorVisible: false,
     providerVisible: false,
     proofLevel: "Policy proofs",
-    maxSpend: "0.40 MINA",
+    maxSpend: "0.40 sETH",
     retention: "Workspace sealed",
     stripe: ["Visible to your workspace", "Privacy exceptions required", "Compliance scoped"]
   }
@@ -85,7 +85,7 @@ export const ghostPlan = [
   "Open 1 approved external host in browser mode",
   "Emit 1 operator-blind artifact manifest",
   "Request no raw-content provider routing",
-  "Reserve 0.18 MINA and refund unused spend"
+  "Reserve 0.18 sETH and refund unused spend"
 ];
 
 export const timeMachineEntries = [
@@ -111,6 +111,6 @@ export const timeMachineEntries = [
     id: "turn_0012",
     label: "Turn 12",
     outcome: "Budget refunded",
-    note: "Reserved 0.25 MINA, spent 0.13 MINA, refunded 0.12 MINA."
+    note: "Reserved 0.25 sETH, spent 0.13 sETH, refunded 0.12 sETH."
   }
 ];

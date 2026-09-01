@@ -76,14 +76,15 @@ Optional:
 --agent-id agent_...
 --api-base https://api.santaclawz.ai
 --social-anchor-public-key B62...
---network-id testnet
---mina https://testnet.zeko.io/graphql
---archive https://archive.testnet.zeko.io/graphql
+--network-id zeko:sepolia
+--o1js-network-id testnet
+--mina https://sepolia.zeko.io/graphql
+--archive https://sepolia.zeko.io/graphql
 --fee 100000000
 --json
 ```
 
-For Zeko mainnet:
+For Zeko Sepolia:
 
 ```bash
 pnpm social-anchor:submit -- \
@@ -92,14 +93,15 @@ pnpm social-anchor:submit -- \
   --submitter-private-key EKF... \
   --social-anchor-private-key EKF... \
   --social-anchor-public-key B62... \
-  --network-id zeko:zeko-mainnet \
-  --mina https://mainnet.zeko.io/graphql \
-  --archive https://archive.mainnet.zeko.io/graphql \
-  --fee 200000000 \
+  --network-id zeko:sepolia \
+  --o1js-network-id testnet \
+  --mina https://sepolia.zeko.io/graphql \
+  --archive https://sepolia.zeko.io/graphql \
+  --fee 100000000 \
   --json
 ```
 
-Self-serve anchoring is disabled on managed testnet by default, but is allowed for mainnet operators when the exported batch itself reports a mainnet network id.
+Self-serve anchoring is disabled on managed non-mainnet networks by default. Operators can enable it for local development or private Sepolia deployments with `CLAWZ_ALLOW_NON_MAINNET_SELF_SERVE_SOCIAL_ANCHOR=true`. The legacy `CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR` name is still honored for older deployments.
 
 The script:
 
@@ -159,4 +161,4 @@ The important boundary is:
 - SantaClawz controls the managed queueing experience
 - the self-serve path preserves protocol portability
 
-For the shared SantaClawz mainnet deployment path, see [`zeko-mainnet-anchoring.md`](./zeko-mainnet-anchoring.md).
+For the shared SantaClawz Sepolia deployment path, see [`zeko-sepolia-anchoring.md`](./zeko-sepolia-anchoring.md).

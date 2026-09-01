@@ -9,7 +9,7 @@ import {
 } from "o1js";
 
 import { SocialAnchorKernel } from "../social/SocialAnchorKernel.js";
-import { normalizeGraphqlEndpoint } from "./network.js";
+import { normalizeGraphqlEndpoint, o1jsNetworkIdForZekoNetwork } from "./network.js";
 
 const ZERO_FIELD = Field.fromJSON("0");
 const NANO_MINA_PER_MINA = 1_000_000_000n;
@@ -32,6 +32,7 @@ export interface SubmitSocialAnchorBatchOnZekoInput extends SocialAnchorBatchCom
   socialAnchorPrivateKey: string;
   socialAnchorPublicKey?: string;
   networkId?: string;
+  o1jsNetworkId?: string;
   mina?: string;
   archive?: string;
   fee?: string;
@@ -336,15 +337,17 @@ async function findAnchoredBatchEvent(
 export async function readSocialAnchorKernelStateOnZeko(input: {
   socialAnchorPublicKey: string;
   networkId?: string;
+  o1jsNetworkId?: string;
   mina?: string;
   archive?: string;
 }): Promise<SocialAnchorKernelObservedState> {
-  const networkId = input.networkId ?? "testnet";
-  const mina = normalizeGraphqlEndpoint(input.mina ?? "https://testnet.zeko.io/graphql");
+  const networkId = input.networkId ?? "zeko:sepolia";
+  const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(networkId, input.o1jsNetworkId);
+  const mina = normalizeGraphqlEndpoint(input.mina ?? "https://sepolia.zeko.io/graphql");
   const archive = normalizeGraphqlEndpoint(input.archive ?? mina);
   Mina.setActiveInstance(
     Mina.Network({
-      networkId: networkId as never,
+      networkId: o1jsNetworkId as never,
       mina,
       archive
     })
@@ -393,11 +396,12 @@ async function waitForAnchoredBatchRoot(
 export async function submitSocialAnchorBatchOnZeko(
   input: SubmitSocialAnchorBatchOnZekoInput
 ): Promise<SubmitSocialAnchorBatchOnZekoResult> {
-  const networkId = input.networkId ?? "testnet";
-  const mina = normalizeGraphqlEndpoint(input.mina ?? "https://testnet.zeko.io/graphql");
+  const networkId = input.networkId ?? "zeko:sepolia";
+  const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(networkId, input.o1jsNetworkId);
+  const mina = normalizeGraphqlEndpoint(input.mina ?? "https://sepolia.zeko.io/graphql");
   const archive = normalizeGraphqlEndpoint(input.archive ?? mina);
   const network = Mina.Network({
-    networkId: networkId as never,
+    networkId: o1jsNetworkId as never,
     mina,
     archive
   });

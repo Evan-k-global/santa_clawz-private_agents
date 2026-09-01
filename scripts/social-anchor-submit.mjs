@@ -2,24 +2,37 @@ import { createClawzAgentClient } from "../packages/agent-sdk/dist/index.js";
 import { submitSocialAnchorBatchOnZeko } from "../packages/contracts/dist/contracts/src/shared/social-anchor-live.js";
 
 const DEFAULT_API_BASE = process.env.CLAWZ_API_BASE?.trim() || "https://api.santaclawz.ai";
-const DEFAULT_NETWORK_ID = process.env.ZEKO_NETWORK_ID?.trim() || "testnet";
-const DEFAULT_MINA =
+const DEFAULT_NETWORK_ID = process.env.ZEKO_NETWORK_ID?.trim() || "zeko:sepolia";
+const DEFAULT_SEPOLIA_GRAPHQL = "https://sepolia.zeko.io/graphql";
+const DEFAULT_GRAPHQL_ENDPOINT =
   process.env.ZEKO_GRAPHQL?.trim() ||
-  (isMainnetNetworkId(DEFAULT_NETWORK_ID) ? "https://mainnet.zeko.io/graphql" : "https://testnet.zeko.io/graphql");
+  (isSepoliaNetworkId(DEFAULT_NETWORK_ID)
+    ? DEFAULT_SEPOLIA_GRAPHQL
+    : isMainnetNetworkId(DEFAULT_NETWORK_ID)
+      ? "https://mainnet.zeko.io/graphql"
+      : "https://testnet.zeko.io/graphql");
 const DEFAULT_ARCHIVE =
   process.env.ZEKO_ARCHIVE?.trim() ||
-  (isMainnetNetworkId(DEFAULT_NETWORK_ID)
+  (isSepoliaNetworkId(DEFAULT_NETWORK_ID)
+    ? DEFAULT_SEPOLIA_GRAPHQL
+    : isMainnetNetworkId(DEFAULT_NETWORK_ID)
     ? "https://archive.mainnet.zeko.io/graphql"
     : "https://archive.testnet.zeko.io/graphql");
-const TESTNET_SELF_SERVE_OVERRIDE = process.env.CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR?.trim().toLowerCase();
-const ALLOW_TESTNET_SELF_SERVE =
-  TESTNET_SELF_SERVE_OVERRIDE === "1" ||
-  TESTNET_SELF_SERVE_OVERRIDE === "true" ||
-  TESTNET_SELF_SERVE_OVERRIDE === "yes";
+const NON_MAINNET_SELF_SERVE_OVERRIDE =
+  process.env.CLAWZ_ALLOW_NON_MAINNET_SELF_SERVE_SOCIAL_ANCHOR?.trim().toLowerCase() ??
+  process.env.CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR?.trim().toLowerCase();
+const ALLOW_NON_MAINNET_SELF_SERVE =
+  NON_MAINNET_SELF_SERVE_OVERRIDE === "1" ||
+  NON_MAINNET_SELF_SERVE_OVERRIDE === "true" ||
+  NON_MAINNET_SELF_SERVE_OVERRIDE === "yes";
 
 function isMainnetNetworkId(value) {
   const normalized = String(value ?? "").trim().toLowerCase();
   return normalized.includes("mainnet") && !normalized.includes("testnet");
+}
+
+function isSepoliaNetworkId(value) {
+  return String(value ?? "").trim().toLowerCase().includes("sepolia");
 }
 
 function endpointLooksTestnet(value) {
@@ -40,9 +53,10 @@ function printUsage() {
     [--submitter-private-key EKF...] \\
     [--social-anchor-private-key EKF...] \\
     [--social-anchor-public-key B62...] \\
-    [--network-id testnet] \\
-    [--mina https://testnet.zeko.io/graphql] \\
-    [--archive https://archive.testnet.zeko.io/graphql] \\
+    [--network-id zeko:sepolia] \\
+    [--o1js-network-id testnet] \\
+    [--mina https://sepolia.zeko.io/graphql] \\
+    [--archive https://sepolia.zeko.io/graphql] \\
     [--fee 100000000] \\
     [--json]`);
 }
@@ -98,16 +112,18 @@ const socialAnchorPublicKey =
   (typeof args["social-anchor-public-key"] === "string" ? args["social-anchor-public-key"].trim() : undefined) ??
   process.env.CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY?.trim();
 const networkId = typeof args["network-id"] === "string" ? args["network-id"].trim() : DEFAULT_NETWORK_ID;
-const mina = typeof args.mina === "string" ? args.mina.trim() : DEFAULT_MINA;
+const o1jsNetworkId =
+  typeof args["o1js-network-id"] === "string" ? args["o1js-network-id"].trim() : process.env.ZEKO_O1JS_NETWORK_ID?.trim();
+const graphqlEndpoint = typeof args.mina === "string" ? args.mina.trim() : DEFAULT_GRAPHQL_ENDPOINT;
 const archive = typeof args.archive === "string" ? args.archive.trim() : DEFAULT_ARCHIVE;
 const fee = typeof args.fee === "string" ? args.fee.trim() : process.env.TX_FEE?.trim();
 const networkIsMainnet = isMainnetNetworkId(networkId);
 
-if (networkIsMainnet && (endpointLooksTestnet(mina) || endpointLooksTestnet(archive))) {
+if (networkIsMainnet && (endpointLooksTestnet(graphqlEndpoint) || endpointLooksTestnet(archive))) {
   throw new Error("Zeko mainnet social anchoring cannot use testnet GraphQL or archive endpoints.");
 }
 
-if (!networkIsMainnet && (endpointLooksMainnet(mina) || endpointLooksMainnet(archive))) {
+if (!networkIsMainnet && (endpointLooksMainnet(graphqlEndpoint) || endpointLooksMainnet(archive))) {
   throw new Error("Mainnet endpoints require --network-id zeko:zeko-mainnet.");
 }
 
@@ -138,9 +154,9 @@ const batch = await client.getSocialAnchorBatchExport({
   ...(agentId ? { agentId } : {})
 });
 
-if (!ALLOW_TESTNET_SELF_SERVE && !isMainnetNetworkId(batch.networkId)) {
+if (!ALLOW_NON_MAINNET_SELF_SERVE && !isMainnetNetworkId(batch.networkId)) {
   throw new Error(
-    `Self-serve social anchoring is disabled for ${batch.networkId}. Use the shared batch on testnet, or set CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR=true for a local dev override.`
+    `Self-serve social anchoring is disabled for ${batch.networkId}. Use the shared Sepolia batch, or set CLAWZ_ALLOW_NON_MAINNET_SELF_SERVE_SOCIAL_ANCHOR=true for a local dev override.`
   );
 }
 
@@ -152,7 +168,8 @@ const submission = await submitSocialAnchorBatchOnZeko({
   socialAnchorPrivateKey,
   ...(socialAnchorPublicKey ?? batch.contractAddress ? { socialAnchorPublicKey: socialAnchorPublicKey ?? batch.contractAddress } : {}),
   networkId,
-  mina,
+  ...(o1jsNetworkId ? { o1jsNetworkId } : {}),
+  mina: graphqlEndpoint,
   archive,
   ...(fee ? { fee } : {})
 });

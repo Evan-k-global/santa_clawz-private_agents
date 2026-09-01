@@ -10,3 +10,17 @@ export function normalizeGraphqlEndpoint(value: string): string {
 
   return trimmed.endsWith("/graphql") ? trimmed : `${trimmed}/graphql`;
 }
+
+export function o1jsNetworkIdForZekoNetwork(networkId: string, override?: string): string {
+  const trimmedOverride = override?.trim();
+  if (trimmedOverride) {
+    return trimmedOverride;
+  }
+
+  const normalized = networkId.trim().toLowerCase();
+  if (normalized.includes("sepolia") || normalized === "zeko:testnet" || normalized === "testnet") {
+    return "testnet";
+  }
+
+  return networkId;
+}

@@ -50,7 +50,7 @@ export function TrustDial({ modes, activeMode, onChange }: TrustDialProps) {
         </div>
         <div>
           <span>Spend ceiling</span>
-          <strong>{current.maxSpendMina} MINA</strong>
+          <strong>{current.maxSpendMina} sETH</strong>
         </div>
         <div>
           <span>Retention</span>

@@ -5,7 +5,10 @@ import { AccountUpdate, Mina, PrivateKey } from "o1js";
 
 import { SocialAnchorKernel } from "../dist/contracts/src/social/SocialAnchorKernel.js";
 import { loadLocalEnv } from "../dist/contracts/src/shared/load-env.js";
-import { normalizeGraphqlEndpoint } from "../dist/contracts/src/shared/network.js";
+import {
+  normalizeGraphqlEndpoint,
+  o1jsNetworkIdForZekoNetwork
+} from "../dist/contracts/src/shared/network.js";
 
 await loadLocalEnv(process.cwd());
 
@@ -17,7 +20,9 @@ if (!deployerPrivateKey) {
 const deployer = PrivateKey.fromBase58(deployerPrivateKey);
 const socialAnchorKey = PrivateKey.random();
 const socialAnchorPublicKey = socialAnchorKey.toPublicKey();
-const networkId = process.env.ZEKO_NETWORK_ID ?? "testnet";
+const DEFAULT_SEPOLIA_GRAPHQL = "https://sepolia.zeko.io/graphql";
+const networkId = process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
+const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(networkId, process.env.ZEKO_O1JS_NETWORK_ID);
 
 function networkLooksMainnet(value) {
   const normalized = String(value ?? "").toLowerCase();
@@ -33,6 +38,10 @@ function endpointLooksMainnet(value) {
   return normalized.includes("mainnet") && !normalized.includes("testnet");
 }
 
+function networkLooksSepolia(value) {
+  return String(value ?? "").toLowerCase().includes("sepolia");
+}
+
 function networkSlug(value) {
   return String(value ?? "testnet")
     .toLowerCase()
@@ -42,12 +51,13 @@ function networkSlug(value) {
 }
 
 const isMainnet = networkLooksMainnet(networkId);
+const isSepolia = networkLooksSepolia(networkId);
 const mina = normalizeGraphqlEndpoint(
-  process.env.ZEKO_GRAPHQL ?? (isMainnet ? "https://mainnet.zeko.io/graphql" : "https://testnet.zeko.io/graphql")
+  process.env.ZEKO_GRAPHQL ?? (isSepolia ? DEFAULT_SEPOLIA_GRAPHQL : isMainnet ? "https://mainnet.zeko.io/graphql" : "https://testnet.zeko.io/graphql")
 );
 const archive = normalizeGraphqlEndpoint(
   process.env.ZEKO_ARCHIVE ??
-    (isMainnet ? "https://archive.mainnet.zeko.io/graphql" : "https://archive.testnet.zeko.io/graphql")
+    (isSepolia ? DEFAULT_SEPOLIA_GRAPHQL : isMainnet ? "https://archive.mainnet.zeko.io/graphql" : "https://archive.testnet.zeko.io/graphql")
 );
 const fee = process.env.TX_FEE ?? "100000000";
 const confirmMainnet =
@@ -65,7 +75,7 @@ if (!isMainnet && (endpointLooksMainnet(mina) || endpointLooksMainnet(archive)))
   throw new Error("Mainnet endpoints require ZEKO_NETWORK_ID=zeko:zeko-mainnet and explicit mainnet confirmation.");
 }
 
-Mina.setActiveInstance(Mina.Network({ networkId, mina, archive }));
+Mina.setActiveInstance(Mina.Network({ networkId: o1jsNetworkId, mina, archive }));
 
 async function fetchAccountViaGraphql(publicKey) {
   const response = await fetch(mina, {
@@ -130,6 +140,7 @@ const publicPath = join(deploymentsDir, `latest-social-anchor-${deploymentSuffix
 const deployment = {
   label: "SocialAnchorKernel",
   networkId,
+  o1jsNetworkId,
   mina,
   archive,
   fee,
@@ -150,6 +161,7 @@ console.log(
     {
       phase: "deployed",
       networkId,
+      o1jsNetworkId,
       socialAnchorPublicKey: deployment.socialAnchorPublicKey,
       txHash: deployment.txHash,
       publicPath,
