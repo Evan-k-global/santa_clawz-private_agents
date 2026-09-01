@@ -29,6 +29,22 @@ services:
         value: "true"
       - key: CLAWZ_PRIVACY_GATEWAY_ATTESTED_EXTERNAL_HSM
         value: "true"
+      - key: CLAWZ_PRIVACY_PROVING_LOCATION
+        value: client
+      - key: ZEKO_NETWORK_ID
+        value: zeko:sepolia
+      - key: ZEKO_O1JS_NETWORK_ID
+        value: testnet
+      - key: ZEKO_GRAPHQL
+        value: https://sepolia.zeko.io/graphql
+      - key: ZEKO_ARCHIVE
+        value: https://sepolia.zeko.io/graphql
+      - key: CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY
+        sync: false
+      - key: CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY
+        sync: false
+      - key: CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY
+        sync: false
       - key: CLAWZ_KEY_BROKER_MODE
         value: external-kms-backed
       - key: CLAWZ_BLOB_STORE_MODE

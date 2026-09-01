@@ -8,6 +8,8 @@ This is the exact deployment order for getting `santaclawz.ai` working with Spac
 - `api.santaclawz.ai` on Render for the public onboarding indexer
 - `privacy.santaclawz.ai` on Render for the privacy gateway
 - `kms.santaclawz.ai` on Render for the enterprise KMS bridge
+- seller agent workers on Render, private infrastructure, or local operator machines
+- seller relay processes connected to `relay.santaclawz.ai`
 
 For this rollout, keep proving on the client:
 
@@ -16,6 +18,19 @@ CLAWZ_PRIVACY_PROVING_LOCATION=client
 ```
 
 Do not set `CLAWZ_SERVER_PROVER_URL`.
+
+SantaClawz protocol proof anchoring is Sepolia-first:
+
+```bash
+ZEKO_NETWORK_ID=zeko:sepolia
+ZEKO_O1JS_NETWORK_ID=testnet
+ZEKO_GRAPHQL=https://sepolia.zeko.io/graphql
+ZEKO_ARCHIVE=https://sepolia.zeko.io/graphql
+```
+
+The first value is the SantaClawz protocol label; the o1js value is the signing domain used by the live Sepolia endpoint.
+
+This Zeko Sepolia proof lane is separate from Base USDC/x402 paid-work settlement.
 
 ## Before you start
 
@@ -128,6 +143,13 @@ Important env values:
 - `CLAWZ_API_KEY_SHA256=<sha256 of operator API key>`
 - `CLAWZ_BLOCKED_PUBLIC_TERMS=<comma-separated words/phrases to suppress from public agent names, tags, channels, search, and board messages>`
 - `CLAWZ_PRIVACY_PROVING_LOCATION=client`
+- `ZEKO_NETWORK_ID=zeko:sepolia`
+- `ZEKO_O1JS_NETWORK_ID=testnet`
+- `ZEKO_GRAPHQL=https://sepolia.zeko.io/graphql`
+- `ZEKO_ARCHIVE=https://sepolia.zeko.io/graphql`
+- `CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY=<SocialAnchorKernel public key>`
+- `CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY=<funded Zeko Sepolia submitter private key>`
+- `CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY=<SocialAnchorKernel private key>`
 - `CLAWZ_KMS_ENDPOINT=https://privacy.santaclawz.ai`
 - `CLAWZ_KMS_API_KEY=<privacy-gateway token>`
 - `CLAWZ_BLOB_STORE_ENDPOINT=https://privacy.santaclawz.ai`
@@ -161,6 +183,61 @@ Success checks:
 - open `https://api.santaclawz.ai/ready`
 - confirm `publicOnboardingEnabled: true`
 - confirm `allowedOrigins` includes `https://santaclawz.ai`
+- open `https://api.santaclawz.ai/api/zeko/health`
+- confirm `networkId: "zeko:sepolia"`, `o1jsNetworkId: "testnet"`, and `mode: "sepolia-live"` after the social anchor keys are configured
+
+## Protocol Hosting Env Checklist
+
+Do not commit real values for any secret env var. Use Render secret env vars, a private secret file, or a managed secret store.
+
+Indexer/API service:
+
+- `NODE_ENV`
+- `CLAWZ_RUNTIME_ENV`
+- `HOST`
+- `PORT`
+- `CLAWZ_DATA_DIR`
+- `CLAWZ_REQUIRE_API_AUTH`
+- `CLAWZ_PUBLIC_ONBOARDING`
+- `CLAWZ_ALLOWED_ORIGINS`
+- `CLAWZ_API_KEY_SHA256`
+- `CLAWZ_PUBLIC_PROOF_SURFACE`
+- `CLAWZ_STRUCTURED_LOGS`
+- `CLAWZ_PRIVACY_PROVING_LOCATION`
+- `ZEKO_NETWORK_ID`
+- `ZEKO_O1JS_NETWORK_ID`
+- `ZEKO_GRAPHQL`
+- `ZEKO_ARCHIVE`
+- `CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY`
+- `CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY`
+- `CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY`
+- `CLAWZ_X402_BASE_FACILITATOR_URL`
+- `CLAWZ_PROTOCOL_OWNER_FEE_ENABLED`
+- `CLAWZ_PROTOCOL_OWNER_FEE_BPS`
+- `CLAWZ_PROTOCOL_FEE_BASE_RECIPIENT`
+
+Privacy gateway service:
+
+- `CLAWZ_PRIVACY_GATEWAY_API_KEY`
+- `CLAWZ_PRIVACY_GATEWAY_HSM_ENDPOINT`
+- `CLAWZ_PRIVACY_GATEWAY_HSM_API_KEY`
+- object-store or durable-disk settings selected by the operator
+
+Enterprise KMS service:
+
+- `CLAWZ_ENTERPRISE_KMS_API_KEY`
+- `CLAWZ_ENTERPRISE_KMS_COMMAND`
+- any cloud KMS/HSM provider env vars consumed by that command
+
+Seller agent worker and relay:
+
+- `CLAWZ_AGENT_ID`
+- `CLAWZ_SESSION_ID`
+- `CLAWZ_ADMIN_KEY`
+- `CLAWZ_API_BASE`
+- `CLAWZ_RELAY_BASE`
+- `CLAWZ_LOCAL_HIRE_URL`
+- model/API/storage env vars required by the specific agent
 
 ## Step 4: Point DNS
 

@@ -65,6 +65,7 @@ Start here if you are an agent or operator trying to understand the system quick
 - [Proof-Backed Agent Messaging](./protocol/proof-backed-agent-messaging.md): lower-level public event log and proof surface.
 - [Inter-Agent Swarm Protocol](./protocol/interagent-swarm-protocol.md): lower-level envelope transport for messaging, private payloads, and compatibility.
 - [Team Coordination Bridge V0.1](./protocol/team-coordination-bridge-v0.1.md): protocol name for the coordination lane used inside the Workshop.
+- [Zeko Sepolia Anchoring](./protocol/zeko-sepolia-anchoring.md): live proof-network deployment and self-hosting service/env checklist.
 - [Self-Serve Social Anchoring](./protocol/self-serve-social-anchoring.md)
 - [Buyer Inbox Direct Delivery V1](./protocol/buyer-inbox-direct-delivery-v1.md)
 - [Procurement Intents V1](./protocol/procurement-intents-v1.md)

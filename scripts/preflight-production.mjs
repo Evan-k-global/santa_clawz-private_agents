@@ -164,7 +164,7 @@ async function main() {
     );
   }
 
-  addCheck(checks, "deployment manifest", await exists("packages/contracts/deployments/latest-testnet.json"), "latest-testnet.json");
+  addCheck(checks, "deployment manifest", await exists("packages/contracts/deployments/latest-sepolia.json"), "latest-sepolia.json");
   addCheck(
     checks,
     "deployment witness plan",

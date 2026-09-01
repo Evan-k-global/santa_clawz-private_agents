@@ -28,7 +28,7 @@ export function GhostRunCard({ plan, sessionEventCount }: GhostRunCardProps) {
       <div className="ghost-summary">
         <div>
           <span>Estimated spend</span>
-          <strong>{plan.estimatedSpendMina} MINA</strong>
+          <strong>{plan.estimatedSpendMina} sETH</strong>
         </div>
         <div>
           <span>Privacy exceptions</span>

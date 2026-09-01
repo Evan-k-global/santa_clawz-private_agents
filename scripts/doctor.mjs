@@ -28,10 +28,10 @@ const MODES = {
       ["pnpm", ["test:interop-sdk"]]
     ]
   },
-  testnet: {
-    label: "testnet",
+  sepolia: {
+    label: "sepolia",
     commands: [
-      ["pnpm", ["preflight:testnet"]],
+      ["pnpm", ["preflight:sepolia"]],
       ["pnpm", ["--filter", "@clawz/contracts", "check:vk-drift"]]
     ]
   }
@@ -49,8 +49,8 @@ function parseArgs(argv) {
       continue;
     }
 
-    if (token === "--testnet") {
-      mode = "testnet";
+    if (token === "--sepolia" || token === "--testnet") {
+      mode = "sepolia";
       continue;
     }
 
@@ -76,7 +76,7 @@ function parseArgs(argv) {
 function printUsage() {
   console.log(
     [
-      "Usage: node scripts/doctor.mjs [--full | --testnet] [--json]",
+      "Usage: node scripts/doctor.mjs [--full | --sepolia] [--json]",
       "",
       "Modes:",
       "  quick     Build + privacy-runtime sanity checks (default)",
@@ -166,7 +166,7 @@ async function collectStaticChecks(mode) {
     }
   ];
 
-  if (mode === "testnet") {
+  if (mode === "sepolia") {
     checks.push(
       {
         label: "contracts env file",
@@ -182,8 +182,8 @@ async function collectStaticChecks(mode) {
       },
       {
         label: "deployment manifest",
-        ok: await exists("packages/contracts/deployments/latest-testnet.json"),
-        detail: "packages/contracts/deployments/latest-testnet.json"
+        ok: await exists("packages/contracts/deployments/latest-sepolia.json"),
+        detail: "packages/contracts/deployments/latest-sepolia.json"
       }
     );
   }

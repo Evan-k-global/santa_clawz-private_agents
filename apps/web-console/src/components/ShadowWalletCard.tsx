@@ -83,7 +83,7 @@ export function ShadowWalletCard({
       <div className="summary-strip compact-summary">
         <span className="subtle-pill">Focus {shorten(session.sessionId)}</span>
         <span className="subtle-pill">Mode {wallet.trustModeId}</span>
-        <span className="subtle-pill">Budget {wallet.sponsoredRemainingMina} / {wallet.sponsoredBudgetMina} MINA</span>
+        <span className="subtle-pill">Budget {wallet.sponsoredRemainingMina} / {wallet.sponsoredBudgetMina} sETH</span>
         <span className="subtle-pill">{session.knownSessionIds?.length ?? 1} indexed sessions</span>
       </div>
       {session.knownSessionIds && session.knownSessionIds.length > 0 ? (

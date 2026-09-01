@@ -8,7 +8,7 @@ import {
   isRetryableSocialAnchorError
 } from "../dist/contracts/src/index.js";
 
-test("social anchor fee quote defaults to the standard 0.10 MINA floor", () => {
+test("social anchor fee quote defaults to the standard 0.10 sETH floor", () => {
   const quote = estimateSocialAnchorFeeQuote();
 
   assert.equal(quote.feeRaw, "100000000");

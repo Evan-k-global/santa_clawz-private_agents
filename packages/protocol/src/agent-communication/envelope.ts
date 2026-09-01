@@ -76,7 +76,7 @@ export interface AgentMessageEnvelopeZekoAnchor {
   batchId?: string;
   rootDigestSha256?: string;
   txHash?: string;
-  network?: "zeko-testnet" | "zeko-mainnet" | "custom";
+  network?: "zeko-sepolia" | "zeko-testnet" | "zeko-mainnet" | "custom";
 }
 
 export interface AgentMessageEnvelope {

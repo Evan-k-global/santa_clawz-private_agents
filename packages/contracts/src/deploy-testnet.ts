@@ -9,7 +9,7 @@ import { DisclosureKernel } from "./disclosure/DisclosureKernel.js";
 import { EscrowKernel } from "./escrow/EscrowKernel.js";
 import { RegistryKernel } from "./registry/RegistryKernel.js";
 import { loadLocalEnv } from "./shared/load-env.js";
-import { normalizeGraphqlEndpoint } from "./shared/network.js";
+import { normalizeGraphqlEndpoint, o1jsNetworkIdForZekoNetwork } from "./shared/network.js";
 import { SessionKernel } from "./session/SessionKernel.js";
 import { buildDeploymentWitnessPlan } from "./shared/witness-builders.js";
 import { SocialAnchorKernel } from "./social/SocialAnchorKernel.js";
@@ -144,6 +144,7 @@ async function deployContract(
 
 async function writeDeploymentManifest(payload: {
   networkId: string;
+  o1jsNetworkId: string;
   mina: string;
   archive: string;
   fee: string;
@@ -154,7 +155,13 @@ async function writeDeploymentManifest(payload: {
   const deploymentsDir = join(process.cwd(), "deployments");
   await mkdir(deploymentsDir, { recursive: true });
 
-  const latestPath = join(deploymentsDir, "latest-testnet.json");
+  const networkSlug =
+    payload.networkId
+      .toLowerCase()
+      .replace(/^zeko:/, "")
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "sepolia";
+  const latestPath = join(deploymentsDir, `latest-${networkSlug}.json`);
   const witnessPlanPath = join(deploymentsDir, "latest-witness-plan.json");
   const witnessPlan = buildDeploymentWitnessPlan();
   await writeFile(witnessPlanPath, `${JSON.stringify(witnessPlan, null, 2)}\n`, "utf8");
@@ -181,11 +188,12 @@ async function main() {
   await loadLocalEnv(process.cwd());
 
   const deployer = PrivateKey.fromBase58(requireSecret("DEPLOYER_PRIVATE_KEY", "ZekoAI_SUBMITTER_PRIVATE_KEY"));
-  const mina = normalizeGraphqlEndpoint(process.env.ZEKO_GRAPHQL ?? "https://testnet.zeko.io/graphql");
-  const archive = normalizeGraphqlEndpoint(process.env.ZEKO_ARCHIVE ?? "https://archive.testnet.zeko.io/graphql");
-  const networkId = process.env.ZEKO_NETWORK_ID ?? "testnet";
+  const mina = normalizeGraphqlEndpoint(process.env.ZEKO_GRAPHQL ?? "https://sepolia.zeko.io/graphql");
+  const archive = normalizeGraphqlEndpoint(process.env.ZEKO_ARCHIVE ?? "https://sepolia.zeko.io/graphql");
+  const networkId = process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
+  const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(networkId, process.env.ZEKO_O1JS_NETWORK_ID);
   const network = Mina.Network({
-    networkId: networkId as never,
+    networkId: o1jsNetworkId as never,
     mina,
     archive
   });
@@ -196,6 +204,7 @@ async function main() {
   const deployerAccount = await fetchAccount({ publicKey: deployer.toPublicKey() });
 
   console.log(`Deploying to network ${networkId}`);
+  console.log(`o1js signing network: ${o1jsNetworkId}`);
   console.log(`GraphQL endpoint: ${mina}`);
   console.log(`Archive endpoint: ${archive}`);
   console.log(`Deployer public key: ${deployerPublicKey}`);
@@ -255,6 +264,7 @@ async function main() {
 
   await writeDeploymentManifest({
     networkId,
+    o1jsNetworkId,
     mina,
     archive,
     fee,

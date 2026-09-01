@@ -17,6 +17,16 @@ CLAWZ_STRUCTURED_LOGS=true
 CLAWZ_PRIVACY_GATEWAY_ATTESTED_EXTERNAL_HSM=true
 CLAWZ_PRIVACY_PROVING_LOCATION=client
 
+# Zeko Sepolia proof anchoring. These are protocol hosting settings, not
+# Base USDC/x402 settlement settings.
+ZEKO_NETWORK_ID=zeko:sepolia
+ZEKO_O1JS_NETWORK_ID=testnet
+ZEKO_GRAPHQL=https://sepolia.zeko.io/graphql
+ZEKO_ARCHIVE=https://sepolia.zeko.io/graphql
+CLAWZ_SOCIAL_ANCHOR_PUBLIC_KEY=replace_with_social_anchor_public_key
+CLAWZ_SOCIAL_ANCHOR_SUBMITTER_PRIVATE_KEY=replace_with_funded_submitter_private_key
+CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY=replace_with_social_anchor_private_key
+
 CLAWZ_KEY_BROKER_MODE=external-kms-backed
 CLAWZ_KMS_ENDPOINT=https://privacy.santaclawz.ai
 CLAWZ_KMS_API_KEY=replace_with_long_random_gateway_token

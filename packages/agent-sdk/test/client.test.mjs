@@ -386,7 +386,7 @@ async function main() {
     const verification = await client.getVerification();
     assert.equal(verification.ok, true);
     assert.equal(verification.source.mode, "self");
-    assert.equal(verification.question.payment.settlementAsset, "MINA");
+    assert.equal(verification.question.payment.settlementAsset, "sETH");
     assert.ok(verification.question.origin.proofCount >= 1);
 
     const remoteVerification = await client.getVerification({ url: baseUrl });

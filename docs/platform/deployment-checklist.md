@@ -2,25 +2,27 @@
 
 ## Contracts
 
-Before touching testnet from a fresh machine, run:
+Before touching Zeko Sepolia from a fresh machine, run:
 
 ```bash
 pnpm doctor
-pnpm doctor:testnet
+pnpm doctor:sepolia
 ```
 
-For Zeko mainnet proof anchoring, use the dedicated social anchor runbook after testnet checks pass:
+For Zeko Sepolia proof anchoring, use the dedicated social anchor runbook:
 
-- [`docs/protocol/zeko-mainnet-anchoring.md`](../protocol/zeko-mainnet-anchoring.md)
+- [`docs/protocol/zeko-sepolia-anchoring.md`](../protocol/zeko-sepolia-anchoring.md)
 
-Mainnet requires explicit confirmation and must use:
+Sepolia must use:
 
 ```bash
-ZEKO_NETWORK_ID=zeko:zeko-mainnet
-ZEKO_GRAPHQL=https://mainnet.zeko.io/graphql
-ZEKO_ARCHIVE=https://archive.mainnet.zeko.io/graphql
-ZEKO_CONFIRM_MAINNET=true
+ZEKO_NETWORK_ID=zeko:sepolia
+ZEKO_O1JS_NETWORK_ID=testnet
+ZEKO_GRAPHQL=https://sepolia.zeko.io/graphql
+ZEKO_ARCHIVE=https://sepolia.zeko.io/graphql
 ```
+
+`ZEKO_NETWORK_ID` is the SantaClawz protocol label. `ZEKO_O1JS_NETWORK_ID` is the o1js signing domain expected by the live Sepolia endpoint.
 
 1. Copy `packages/contracts/.env.example` to a local `.env`.
 2. Fill in `DEPLOYER_PRIVATE_KEY`, or store the same value in the macOS Keychain service `ZekoAI_SUBMITTER_PRIVATE_KEY`.
@@ -31,7 +33,7 @@ ZEKO_CONFIRM_MAINNET=true
    `ClawZ_APPROVAL_PRIVATE_KEY`,
    `ClawZ_DISCLOSURE_PRIVATE_KEY`,
    `ClawZ_ESCROW_PRIVATE_KEY`.
-4. Ensure the deployer key is funded on Zeko testnet and `ZEKO_GRAPHQL` points at the intended endpoint.
+4. Ensure the deployer key is funded on Zeko Sepolia and `ZEKO_GRAPHQL` points at the intended endpoint.
 5. Compile contracts:
 
 ```bash
@@ -43,12 +45,12 @@ That compile step now also writes:
 - `packages/contracts/artifacts/latest-compile.json`
 - `packages/contracts/artifacts/deployment-witness-plan.json`
 
-Use those artifacts as the preflight source of truth for the exact kernel calls and proof inputs you expect to submit once Zeko testnet is available again.
+Use those artifacts as the preflight source of truth for the exact kernel calls and proof inputs you expect to submit to Zeko Sepolia.
 
 6. Run the machine-checked preflight:
 
 ```bash
-pnpm --filter @clawz/contracts preflight:testnet
+pnpm preflight:sepolia
 ```
 
 That preflight checks:
@@ -70,12 +72,12 @@ If any kernel reports a mismatch, redeploy before trusting a live-flow failure a
 8. Deploy the kernels:
 
 ```bash
-pnpm --filter @clawz/contracts deploy:testnet
+pnpm deploy:sepolia
 ```
 
 That deploy step writes:
 
-- `packages/contracts/deployments/latest-testnet.json`
+- `packages/contracts/deployments/latest-sepolia.json`
 - `packages/contracts/deployments/latest-witness-plan.json`
 
 The deployment witness-plan file is the portable handoff artifact for moving from this machine into the actual deployment environment.
@@ -164,10 +166,10 @@ That set is enough to support:
 - selective disclosure
 - budget reservation and refund
 
-## Suggested mainnet proof deployment
+## Suggested Sepolia proof deployment
 
-For initial SantaClawz mainnet proof anchoring, deploy only:
+For initial SantaClawz Sepolia proof anchoring, deploy only:
 
 - `SocialAnchorKernel`
 
-Keep the other kernels on testnet until the broader live-flow surface is intentionally promoted. The social anchor kernel is enough for public proof and reputation commitments without changing paid x402 settlement rails.
+Keep the other kernels out of the critical production path until the broader live-flow surface is intentionally promoted. The social anchor kernel is enough for public proof and reputation commitments without changing paid x402 settlement rails.

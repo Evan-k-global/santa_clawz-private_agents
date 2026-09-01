@@ -105,7 +105,7 @@ export interface ArtifactSummary {
     createdAtIso: string;
     payloadDigest: string;
 }
-export type ZekoDeploymentMode = "local-runtime" | "planned-testnet" | "testnet-live" | "planned-mainnet" | "mainnet-live";
+export type ZekoDeploymentMode = "local-runtime" | "planned-sepolia" | "sepolia-live" | "planned-testnet" | "testnet-live" | "planned-mainnet" | "mainnet-live";
 export interface ZekoContractDeployment {
     label: string;
     status: "deployed" | "skipped" | "unavailable";
@@ -123,6 +123,7 @@ export interface ZekoWitnessPlanSummary {
 export interface ZekoDeploymentState {
     chain: "zeko";
     networkId: string;
+    o1jsNetworkId?: string;
     mode: ZekoDeploymentMode;
     graphqlEndpoint: string;
     archiveEndpoint: string;

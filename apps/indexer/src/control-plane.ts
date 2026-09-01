@@ -380,7 +380,7 @@ export class DuplicatePublicClawzUrlError extends Error {
 }
 
 export class SelfServeSocialAnchoringDisabledError extends Error {
-  constructor(message = "Self-serve social anchoring is disabled on testnet deployments.") {
+  constructor(message = "Self-serve social anchoring is disabled on managed Sepolia deployments.") {
     super(message);
     this.name = "SelfServeSocialAnchoringDisabledError";
   }
@@ -447,6 +447,7 @@ interface OwnershipChallengeIssueResult {
 
 interface DeploymentManifestFile {
   networkId?: string;
+  o1jsNetworkId?: string;
   mina?: string;
   archive?: string;
   fee?: string;
@@ -3053,16 +3054,39 @@ function networkIdValueLooksMainnet(value: unknown): boolean {
   return networkId.includes("mainnet") && !networkId.includes("testnet");
 }
 
+function networkIdValueLooksSepolia(value: unknown): boolean {
+  return String(value ?? "").toLowerCase().includes("sepolia");
+}
+
+function o1jsNetworkIdForZekoNetwork(networkId: string, override?: string): string {
+  const trimmedOverride = override?.trim();
+  if (trimmedOverride) {
+    return trimmedOverride;
+  }
+  const normalized = networkId.trim().toLowerCase();
+  if (normalized.includes("sepolia") || normalized === "zeko:testnet" || normalized === "testnet") {
+    return "testnet";
+  }
+  return networkId;
+}
+
 function zekoDeploymentMode(input: {
   hasLiveContracts: boolean;
   hasConfiguredEndpoint: boolean;
   networkId: string;
 }): ZekoDeploymentState["mode"] {
   const isMainnet = networkIdValueLooksMainnet(input.networkId);
+  const isSepolia = networkIdValueLooksSepolia(input.networkId);
   if (input.hasLiveContracts) {
+    if (isSepolia) {
+      return "sepolia-live";
+    }
     return isMainnet ? "mainnet-live" : "testnet-live";
   }
   if (input.hasConfiguredEndpoint) {
+    if (isSepolia) {
+      return "planned-sepolia";
+    }
     return isMainnet ? "planned-mainnet" : "planned-testnet";
   }
   return "local-runtime";
@@ -3131,8 +3155,11 @@ function envFlagEnabled(name: string): boolean {
   return value === "1" || value === "true" || value === "yes";
 }
 
-function allowTestnetSelfServeSocialAnchor(): boolean {
-  return envFlagEnabled("CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR");
+function allowNonMainnetSelfServeSocialAnchor(): boolean {
+  return (
+    envFlagEnabled("CLAWZ_ALLOW_NON_MAINNET_SELF_SERVE_SOCIAL_ANCHOR") ||
+    envFlagEnabled("CLAWZ_ALLOW_TESTNET_SELF_SERVE_SOCIAL_ANCHOR")
+  );
 }
 
 function requireQuoteBuyerWalletProof(): boolean {
@@ -4155,7 +4182,7 @@ function effectiveSocialAnchorMode(
   mode: AgentProfileState["socialAnchorPolicy"]["mode"],
   deployment: Pick<ZekoDeploymentState, "networkId" | "mode">
 ): AgentProfileState["socialAnchorPolicy"]["mode"] {
-  if (mode === "priority-self-funded" && (isMainnetNetwork(deployment) || allowTestnetSelfServeSocialAnchor())) {
+  if (mode === "priority-self-funded" && (isMainnetNetwork(deployment) || allowNonMainnetSelfServeSocialAnchor())) {
     return "priority-self-funded";
   }
   return "shared-batched";
@@ -5089,7 +5116,7 @@ export class ClawzControlPlane {
     this.workspaceRoot = findWorkspaceRoot(path.dirname(fileURLToPath(import.meta.url)));
     this.statePath = path.join(baseDir, "state", "console.json");
     this.eventsPath = path.join(baseDir, "state", "events.json");
-    this.deploymentManifestPath = path.join(this.workspaceRoot, "packages", "contracts", "deployments", "latest-testnet.json");
+    this.deploymentManifestPath = path.join(this.workspaceRoot, "packages", "contracts", "deployments", "latest-sepolia.json");
     this.deploymentWitnessPlanPath = path.join(this.workspaceRoot, "packages", "contracts", "deployments", "latest-witness-plan.json");
     this.legacyWitnessPlanPath = path.join(this.workspaceRoot, "packages", "contracts", "artifacts", "deployment-witness-plan.json");
     this.liveFlowReportPath = path.join(this.workspaceRoot, "packages", "contracts", "deployments", "latest-session-turn-flow.json");
@@ -6167,7 +6194,7 @@ export class ClawzControlPlane {
     batchId: string;
     sessionId: string;
     rootDigestSha256: string;
-    deployment: Pick<ZekoDeploymentState, "networkId" | "graphqlEndpoint" | "archiveEndpoint" | "contracts">;
+    deployment: Pick<ZekoDeploymentState, "networkId" | "o1jsNetworkId" | "graphqlEndpoint" | "archiveEndpoint" | "contracts">;
   }) {
     const retryConfig = this.socialAnchorRetryConfig();
     const submitterPrivateKey =
@@ -6206,6 +6233,7 @@ export class ClawzControlPlane {
         ? { socialAnchorPublicKey: this.configuredSocialAnchorContractAddress(options.deployment)! }
         : {}),
       networkId: options.deployment.networkId,
+      ...(options.deployment.o1jsNetworkId ? { o1jsNetworkId: options.deployment.o1jsNetworkId } : {}),
       mina: options.deployment.graphqlEndpoint,
       archive: options.deployment.archiveEndpoint,
       ...(typeof process.env.TX_FEE === "string" && process.env.TX_FEE.trim().length > 0
@@ -6218,7 +6246,7 @@ export class ClawzControlPlane {
   }
 
   private async observeSocialAnchorKernel(
-    deployment: Pick<ZekoDeploymentState, "networkId" | "graphqlEndpoint" | "archiveEndpoint" | "contracts">
+    deployment: Pick<ZekoDeploymentState, "networkId" | "o1jsNetworkId" | "graphqlEndpoint" | "archiveEndpoint" | "contracts">
   ) {
     const socialAnchorPublicKey = this.configuredSocialAnchorContractAddress(deployment);
     if (!socialAnchorPublicKey) {
@@ -6228,6 +6256,7 @@ export class ClawzControlPlane {
     return readSocialAnchorKernelStateOnZeko({
       socialAnchorPublicKey,
       networkId: deployment.networkId,
+      ...(deployment.o1jsNetworkId ? { o1jsNetworkId: deployment.o1jsNetworkId } : {}),
       mina: deployment.graphqlEndpoint,
       archive: deployment.archiveEndpoint
     });
@@ -6546,7 +6575,7 @@ export class ClawzControlPlane {
       throw new Error("Ethereum payout wallet must be a valid EVM address.");
     }
     if (profile.payoutWallets.zeko && !looksLikeZekoAddress(profile.payoutWallets.zeko)) {
-      throw new Error("Zeko payout wallet must look like a valid Mina address.");
+      throw new Error("Zeko payout wallet must look like a valid Zeko account address.");
     }
     if (profile.paymentProfile.enabled) {
       const defaultRail = profile.paymentProfile.defaultRail ?? profile.paymentProfile.supportedRails[0] ?? "base-usdc";
@@ -8894,21 +8923,30 @@ export class ClawzControlPlane {
         ? "ClawZ is running with an external KMS boundary for workspace keys, durable wrapped-key persistence, and sealed blob manifests. This is the preferred enterprise mode when backed by a managed KMS or HSM service."
         : this.keyBrokerRuntime.mode === "durable-local-file-backed"
           ? "ClawZ is running with durable local tenant keys, wrapped-key persistence, and sealed blob manifests by default. For regulated deployments, switch the same interface boundary to external-kms-backed mode."
-          : "ClawZ is running in explicit in-memory privacy mode for isolated testing. Durable local or external KMS-backed key storage should back any real operator or testnet environment.";
+          : "ClawZ is running in explicit in-memory privacy mode for isolated testing. Durable local or external KMS-backed key storage should back any real operator or Sepolia environment.";
 
-    const networkId = manifest?.networkId ?? process.env.ZEKO_NETWORK_ID ?? "testnet";
-    const defaultGraphqlEndpoint = networkIdValueLooksMainnet(networkId)
-      ? "https://mainnet.zeko.io/graphql"
-      : "https://testnet.zeko.io/graphql";
-    const defaultArchiveEndpoint = networkIdValueLooksMainnet(networkId)
-      ? "https://archive.mainnet.zeko.io/graphql"
-      : "https://archive.testnet.zeko.io/graphql";
+    const networkId = manifest?.networkId ?? process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
+    const o1jsNetworkId = o1jsNetworkIdForZekoNetwork(
+      networkId,
+      manifest?.o1jsNetworkId ?? process.env.ZEKO_O1JS_NETWORK_ID
+    );
+    const defaultGraphqlEndpoint = networkIdValueLooksSepolia(networkId)
+      ? "https://sepolia.zeko.io/graphql"
+      : networkIdValueLooksMainnet(networkId)
+        ? "https://mainnet.zeko.io/graphql"
+        : "https://testnet.zeko.io/graphql";
+    const defaultArchiveEndpoint = networkIdValueLooksSepolia(networkId)
+      ? "https://sepolia.zeko.io/graphql"
+      : networkIdValueLooksMainnet(networkId)
+        ? "https://archive.mainnet.zeko.io/graphql"
+        : "https://archive.testnet.zeko.io/graphql";
     const graphqlEndpoint = manifest?.mina ?? process.env.ZEKO_GRAPHQL ?? defaultGraphqlEndpoint;
     const archiveEndpoint = manifest?.archive ?? process.env.ZEKO_ARCHIVE ?? defaultArchiveEndpoint;
 
     return {
       chain: "zeko",
       networkId,
+      o1jsNetworkId,
       mode: zekoDeploymentMode({
         hasLiveContracts,
         hasConfiguredEndpoint: Boolean(manifest?.mina ?? process.env.ZEKO_GRAPHQL ?? manifest?.networkId ?? process.env.ZEKO_NETWORK_ID),
@@ -11068,7 +11106,7 @@ export class ClawzControlPlane {
   }
 
   private assertSelfServeSocialAnchoringEnabled(deployment: Pick<ZekoDeploymentState, "networkId" | "mode">) {
-    if (isMainnetNetwork(deployment) || allowTestnetSelfServeSocialAnchor()) {
+    if (isMainnetNetwork(deployment) || allowNonMainnetSelfServeSocialAnchor()) {
       return;
     }
 
@@ -11156,7 +11194,7 @@ export class ClawzControlPlane {
                     status: "succeeded",
                     finishedAtIso,
                     txHash,
-                    note: `Sponsored ${nextJob.amountMina} MINA for ${nextJob.purpose}.`
+                    note: `Sponsored ${nextJob.amountMina} sETH for ${nextJob.purpose}.`
                   }
                 : job
             )

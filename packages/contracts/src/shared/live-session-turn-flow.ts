@@ -8,7 +8,7 @@ import { ApprovalKernel } from "../approval/ApprovalKernel.js";
 import { DisclosureKernel } from "../disclosure/DisclosureKernel.js";
 import { EscrowKernel } from "../escrow/EscrowKernel.js";
 import { loadLocalEnv } from "./load-env.js";
-import { normalizeGraphqlEndpoint } from "./network.js";
+import { normalizeGraphqlEndpoint, o1jsNetworkIdForZekoNetwork } from "./network.js";
 import {
   buildDefaultRuntimeLiveSessionTurnFlowInput,
   buildRuntimeFlowWitnessPlan,
@@ -23,6 +23,7 @@ const DEFAULT_TURN_ID = "turn_0011";
 
 interface DeploymentManifestFile {
   networkId?: string;
+  o1jsNetworkId?: string;
   mina?: string;
   archive?: string;
   fee?: string;
@@ -536,7 +537,7 @@ export async function executeLiveSessionTurnFlow(
 ): Promise<LiveSessionTurnFlowReport> {
   const workspaceRoot = options.workspaceRoot ?? findWorkspaceRoot(process.cwd());
   const contractsDir = path.join(workspaceRoot, "packages", "contracts");
-  const deploymentPath = path.join(contractsDir, "deployments", "latest-testnet.json");
+  const deploymentPath = path.join(contractsDir, "deployments", "latest-sepolia.json");
   const witnessPlanPath =
     options.witnessPlanPath ?? path.join(contractsDir, "deployments", "latest-runtime-session-turn-plan.json");
   const reportPath = options.reportPath ?? path.join(contractsDir, "deployments", "latest-session-turn-flow.json");
@@ -583,7 +584,7 @@ export async function executeLiveSessionTurnFlow(
     scenarioId: witnessPlan.scenarioId ?? runtimeInput?.scenarioId ?? "demo-enterprise-private-run",
     sessionId: resolvedSessionId,
     turnId: resolvedTurnId,
-    networkId: deployment.networkId ?? "testnet",
+    networkId: deployment.networkId ?? "zeko:sepolia",
     generatedAtIso: existingReport?.generatedAtIso ?? new Date().toISOString(),
     deploymentPath,
     witnessPlanPath,
@@ -598,11 +599,15 @@ export async function executeLiveSessionTurnFlow(
   };
 
   const deployer = PrivateKey.fromBase58(deployerSecret);
+  const protocolNetworkId = deployment.networkId ?? process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
   const network = Mina.Network({
-    networkId: deployment.networkId ?? process.env.ZEKO_NETWORK_ID ?? "testnet",
-    mina: normalizeGraphqlEndpoint(deployment.mina ?? process.env.ZEKO_GRAPHQL ?? "https://testnet.zeko.io/graphql"),
+    networkId: o1jsNetworkIdForZekoNetwork(
+      protocolNetworkId,
+      deployment.o1jsNetworkId ?? process.env.ZEKO_O1JS_NETWORK_ID
+    ) as never,
+    mina: normalizeGraphqlEndpoint(deployment.mina ?? process.env.ZEKO_GRAPHQL ?? "https://sepolia.zeko.io/graphql"),
     archive: normalizeGraphqlEndpoint(
-      deployment.archive ?? process.env.ZEKO_ARCHIVE ?? "https://archive.testnet.zeko.io/graphql"
+      deployment.archive ?? process.env.ZEKO_ARCHIVE ?? "https://sepolia.zeko.io/graphql"
     )
   });
   Mina.setActiveInstance(network);
