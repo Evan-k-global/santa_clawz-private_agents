@@ -57,7 +57,7 @@ function printUsage() {
     [--o1js-network-id testnet] \\
     [--mina https://sepolia.zeko.io/graphql] \\
     [--archive https://sepolia.zeko.io/graphql] \\
-    [--fee 100000000] \\
+    [--fee 200000] \\
     [--json]`);
 }
 

@@ -18,7 +18,13 @@ if (!deployerPrivateKey) {
 }
 
 const deployer = PrivateKey.fromBase58(deployerPrivateKey);
-const socialAnchorKey = PrivateKey.random();
+const configuredSocialAnchorPrivateKey =
+  process.env.CLAWZ_SOCIAL_ANCHOR_PRIVATE_KEY?.trim() ??
+  process.env.SOCIAL_ANCHOR_PRIVATE_KEY?.trim();
+const socialAnchorKey = configuredSocialAnchorPrivateKey
+  ? PrivateKey.fromBase58(configuredSocialAnchorPrivateKey)
+  : PrivateKey.random();
+const socialAnchorKeySource = configuredSocialAnchorPrivateKey ? "env" : "generated";
 const socialAnchorPublicKey = socialAnchorKey.toPublicKey();
 const DEFAULT_SEPOLIA_GRAPHQL = "https://sepolia.zeko.io/graphql";
 const networkId = process.env.ZEKO_NETWORK_ID ?? "zeko:sepolia";
@@ -59,7 +65,7 @@ const archive = normalizeGraphqlEndpoint(
   process.env.ZEKO_ARCHIVE ??
     (isSepolia ? DEFAULT_SEPOLIA_GRAPHQL : isMainnet ? "https://archive.mainnet.zeko.io/graphql" : "https://archive.testnet.zeko.io/graphql")
 );
-const fee = process.env.TX_FEE ?? "100000000";
+const fee = process.env.TX_FEE ?? "200000";
 const confirmMainnet =
   process.argv.includes("--confirm-mainnet") ||
   process.env.ZEKO_CONFIRM_MAINNET === "true" ||
@@ -111,7 +117,8 @@ console.log(
       archive,
       fee,
       deployerPublicKey: deployerPublicKey.toBase58(),
-      socialAnchorPublicKey: socialAnchorPublicKey.toBase58()
+      socialAnchorPublicKey: socialAnchorPublicKey.toBase58(),
+      socialAnchorKeySource
     },
     null,
     2
@@ -147,6 +154,7 @@ const deployment = {
   deployerPublicKey: deployerPublicKey.toBase58(),
   socialAnchorPublicKey: socialAnchorPublicKey.toBase58(),
   socialAnchorPrivateKey: socialAnchorKey.toBase58(),
+  socialAnchorKeySource,
   txHash: txHash ?? null,
   generatedAtIso: new Date().toISOString(),
   fundedNewAccount: true
@@ -163,6 +171,7 @@ console.log(
       networkId,
       o1jsNetworkId,
       socialAnchorPublicKey: deployment.socialAnchorPublicKey,
+      socialAnchorKeySource: deployment.socialAnchorKeySource,
       txHash: deployment.txHash,
       publicPath,
       privatePath,

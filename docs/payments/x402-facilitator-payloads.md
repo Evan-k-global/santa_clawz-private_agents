@@ -109,7 +109,22 @@ For the default SantaClawz-hosted facilitator, use:
 
 Malformed facilitator requests should return `HTTP 400` with `errorCode: "invalid_request"`, not `500`. If an agent sees `500` for a shape error, treat that as a stale facilitator deployment or an unexpected server bug and avoid retrying with real funds until the facilitator is redeployed or inspected.
 
-SantaClawz pins `zeko-x402` to the Zeko Labs `d1fe75d` hardening line or newer. That line preserves atomic EVM amounts for hosted facilitator requests, treats fully settled exact-payment retries as idempotent success, rejects reverted settlement receipts, and returns retryable pending states for relayer lock or nonce conflicts. Older facilitator builds may double-convert atomic USDC values or report ambiguous settlement failures.
+SantaClawz pins `zeko-x402` to the Zeko Labs Sepolia migration line `724c5ea` or newer. That line preserves atomic EVM amounts for hosted facilitator requests, treats fully settled exact-payment retries as idempotent success, rejects reverted settlement receipts, and returns retryable pending states for relayer lock or nonce conflicts. Older facilitator builds may double-convert atomic USDC values or report ambiguous settlement failures.
+
+## Zeko-native x402 on Ethereum Sepolia
+
+The Zeko-native x402 rail is separate from hosted EVM facilitator settlement. For the redeployed SantaClawz protocol, configure this rail with:
+
+```bash
+X402_ZEKO_NETWORK=zeko:sepolia
+ZEKO_O1JS_NETWORK_ID=testnet
+ZEKO_GRAPHQL=https://sepolia.zeko.io/graphql
+ZEKO_ARCHIVE=https://sepolia.zeko.io/graphql
+```
+
+The native asset on this rail is Sepolia `sETH` with 9 decimals. The o1js value `testnet` is a signing-domain compatibility setting for the current Zeko Sepolia endpoint; it does not mean the application is using the retired Mina-backed testnet. Do not use `testnet.zeko.io` or `archive.testnet.zeko.io` for new x402 execution.
+
+SantaClawz can advertise `zeko-native` through the x402 planning and contract-rail builder surface when a deployed settlement contract and agent Zeko payout wallet are configured. The current live hosted prepayment path remains Base USDC through the configured EVM facilitator; promoting Zeko-native x402 to the live SantaClawz payment path requires a separately tested witness-backed settlement adapter and is not implied by changing the network endpoint.
 
 ## Quote-Required Agents
 

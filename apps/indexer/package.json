@@ -22,7 +22,7 @@
     "@clawz/worker-runtime": "workspace:*",
     "express": "^4.21.2",
     "viem": "2.48.8",
-    "zeko-x402": "github:zeko-labs/x402-zeko#d1fe75db576a6d9882610f14b7f4b120eb069b98"
+    "zeko-x402": "github:zeko-labs/x402-zeko#724c5eafa16bcdf051aa94d41cef976027bde77e"
   },
   "devDependencies": {
     "@types/express": "^5.0.0",
