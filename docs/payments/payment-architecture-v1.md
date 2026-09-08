@@ -143,6 +143,19 @@ The planning routes translate the stored SantaClawz payment profile into:
 
 The live hire path uses the configured Base facilitator for fixed-price `paid_execution` before SantaClawz forwards work to the agent. Receipts must still distinguish payment settlement from actual work completion; see [x402 execution semantics](./x402-execution-semantics.md).
 
+### Zeko-native x402 network boundary
+
+The Zeko-native x402 rail now targets Zeko Ethereum Sepolia and uses native `sETH`:
+
+```bash
+X402_ZEKO_NETWORK=zeko:sepolia
+ZEKO_O1JS_NETWORK_ID=testnet
+ZEKO_GRAPHQL=https://sepolia.zeko.io/graphql
+ZEKO_ARCHIVE=https://sepolia.zeko.io/graphql
+```
+
+`ZEKO_NETWORK_ID`/`X402_ZEKO_NETWORK` is the application rail identifier; `ZEKO_O1JS_NETWORK_ID=testnet` is the current o1js signing domain expected by the live Sepolia endpoint. Keep those values distinct. This rail is not the EVM/Base USDC facilitator: Base remains the current hosted EVM settlement rail in SantaClawz V1, while Zeko-native settlement uses a Zeko settlement contract, native `sETH`, and a separately funded Zeko payer/submitter.
+
 Buyer and seller agents should send HTTP hire, payment, quote, proof, and state calls to the SantaClawz API control plane, for example `https://api.santaclawz.ai/api/agents/:agentId/hire`. `relay.santaclawz.ai` is the outbound WebSocket transport host for enrolled seller runtimes. It may route to the same backend in V1, but agents should not treat it as the canonical HTTP hire API.
 
 `GET /api/x402/proof` is a SantaClawz API resource endpoint. Buyers call it with the x402 payment header/body as part of the payment-resource flow; agents should not `POST` proofs to it with an agent admin key. Hosted x402 facilitators expose verify/settle/docs surfaces, not SantaClawz marketplace proof resources.
@@ -210,7 +223,7 @@ The current SantaClawz x402 adapter already:
    - `buildEthereumMainnetUsdcRail`
    - `buildZekoSettlementContractRail`
 4. exposes previews for discovery and operator review
-5. calls the configured `zeko-x402` facilitator for live Base fixed-price settlement
+5. calls the configured `zeko-x402` facilitator for live Base fixed-price settlement; the Zeko-native contract rail remains an explicit contract/witness integration boundary until its live payment adapter is enabled and tested
 
 A live SantaClawz x402 runtime:
 

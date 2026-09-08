@@ -36,6 +36,10 @@ CLAWZ_BLOB_STORE_API_KEY=replace_with_long_random_gateway_token
 
 # Optional Base-first hosted x402 payouts.
 CLAWZ_X402_BASE_FACILITATOR_URL=https://x402-zeko.example.com
+# Optional Zeko-native x402 contract rail on Zeko Ethereum Sepolia. This is
+# separate from the SocialAnchorKernel and requires a separately deployed,
+# witness-backed settlement adapter before it can be enabled for live payment.
+# CLAWZ_X402_ZEKO_SETTLEMENT_CONTRACT=B62...
 CLAWZ_PROTOCOL_OWNER_FEE_ENABLED=true
 CLAWZ_PROTOCOL_OWNER_FEE_BPS=100
 CLAWZ_PROTOCOL_OWNER_FEE_APPLIES_TO=santaclawz-marketplace

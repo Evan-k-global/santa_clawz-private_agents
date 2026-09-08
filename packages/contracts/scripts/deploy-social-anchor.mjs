@@ -65,7 +65,7 @@ const archive = normalizeGraphqlEndpoint(
   process.env.ZEKO_ARCHIVE ??
     (isSepolia ? DEFAULT_SEPOLIA_GRAPHQL : isMainnet ? "https://archive.mainnet.zeko.io/graphql" : "https://archive.testnet.zeko.io/graphql")
 );
-const fee = process.env.TX_FEE ?? "100000000";
+const fee = process.env.TX_FEE ?? "200000";
 const confirmMainnet =
   process.argv.includes("--confirm-mainnet") ||
   process.env.ZEKO_CONFIRM_MAINNET === "true" ||
