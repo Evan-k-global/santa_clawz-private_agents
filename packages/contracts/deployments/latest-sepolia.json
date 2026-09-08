@@ -1,0 +1,21 @@
+{
+  "networkId": "zeko:sepolia",
+  "o1jsNetworkId": "testnet",
+  "mina": "https://sepolia.zeko.io/graphql",
+  "archive": "https://sepolia.zeko.io/graphql",
+  "fee": "200000",
+  "deployer": "B62qqpyJPDGci2uxpapnXQmrFr77b47wRx1v2GDRnAHMUFJFjJv4YPb",
+  "generatedAt": "2026-09-08T21:00:07.759Z",
+  "results": [
+    {
+      "label": "SocialAnchorKernel",
+      "address": "B62qrsViMaVNm1oQDFejiMsgNp54wS54gNSKbFv9pnw4eSH9AR4xGsR",
+      "status": "deployed",
+      "fundedNewAccount": true,
+      "txHash": "5JvHBNrmTJvCmDWsstHMe77WWDfza6XoUDMsMVqvbV9KqsAsKD6h",
+      "secretSource": "env"
+    }
+  ],
+  "preparedContractCalls": 25,
+  "preparedProofCalls": 4
+}
