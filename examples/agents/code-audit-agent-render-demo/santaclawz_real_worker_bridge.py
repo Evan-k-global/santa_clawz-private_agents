@@ -398,6 +398,44 @@ def parse_github_target_url(url: str) -> dict[str, str] | None:
     return target
 
 
+def structured_job_context_github_targets(payload: dict[str, Any]) -> tuple[bool, list[dict[str, str]]]:
+    """Return canonical targets from jobContext.urls before considering prose URLs."""
+    input_block = as_dict(payload.get("input") or payload.get("job") or payload.get("request"))
+    containers = [payload, input_block, as_dict(payload.get("job")), as_dict(payload.get("request"))]
+    for container in containers:
+        for key in ("jobContext", "job_context"):
+            if key not in container:
+                continue
+            context = as_dict(container.get(key))
+            if "urls" not in context:
+                return True, []
+            raw_urls = as_list(context.get("urls"))
+            targets: list[dict[str, str]] = []
+            seen: set[str] = set()
+            for raw_url in raw_urls:
+                if not isinstance(raw_url, str) or not raw_url.strip():
+                    raise WorkerError(
+                        "jobContext.urls must contain complete public GitHub repository URLs.",
+                        400,
+                        "invalid_input",
+                    )
+                url = raw_url.strip().rstrip(".,;:")
+                target = parse_github_target_url(url)
+                if not target or not target.get("owner") or not target.get("repo"):
+                    raise WorkerError(
+                        "jobContext.urls must contain a valid public GitHub owner/repository pair.",
+                        400,
+                        "invalid_input",
+                    )
+                key_value = f"{target['owner']}/{target['repo']}:{target.get('materialized_as', '')}:{target.get('ref', '')}:{target.get('path', '')}"
+                if key_value in seen:
+                    continue
+                seen.add(key_value)
+                targets.append(target)
+            return True, targets
+    return False, []
+
+
 def fetch_limited_bytes(url: str, *, max_bytes: int, timeout: int = 20, accept: str = "application/zip,application/octet-stream,*/*") -> bytes:
     request = urllib.request.Request(
         url,
@@ -656,18 +694,24 @@ def materialize_github_target(target: dict[str, str]) -> dict[str, Any]:
 
 
 def materialize_external_targets(payload: dict[str, Any]) -> dict[str, Any]:
-    urls = extract_urls(payload)
-    github_targets: list[dict[str, str]] = []
-    seen: set[str] = set()
-    for url in urls:
-        target = parse_github_target_url(url)
-        if not target:
-            continue
-        key = f"{target['owner']}/{target['repo']}:{target.get('materialized_as', '')}:{target.get('ref', '')}:{target.get('path', '')}"
-        if key in seen:
-            continue
-        seen.add(key)
-        github_targets.append(target)
+    structured_context_present, structured_targets = structured_job_context_github_targets(payload)
+    if structured_context_present:
+        github_targets = structured_targets
+        url_source = "jobContext.urls"
+    else:
+        urls = extract_urls(payload)
+        github_targets = []
+        seen: set[str] = set()
+        for url in urls:
+            target = parse_github_target_url(url)
+            if not target or not target.get("owner") or not target.get("repo"):
+                continue
+            key = f"{target['owner']}/{target['repo']}:{target.get('materialized_as', '')}:{target.get('ref', '')}:{target.get('path', '')}"
+            if key in seen:
+                continue
+            seen.add(key)
+            github_targets.append(target)
+        url_source = "payload_url_fallback"
     targets = [materialize_github_target(target) for target in github_targets[:2]]
     files = [file for target in targets for file in as_list(target.get("files")) if isinstance(file, dict)]
     status = "not_requested"
@@ -683,7 +727,10 @@ def materialize_external_targets(payload: dict[str, Any]) -> dict[str, Any]:
     return {
         "schema_version": "code-audit-target-materialization/1.0",
         "status": status,
-        "urls": urls,
+        "canonical_url": targets[0].get("url", "") if targets else "",
+        "canonical_source": url_source,
+        "urls": [str(target.get("url")) for target in targets if target.get("url")],
+        "materialized_target_urls": [str(target.get("url")) for target in targets if target.get("url")],
         "github_target_count": len(github_targets),
         "github_materialized_as": materialized_as_values,
         "targets": [
@@ -794,11 +841,15 @@ def find_nested_string(value: Any, keys: set[str], *, depth: int = 0) -> str:
 
 
 def github_repo_id_from_payload(payload: dict[str, Any]) -> str:
-    for url in extract_urls(payload):
-        target = parse_github_target_url(url)
-        if not target:
-            continue
-        repo_id = f"github:{target['owner']}/{target['repo']}" if target.get("repo") else f"github:url:{short_digest(url, 16)}"
+    structured_context_present, structured_targets = structured_job_context_github_targets(payload)
+    candidates = structured_targets if structured_context_present else [
+        target
+        for url in extract_urls(payload)
+        if (target := parse_github_target_url(url)) and target.get("owner") and target.get("repo")
+    ]
+    if candidates:
+        target = candidates[0]
+        repo_id = f"github:{target['owner']}/{target['repo']}"
         if target.get("ref"):
             repo_id = f"{repo_id}@{target['ref']}"
         return repo_id
@@ -1563,6 +1614,8 @@ def compact_target_materialization(materialized: dict[str, Any]) -> dict[str, An
     return {
         "schema_version": materialized.get("schema_version", "code-audit-target-materialization/1.0"),
         "status": materialized.get("status"),
+        "canonical_url": materialized.get("canonical_url", ""),
+        "canonical_source": materialized.get("canonical_source", ""),
         "scan_profile": materialized.get("scan_profile", CODE_AUDIT_SCAN_PROFILE),
         "ruleset_version": materialized.get("ruleset_version", CODE_AUDIT_RULESET_VERSION),
         "github_target_count": materialized.get("github_target_count", 0),
@@ -1574,6 +1627,7 @@ def compact_target_materialization(materialized: dict[str, Any]) -> dict[str, An
         "scan_truncated": materialized.get("scan_truncated", False),
         "targets": as_list(materialized.get("targets")),
         "urls": as_list(materialized.get("urls"))[:10],
+        "materialized_target_urls": as_list(materialized.get("materialized_target_urls"))[:10],
     }
 
 
@@ -1764,9 +1818,9 @@ def render_buyer_summary(
     skipped_total = sum(int(value or 0) for value in skipped.values())
     returned = [finding for finding in as_list(findings.get("findings")) if isinstance(finding, dict)]
     detected_surfaces = as_list(protocol_surface.get("detected"))
-    target_urls = as_list(target_summary.get("urls"))
+    target_urls = as_list(target_summary.get("materialized_target_urls"))
     materialized_as = as_list(target_summary.get("github_materialized_as"))
-    primary_target = target_urls[0] if target_urls else "public GitHub URL"
+    primary_target = str(target_summary.get("canonical_url") or (target_urls[0] if target_urls else "public GitHub URL"))
     returned_count = int(findings.get("returned_finding_count", findings.get("finding_count", len(returned))) or 0)
     active_count = int(findings.get("total_active_finding_count", findings.get("finding_count", len(returned))) or 0)
     detected_count = int(findings.get("total_detected_finding_count", active_count) or 0)
@@ -1788,6 +1842,7 @@ def render_buyer_summary(
                 ("Audit status", "completed"),
                 ("Ruleset", target_summary.get("ruleset_version", CODE_AUDIT_RULESET_VERSION)),
                 ("Target", primary_target),
+                ("Materialized targets", "; ".join(str(url) for url in target_urls) or "none"),
                 ("Materialized as", ", ".join(str(item) for item in materialized_as) or "github_url"),
                 ("Findings returned", f"{returned_count} of {active_count} medium-or-higher"),
                 ("Total detected", detected_count),
@@ -2113,8 +2168,9 @@ def buyer_structured_result(
     buyer_summary_markdown: str,
 ) -> dict[str, Any]:
     target_summary = compact_target_materialization(materialized)
-    target_urls = as_list(target_summary.get("urls"))
+    target_urls = as_list(target_summary.get("materialized_target_urls"))
     materialized_as = as_list(target_summary.get("github_materialized_as"))
+    canonical_target = str(target_summary.get("canonical_url") or (target_urls[0] if target_urls else ""))
     report_sections = report_sections_projection(findings, buyer_summary_markdown)
     compact_verdict = {
         "verdict": verdict.get("verdict"),
@@ -2139,9 +2195,12 @@ def buyer_structured_result(
             "internal_verified_package": True,
         },
         "target": {
-            "url": target_urls[0] if target_urls else "",
+            "url": canonical_target,
+            "canonical_source": target_summary.get("canonical_source"),
+            "materialized_target_urls": target_urls,
             "status": target_summary.get("status"),
             "materialized_as": materialized_as[0] if materialized_as else "",
+            "materialized_targets": as_list(target_summary.get("targets")),
             "files_considered": target_summary.get("files_considered", 0),
             "files_scanned": target_summary.get("files_scanned", 0),
             "scan_truncated": target_summary.get("scan_truncated", False),

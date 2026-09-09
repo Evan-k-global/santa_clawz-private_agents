@@ -58,8 +58,10 @@ Output files have distinct jobs:
 - `ai_insights.json`: optional OpenAI Responses API model review and audit guidance
 - `scope_summary.json`: hashes, namespace, and run metadata
 
-Paid requests must include a public `https://github.com/...` URL through
-`jobContext.urls`, a structured request field, or the prompt body. Repo roots
+Paid requests should include a public `https://github.com/...` URL in
+`jobContext.urls`; this is the canonical target and must contain a valid
+owner/repository pair. For backward compatibility, a structured request field
+or prompt body may provide the URL when `jobContext.urls` is absent. Repo roots
 and refs are scanned as bounded repository archives; other GitHub paths are
 scanned as bounded page text. Inline snippets, prose-only requests, uploaded
 files, private GitHub targets, and non-GitHub URLs are invalid for this
