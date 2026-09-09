@@ -724,13 +724,18 @@ def materialize_external_targets(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(target, dict)
         }
     )
+    canonical_target_urls = [
+        str(target.get("url") or target.get("source_url"))
+        for target in targets
+        if target.get("url") or target.get("source_url")
+    ]
     return {
         "schema_version": "code-audit-target-materialization/1.0",
         "status": status,
-        "canonical_url": targets[0].get("url", "") if targets else "",
+        "canonical_url": canonical_target_urls[0] if canonical_target_urls else "",
         "canonical_source": url_source,
-        "urls": [str(target.get("url")) for target in targets if target.get("url")],
-        "materialized_target_urls": [str(target.get("url")) for target in targets if target.get("url")],
+        "urls": canonical_target_urls,
+        "materialized_target_urls": canonical_target_urls,
         "github_target_count": len(github_targets),
         "github_materialized_as": materialized_as_values,
         "targets": [

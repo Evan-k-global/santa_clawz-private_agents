@@ -14,6 +14,28 @@ SPEC.loader.exec_module(WORKER)
 
 
 class WorkerContractTests(unittest.TestCase):
+    def test_archive_target_projection_uses_source_url(self):
+        projected = WORKER.compact_target_materialization(
+            {
+                "status": "materialized",
+                "canonical_source": "jobContext.urls",
+                "targets": [
+                    {
+                        "kind": "github_repo_archive",
+                        "source_url": "https://github.com/zeko-labs/santa_clawz-private_agents",
+                    }
+                ],
+                "materialized_target_urls": [
+                    "https://github.com/zeko-labs/santa_clawz-private_agents"
+                ],
+            }
+        )
+
+        self.assertEqual(
+            projected["materialized_target_urls"][0],
+            "https://github.com/zeko-labs/santa_clawz-private_agents",
+        )
+
     def test_failure_payload_uses_canonical_error_string(self):
         payload = WORKER.failure_payload("model unavailable", 503, "request-1", "model_unavailable")
 
