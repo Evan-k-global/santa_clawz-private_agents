@@ -59,6 +59,11 @@ class WorkerContractTests(unittest.TestCase):
         self.assertLessEqual(elapsed, WORKER.OPENAI_ENRICHMENT_BUDGET_SECONDS)
         self.assertLess(WORKER.RELAY_RESPONSE_BUDGET_SECONDS, 120)
 
+    def test_openai_request_disables_response_storage(self):
+        source = WORKER_PATH.read_text()
+
+        self.assertIn('"store": False', source)
+
 
 if __name__ == "__main__":
     unittest.main()

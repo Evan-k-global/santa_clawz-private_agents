@@ -2408,6 +2408,7 @@ def call_openai_for_insights(
         "input": prompt,
         "max_output_tokens": 2200,
         "text": {"format": {"type": "json_object"}},
+        "store": False,
     }
     request = urllib.request.Request(
         "https://api.openai.com/v1/responses",
