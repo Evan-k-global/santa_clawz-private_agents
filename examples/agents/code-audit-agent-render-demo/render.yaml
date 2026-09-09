@@ -14,8 +14,8 @@ services:
       - key: CODE_AUDIT_REQUIRE_OPENAI
         value: "false"
       - key: CODE_AUDIT_OPENAI_TIMEOUT_SECONDS
-        value: "26"
+        value: "35"
       - key: CODE_AUDIT_OPENAI_RETRY_ATTEMPTS
-        value: "2"
+        value: "1"
       - key: CLAWZ_CODE_AUDIT_OUTPUT_DIR
         value: "/tmp/santaclawz-code-audit-agent"
